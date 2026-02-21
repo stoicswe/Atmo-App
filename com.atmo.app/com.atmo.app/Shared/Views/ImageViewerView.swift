@@ -25,19 +25,60 @@ struct ImageViewerView: View {
             // Black backdrop — images look best on true black
             Color.black.ignoresSafeArea()
 
-            // Paged TabView — swipe left/right to move between images.
-            // .tabViewStyle(.page) is iOS-only; on macOS the plain TabView
-            // already behaves as a pager, so we apply it conditionally.
+#if os(iOS)
+            // iOS: paged TabView with swipe navigation
             TabView(selection: $currentIndex) {
                 ForEach(images.indices, id: \.self) { index in
                     ZoomableImageView(url: images[index].fullSizeImageURL)
                         .tag(index)
                 }
             }
-#if os(iOS)
             .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .always : .never))
-#endif
             .ignoresSafeArea()
+#else
+            // macOS: simple pager — show one image at a time with arrow buttons
+            ZoomableImageView(url: images[safe: currentIndex]?.fullSizeImageURL ?? nil)
+                .ignoresSafeArea()
+
+            // Prev / Next arrow buttons
+            if images.count > 1 {
+                HStack {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentIndex = max(0, currentIndex - 1)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(.ultraThinMaterial.opacity(0.85)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(currentIndex == 0)
+                    .opacity(currentIndex == 0 ? 0.3 : 1)
+
+                    Spacer()
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentIndex = min(images.count - 1, currentIndex + 1)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(.ultraThinMaterial.opacity(0.85)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(currentIndex == images.count - 1)
+                    .opacity(currentIndex == images.count - 1 ? 0.3 : 1)
+                }
+                .padding(.horizontal, 16)
+                .frame(maxHeight: .infinity)
+            }
+#endif
 
             // ── Dismiss button ──
             Button {
@@ -85,10 +126,11 @@ struct ImageViewerView: View {
         // then keep it up to date as the TabView selection changes.
         .onAppear { currentIndex = selectedIndex }
         .onChange(of: currentIndex) { _, newValue in selectedIndex = newValue }
-        // Transparent presentation so the black fill shows through
+#if os(iOS)
         .presentationBackground(.black)
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
+#endif
     }
 }
 
@@ -109,12 +151,16 @@ private struct ZoomableImageView: View {
 
     var body: some View {
         GeometryReader { geo in
+            let size = geo.size.width > 0 && geo.size.height > 0
+                ? geo.size
+                : CGSize(width: 400, height: 500)
+
             AsyncCachedImage(url: url) { phase in
                 if let image = phase.image {
                     image
                         .resizable()
                         .scaledToFit()
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .frame(width: size.width, height: size.height)
                         .scaleEffect(scale)
                         .offset(offset)
                         // ── Pinch-to-zoom ──
@@ -142,8 +188,8 @@ private struct ZoomableImageView: View {
                             DragGesture()
                                 .onChanged { value in
                                     guard scale > 1 else { return }
-                                    let maxX = (geo.size.width  * (scale - 1)) / 2
-                                    let maxY = (geo.size.height * (scale - 1)) / 2
+                                    let maxX = (size.width  * (scale - 1)) / 2
+                                    let maxY = (size.height * (scale - 1)) / 2
                                     offset = CGSize(
                                         width:  (lastOffset.width  + value.translation.width).clamped(to: -maxX...maxX),
                                         height: (lastOffset.height + value.translation.height).clamped(to: -maxY...maxY)
@@ -177,15 +223,16 @@ private struct ZoomableImageView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(width: size.width, height: size.height)
                 } else {
                     // Loading placeholder
                     ProgressView()
                         .tint(.white)
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .frame(width: size.width, height: size.height)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Reset zoom when the user swipes to a different page in the TabView
         .id(url)
         .onDisappear {
