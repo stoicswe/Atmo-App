@@ -11,16 +11,16 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		EDDBB1C92F49EA0F0067851D /* com.atmo.app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = com.atmo.app.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDDBB1C92F49EA0F0067851D /* Atmo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "com.atmo.app" target */ = {
+		EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "Atmo" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = EDDBB1C82F49EA0F0067851D /* com.atmo.app */;
+			target = EDDBB1C82F49EA0F0067851D /* Atmo */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -28,7 +28,7 @@
 		EDDBB1CB2F49EA0F0067851D /* com.atmo.app */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "com.atmo.app" target */,
+				EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "Atmo" target */,
 			);
 			path = com.atmo.app;
 			sourceTree = "<group>";
@@ -58,7 +58,7 @@
 		EDDBB1CA2F49EA0F0067851D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EDDBB1C92F49EA0F0067851D /* com.atmo.app.app */,
+				EDDBB1C92F49EA0F0067851D /* Atmo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -66,9 +66,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EDDBB1C82F49EA0F0067851D /* com.atmo.app */ = {
+		EDDBB1C82F49EA0F0067851D /* Atmo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "com.atmo.app" */;
+			buildConfigurationList = EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmo" */;
 			buildPhases = (
 				EDDBB1C52F49EA0F0067851D /* Sources */,
 				EDDBB1C62F49EA0F0067851D /* Frameworks */,
@@ -81,12 +81,12 @@
 			fileSystemSynchronizedGroups = (
 				EDDBB1CB2F49EA0F0067851D /* com.atmo.app */,
 			);
-			name = com.atmo.app;
+			name = Atmo;
 			packageProductDependencies = (
 				EDDBB24A2F49EB020067851D /* ATProtoKit */,
 			);
 			productName = com.atmo.app;
-			productReference = EDDBB1C92F49EA0F0067851D /* com.atmo.app.app */;
+			productReference = EDDBB1C92F49EA0F0067851D /* Atmo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -121,7 +121,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EDDBB1C82F49EA0F0067851D /* com.atmo.app */,
+				EDDBB1C82F49EA0F0067851D /* Atmo */,
 			);
 		};
 /* End PBXProject section */
@@ -407,7 +407,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "com.atmo.app" */ = {
+		EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EDDBB1D82F49EA100067851D /* Debug */,
