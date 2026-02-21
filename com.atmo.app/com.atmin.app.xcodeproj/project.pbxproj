@@ -11,26 +11,26 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		EDDBB1C92F49EA0F0067851D /* Atmo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDDBB1C92F49EA0F0067851D /* Atmin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atmin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "Atmo" target */ = {
+		EDDBB1D62F49EA100067851D /* Exceptions for "com.atmin.app" folder in "Atmin" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = EDDBB1C82F49EA0F0067851D /* Atmo */;
+			target = EDDBB1C82F49EA0F0067851D /* Atmin */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		EDDBB1CB2F49EA0F0067851D /* com.atmo.app */ = {
+		EDDBB1CB2F49EA0F0067851D /* com.atmin.app */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EDDBB1D62F49EA100067851D /* Exceptions for "com.atmo.app" folder in "Atmo" target */,
+				EDDBB1D62F49EA100067851D /* Exceptions for "com.atmin.app" folder in "Atmin" target */,
 			);
-			path = com.atmo.app;
+			path = com.atmin.app;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -50,7 +50,7 @@
 		EDDBB1C02F49EA0F0067851D = {
 			isa = PBXGroup;
 			children = (
-				EDDBB1CB2F49EA0F0067851D /* com.atmo.app */,
+				EDDBB1CB2F49EA0F0067851D /* com.atmin.app */,
 				EDDBB1CA2F49EA0F0067851D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -58,7 +58,7 @@
 		EDDBB1CA2F49EA0F0067851D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EDDBB1C92F49EA0F0067851D /* Atmo.app */,
+				EDDBB1C92F49EA0F0067851D /* Atmin.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -66,9 +66,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EDDBB1C82F49EA0F0067851D /* Atmo */ = {
+		EDDBB1C82F49EA0F0067851D /* Atmin */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmo" */;
+			buildConfigurationList = EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmin" */;
 			buildPhases = (
 				EDDBB1C52F49EA0F0067851D /* Sources */,
 				EDDBB1C62F49EA0F0067851D /* Frameworks */,
@@ -79,14 +79,14 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				EDDBB1CB2F49EA0F0067851D /* com.atmo.app */,
+				EDDBB1CB2F49EA0F0067851D /* com.atmin.app */,
 			);
-			name = Atmo;
+			name = Atmin;
 			packageProductDependencies = (
 				EDDBB24A2F49EB020067851D /* ATProtoKit */,
 			);
 			productName = com.atmo.app;
-			productReference = EDDBB1C92F49EA0F0067851D /* Atmo.app */;
+			productReference = EDDBB1C92F49EA0F0067851D /* Atmin.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -104,7 +104,7 @@
 					};
 				};
 			};
-			buildConfigurationList = EDDBB1C42F49EA0F0067851D /* Build configuration list for PBXProject "com.atmo.app" */;
+			buildConfigurationList = EDDBB1C42F49EA0F0067851D /* Build configuration list for PBXProject "com.atmin.app" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -121,7 +121,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EDDBB1C82F49EA0F0067851D /* Atmo */,
+				EDDBB1C82F49EA0F0067851D /* Atmin */,
 			);
 		};
 /* End PBXProject section */
@@ -153,7 +153,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = com.atmo.app/com.atmo.app.entitlements;
+				CODE_SIGN_ENTITLEMENTS = com.atmin.app/com.atmo.app.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = P22P7U46RW;
@@ -173,7 +173,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = com.atmo.app/Info.plist;
+				INFOPLIST_FILE = com.atmin.app/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Atmo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -191,7 +191,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmo-app";
+				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmin-app";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -219,7 +219,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = com.atmo.app/com.atmo.app.entitlements;
+				CODE_SIGN_ENTITLEMENTS = com.atmin.app/com.atmo.app.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = P22P7U46RW;
@@ -239,7 +239,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = com.atmo.app/Info.plist;
+				INFOPLIST_FILE = com.atmin.app/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Atmo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -257,7 +257,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmo-app";
+				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmin-app";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -398,7 +398,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		EDDBB1C42F49EA0F0067851D /* Build configuration list for PBXProject "com.atmo.app" */ = {
+		EDDBB1C42F49EA0F0067851D /* Build configuration list for PBXProject "com.atmin.app" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EDDBB1DA2F49EA100067851D /* Debug */,
@@ -407,7 +407,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmo" */ = {
+		EDDBB1D72F49EA100067851D /* Build configuration list for PBXNativeTarget "Atmin" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EDDBB1D82F49EA100067851D /* Debug */,
