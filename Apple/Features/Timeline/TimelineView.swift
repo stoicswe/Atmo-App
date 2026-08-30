@@ -22,8 +22,14 @@ struct TimelineView: View {
     @State private var isAtTop: Bool = true
     @State private var scrollOffset: CGFloat = 0
 
-    // New posts pill
-    @State private var showNewPostsPill: Bool = false
+    /// The row the viewport is anchored to (topmost visible post URI).
+    /// Bound to `.scrollPosition(id:)`, which keeps that row in place when
+    /// rows are inserted above it — the mechanism that stops the feed from
+    /// jumping when the background check prepends new posts.
+    @State private var scrolledID: String? = nil
+
+    /// Debounces iCloud read-position writes while the user scrolls.
+    @State private var positionSaveTask: Task<Void, Never>? = nil
 
     // Custom pull-to-refresh state
     @State private var isRefreshTriggered: Bool = false
@@ -93,61 +99,33 @@ struct TimelineView: View {
 
     @ViewBuilder
     private func feedContent(vm: TimelineViewModel) -> some View {
-        ScrollViewReader { proxy in
-            ZStack(alignment: .top) {
-                ScrollView {
-                    // ── Custom pull-to-refresh spring indicator ──
-                    // This GeometryReader sits at y=0 in the scroll content.
-                    // When the user pulls down past refreshThreshold it triggers a refresh,
-                    // and springs the content back with a satisfying bounce.
-                    GeometryReader { geo in
-                        let minY = geo.frame(in: .named("scrollCoord")).minY
-                        Color.clear
-                            .preference(key: ScrollOffsetKey.self, value: minY)
-                    }
-                    .frame(height: 0)
+        ZStack(alignment: .top) {
+            ScrollView {
+                // Spring refresh indicator — always in the view hierarchy so its
+                // insertion/removal never causes a content-height change that would
+                // snap the scroll position. Height is 0 when inactive (invisible),
+                // grows as the user pulls down. The .animation modifier on height
+                // is suppressed while actively refreshing so the indicator stays
+                // pinned open at a fixed height until the fetch completes.
+                RefreshIndicatorView(
+                    pullDistance: pullDistance,
+                    threshold: refreshThreshold,
+                    isRefreshing: viewModel.isRefreshing
+                )
+                .frame(height: max(0, pullDistance))
+                .animation(
+                    viewModel.isRefreshing
+                        ? nil  // don't animate while refreshing (held open)
+                        : .spring(response: 0.35, dampingFraction: 0.65),
+                    value: pullDistance
+                )
+                .clipped()
 
-                    // Spring refresh indicator — always in the view hierarchy so its
-                    // insertion/removal never causes a content-height change that would
-                    // snap the scroll position. Height is 0 when inactive (invisible),
-                    // grows as the user pulls down. The .animation modifier on height
-                    // is suppressed while actively refreshing so the indicator stays
-                    // pinned open at a fixed height until the fetch completes.
-                    RefreshIndicatorView(
-                        pullDistance: pullDistance,
-                        threshold: refreshThreshold,
-                        isRefreshing: viewModel.isRefreshing
-                    )
-                    .frame(height: max(0, pullDistance))
-                    .animation(
-                        viewModel.isRefreshing
-                            ? nil  // don't animate while refreshing (held open)
-                            : .spring(response: 0.35, dampingFraction: 0.65),
-                        value: pullDistance
-                    )
-                    .clipped()
-
-                    // ── Top anchor for at-top detection ──
-                    Color.clear
-                        .frame(height: 0)
-                        .id("__top__")
-                        .onAppear {
-                            Task { @MainActor in
-                                isAtTop = true
-                                // Reaching the top IS the read position —
-                                // record it (synced across devices via
-                                // iCloud KVS in PositionStore).
-                                if let first = viewModel.posts.first {
-                                    positionStore.save(topPostURI: first.uri)
-                                }
-                            }
-                        }
-                        .onDisappear {
-                            Task { @MainActor in isAtTop = false }
-                        }
-
-                    LazyVStack(spacing: 0, pinnedViews: []) {
-                        ForEach(vm.posts) { post in
+                LazyVStack(spacing: 0, pinnedViews: []) {
+                    ForEach(vm.posts) { post in
+                        // Post + divider share one scroll-target identity so
+                        // `.scrollPosition(id:)` anchors to post URIs only.
+                        VStack(spacing: 0) {
                             FeedItemView(
                                 post: post,
                                 viewModel: vm,
@@ -163,149 +141,156 @@ struct TimelineView: View {
                                     navPath.wrappedValue = NavigationPath([handle])
                                 }
                             )
-                            .onAppear {
-                                // Scrolling up past a freshly-prepended post
-                                // drains it from the new-posts pill.
-                                vm.markNewPostSeen(uri: post.uri)
-                                if infiniteScrollEnabled, post.id == vm.posts.last?.id {
-                                    Task { await vm.loadMore() }
-                                }
-                            }
-                            .id(post.uri)
 
                             Divider().overlay(Color.secondary.opacity(0.1))
                         }
-
-                        if vm.isLoading && !vm.posts.isEmpty {
-                            ProgressView()
-                                .padding(AtmoTheme.Spacing.xxl)
-                        }
-
-                        // Manual paging when infinite scroll is turned off.
-                        if !infiniteScrollEnabled, vm.canLoadMore, !vm.isLoading {
-                            Button {
+                        .onAppear {
+                            // Scrolling up past a freshly-prepended post
+                            // drains it from the new-posts pill.
+                            vm.markNewPostSeen(uri: post.uri)
+                            if infiniteScrollEnabled, post.id == vm.posts.last?.id {
                                 Task { await vm.loadMore() }
-                            } label: {
-                                Label("Load More", systemImage: "arrow.down.circle")
-                                    .font(.subheadline.weight(.medium))
                             }
-                            .buttonStyle(.glass)
-                            .padding(AtmoTheme.Spacing.lg)
                         }
+                        .id(post.uri)
                     }
-                }
-                // Coordinate space so GeometryReader can measure scroll offset
-                .coordinateSpace(name: "scrollCoord")
-                // Read scroll offset from preference key
-                .onPreferenceChange(ScrollOffsetKey.self) { value in
-                    handleScrollOffset(value, vm: vm, proxy: proxy)
-                }
-                .overlay {
-                    if let error = vm.error {
-                        ErrorBannerView(message: error.localizedDescription) {
-                            Task { await vm.refresh() }
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .frame(maxHeight: .infinity, alignment: .top)
-                    }
-                }
 
-                // ── New Posts Pill ──
-                // Anchored top-center over the feed; drains live as the
-                // user scrolls up past the new posts (see markNewPostSeen).
-                if showNewPostsPill && vm.newPostsCount > 0 {
+                    if vm.isLoading && !vm.posts.isEmpty {
+                        ProgressView()
+                            .padding(AtmoTheme.Spacing.xxl)
+                    }
+
+                    // Manual paging when infinite scroll is turned off.
+                    if !infiniteScrollEnabled, vm.canLoadMore, !vm.isLoading {
+                        Button {
+                            Task { await vm.loadMore() }
+                        } label: {
+                            Label("Load More", systemImage: "arrow.down.circle")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .buttonStyle(.glass)
+                        .padding(AtmoTheme.Spacing.lg)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            // Viewport anchoring: the binding tracks the topmost visible row
+            // and — crucially — keeps that row in place when rows are inserted
+            // above it (new-post prepends) instead of letting the content
+            // shift underneath the viewport.
+            .scrollPosition(id: $scrolledID, anchor: .top)
+            // Exact scroll offset from the system: 0 at natural rest under
+            // the bar (insets accounted for), positive while pulled past the
+            // top, negative once scrolled down. Unlike a GeometryReader in a
+            // named space, this can't be skewed by nav-bar insets — which
+            // differ per platform and title style.
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                -(geometry.contentOffset.y + geometry.contentInsets.top)
+            } action: { _, overscroll in
+                handleScrollOffset(overscroll, vm: vm)
+            }
+            .overlay {
+                if let error = vm.error {
+                    ErrorBannerView(message: error.localizedDescription) {
+                        Task { await vm.refresh() }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .top)
+                }
+            }
+
+            // ── New Posts Pill ──
+            // Anchored top-center over the feed whenever unseen prepended
+            // posts exist; drains live as the user scrolls up past them
+            // (see markNewPostSeen). The container VStack scopes the
+            // show/hide animation to the pill so the feed itself never
+            // animates when the pill appears.
+            VStack {
+                if vm.newPostsCount > 0 {
                     NewPostsPill(
                         count: vm.newPostsCount,
                         authors: vm.newPostAuthors,
                         overflowAuthorCount: vm.newPostsOverflowAuthorCount
                     ) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            showNewPostsPill = false
-                        }
-                        vm.clearNewPostsCount()
-                        proxy.scrollTo("__top__", anchor: .top)
-                        if let first = vm.posts.first {
-                            positionStore.save(topPostURI: first.uri)
-                        }
+                        jumpToTop(vm: vm)
                     }
                     .padding(.top, AtmoTheme.Spacing.sm)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(10)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.75), value: showNewPostsPill)
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.newPostsCount)
                 }
-
-                // Invisible change-watcher — not rendered, just reacts to ViewModel state.
-                // When the background refresh or periodic timer prepends new posts,
-                // newPostsCount goes from 0 → N. We show the pill immediately regardless
-                // of the current scroll position, and re-anchor the scroll so the existing
-                // content doesn't visually jump upward as new rows are inserted above it.
-                Color.clear
-                    .frame(width: 0, height: 0)
-                    // ── iCloud read-position restore ──
-                    // Once, after the first page arrives: jump (without
-                    // animation) to the position saved by whichever Apple
-                    // device the user read the feed on last.
-                    .onAppear { attemptPositionRestore(vm: vm, proxy: proxy) }
-                    .onChange(of: vm.posts.isEmpty) { _, empty in
-                        if !empty { attemptPositionRestore(vm: vm, proxy: proxy) }
-                    }
-                    .onChange(of: vm.newPostsCount) { oldCount, newCount in
-                        // Fully drained by scrolling: retire the pill.
-                        if newCount == 0, showNewPostsPill {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                showNewPostsPill = false
-                            }
-                        }
-                        guard newCount > 0, oldCount == 0 else { return }
-                        // Re-anchor scroll FIRST (no animation) so the viewport stays
-                        // glued to the same post even though new rows were inserted above.
-                        if let anchor = vm.newPostsAnchorURI {
-                            proxy.scrollTo(anchor, anchor: .top)
-                        }
-                        // If the user is already at the top, silently absorb and clear —
-                        // the new posts are already visible, no pill needed.
-                        if isAtTop {
-                            vm.clearNewPostsCount()
-                            if let first = vm.posts.first {
-                                positionStore.save(topPostURI: first.uri)
-                            }
-                            return
-                        }
-                        // User is scrolled down: show the pill so they can tap to jump up.
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            showNewPostsPill = true
-                        }
-                    }
-
-                // ── Scroll-to-top FAB ──
-                // Appears in the bottom-trailing corner once the user has scrolled
-                // away from the top. Tapping scrolls smoothly back to the first post.
-                if !isAtTop {
-                    ScrollToTopButton {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            proxy.scrollTo("__top__", anchor: .top)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, AtmoTheme.Spacing.xxl)
-                    .padding(.bottom, AtmoTheme.Spacing.xxl)
-                    .transition(.scale(scale: 0.7).combined(with: .opacity))
-                    .zIndex(9)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isAtTop)
-                }
             }
+            .zIndex(10)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.newPostsCount > 0)
+
+            // ── Scroll-to-top FAB ──
+            // Appears in the bottom-trailing corner once the user has scrolled
+            // away from the top. Tapping scrolls smoothly back to the first post.
+            if !isAtTop {
+                ScrollToTopButton {
+                    jumpToTop(vm: vm)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, AtmoTheme.Spacing.xxl)
+                .padding(.bottom, AtmoTheme.Spacing.xxl)
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
+                .zIndex(9)
+                .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isAtTop)
+            }
+        }
+        // ── iCloud read-position restore ──
+        // Once, after the first page arrives: jump (without animation) to the
+        // position saved by whichever Apple device the user read the feed on
+        // last; with nothing saved, pin the top row so prepend anchoring is
+        // armed before the user's first scroll.
+        .onAppear { attemptPositionRestore(vm: vm) }
+        .onChange(of: vm.posts.isEmpty) { _, empty in
+            if !empty { attemptPositionRestore(vm: vm) }
+        }
+        // ── iCloud read-position save ──
+        // The anchored row IS the read position. Debounced so a fling
+        // doesn't hit the KV store for every row it passes.
+        .onChange(of: scrolledID) { _, newValue in
+            guard let uri = newValue else { return }
+            positionSaveTask?.cancel()
+            positionSaveTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                positionStore.save(topPostURI: uri)
+            }
+        }
+    }
+
+    /// Scrolls to the newest post and retires the pill. Shared by the pill
+    /// tap and the scroll-to-top FAB (a fast programmatic scroll can skip
+    /// row onAppear callbacks, so the unseen set is cleared explicitly).
+    private func jumpToTop(vm: TimelineViewModel) {
+        vm.clearNewPostsCount()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+            scrolledID = vm.posts.first?.uri
+        }
+        if let first = vm.posts.first {
+            positionStore.save(topPostURI: first.uri)
         }
     }
 
     // MARK: - Scroll offset handler
     private func handleScrollOffset(
         _ offset: CGFloat,
-        vm: TimelineViewModel,
-        proxy: ScrollViewProxy
+        vm: TimelineViewModel
     ) {
         let previous = scrollOffset
         scrollOffset = offset
+
+        // ── At-top detection ──
+        // Offset semantics (from onScrollGeometryChange): 0 at natural rest,
+        // positive while pulled past the top, negative scrolled down. A
+        // small tolerance absorbs sub-pixel settling.
+        let nowAtTop = offset >= -8
+        if nowAtTop != isAtTop {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
+                isAtTop = nowAtTop
+            }
+        }
 
         // ── Pull-to-refresh ──
         // offset > 0 means the user has actively pulled the scroll content below its
@@ -339,9 +324,14 @@ struct TimelineView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
                     pullDistance = refreshThreshold * 0.75
                 }
-                showNewPostsPill = false
                 vm.clearNewPostsCount()
                 await vm.refresh()
+                // Full replace: snap the anchor to the fresh top row so the
+                // viewport isn't pinned to wherever the OLD top row landed
+                // in the reloaded page.
+                var tx = Transaction()
+                tx.disablesAnimations = true
+                withTransaction(tx) { scrolledID = vm.posts.first?.uri }
                 // Spring back closed once fetch completes
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.7)) {
                     pullDistance = 0
@@ -353,26 +343,22 @@ struct TimelineView: View {
     }
 
     /// One-shot scroll to the iCloud-synced read position. Runs after the
-    /// first page loads; skipped when the saved post is no longer in the
-    /// feed (too old) or is already the top row.
-    private func attemptPositionRestore(vm: TimelineViewModel, proxy: ScrollViewProxy) {
+    /// first page loads. When the saved post is no longer in the feed (too
+    /// old) it falls back to pinning the current top row, so the scroll
+    /// anchor is armed even before the user touches the feed.
+    private func attemptPositionRestore(vm: TimelineViewModel) {
         guard !didRestorePosition, !vm.posts.isEmpty else { return }
         didRestorePosition = true
-        guard let saved = positionStore.savedTopPostURI,
-              saved != vm.posts.first?.uri,
-              vm.posts.contains(where: { $0.uri == saved }) else { return }
+        let saved = positionStore.savedTopPostURI
+        let target = (saved != nil && vm.posts.contains { $0.uri == saved })
+            ? saved
+            : vm.posts.first?.uri
         // Next runloop tick so the LazyVStack has laid out its rows.
         DispatchQueue.main.async {
-            proxy.scrollTo(saved, anchor: .top)
+            var tx = Transaction()
+            tx.disablesAnimations = true
+            withTransaction(tx) { scrolledID = target }
         }
-    }
-}
-
-// MARK: - Scroll Offset Preference Key
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 

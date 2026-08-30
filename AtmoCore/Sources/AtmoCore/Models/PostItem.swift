@@ -43,6 +43,29 @@ public struct PostItem: Identifiable, Hashable, Sendable {
     public let replyParentURI: String?
     public let replyRootURI: String?
 
+    /// The reply's thread context as delivered in the timeline payload:
+    /// `[root, parent]` oldest-first (just `[parent]` when the post replies
+    /// directly to the root, or the root arrived blocked/deleted). Feed UIs
+    /// render these as full posts above the reply — one connected,
+    /// chronological slice — without any extra fetch.
+    public internal(set) var threadAncestors: [PostItem] = []
+
+    /// True when the visible context skips generations — the parent isn't a
+    /// direct reply to the root, so a "more in thread" break belongs between
+    /// them.
+    public var threadContextHasGap: Bool {
+        guard threadAncestors.count >= 2 else { return false }
+        return threadAncestors[1].replyParentURI != threadAncestors[0].uri
+    }
+
+    /// True when the post's direct parent is missing from `threadAncestors`
+    /// (deleted or blocked), so the context jumps straight from the root to
+    /// this post — a break belongs above the post itself.
+    public var threadContextIsDetached: Bool {
+        guard let last = threadAncestors.last else { return false }
+        return replyParentURI != last.uri
+    }
+
     // Reason (e.g., repost by someone else)
     public let reason: FeedReason?
 
@@ -90,7 +113,10 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         // Embed
         self.embed = post.embed
 
-        // Reply references — parent/root are typed union enums, not plain PostViewDefinition
+        // Reply references — parent/root are typed union enums, not plain
+        // PostViewDefinition. The full posts are embedded as thread context
+        // (oldest first, parent==root collapsed to one entry) so the feed
+        // can render the whole slice without a per-cell thread fetch.
         if let reply = feedPost.reply {
             if case .postView(let parentPost) = reply.parent {
                 self.replyParentURI = parentPost.uri
@@ -102,6 +128,16 @@ public struct PostItem: Identifiable, Hashable, Sendable {
             } else {
                 self.replyRootURI = nil
             }
+
+            var ancestors: [PostItem] = []
+            if case .postView(let rootPost) = reply.root {
+                ancestors.append(PostItem(postView: rootPost))
+            }
+            if case .postView(let parentPost) = reply.parent,
+               ancestors.first?.uri != parentPost.uri {
+                ancestors.append(PostItem(postView: parentPost))
+            }
+            self.threadAncestors = ancestors
         } else {
             self.replyParentURI = nil
             self.replyRootURI = nil
@@ -138,10 +174,16 @@ public struct PostItem: Identifiable, Hashable, Sendable {
             self.text = postRecord.text
             self.facets = postRecord.facets ?? []
             self.createdAt = postRecord.createdAt
+            // Reply refs live in the record here (PostViewDefinition carries
+            // no hydrated parent) — needed for thread-gap detection.
+            self.replyParentURI = postRecord.reply?.parent.recordURI
+            self.replyRootURI = postRecord.reply?.root.recordURI
         } else {
             self.text = ""
             self.facets = []
             self.createdAt = post.indexedAt
+            self.replyParentURI = nil
+            self.replyRootURI = nil
         }
 
         self.likeCount = post.likeCount ?? 0
@@ -155,8 +197,6 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.repostURI = post.viewer?.repostURI
 
         self.embed = post.embed
-        self.replyParentURI = nil
-        self.replyRootURI = nil
         self.reason = nil
     }
 

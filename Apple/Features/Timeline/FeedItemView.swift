@@ -3,10 +3,11 @@ import AtmoCore
 import ATProtoKit
 
 // MARK: - FeedItemView
-// Displays a single post in the timeline.
-// If the post is a reply, shows up to 2 parent posts above it with connector
-// lines. When the thread is longer than 2 the top connector shows a "more"
-// indicator pill so the user knows they can tap to see the full thread.
+// Displays one timeline slice: when the post is a reply, its root and parent
+// (delivered inline by the timeline API — no extra fetch) render above it as
+// full posts connected by a thread rail, oldest first. So a conversation
+// reads chronologically inside the slice while the slice itself sits at the
+// feed position of its newest post — the way Bluesky/X render threads.
 struct FeedItemView: View {
     let post: PostItem
     let viewModel: TimelineViewModel
@@ -47,12 +48,24 @@ struct FeedItemView: View {
                 .padding(.bottom, AtmoTheme.Spacing.xs)
             }
 
-            // ── Thread context (parent posts shown above a reply) ──
-            if livePost.replyParentURI != nil {
-                ThreadContextView(
-                    post: livePost,
-                    onTap: onTap
-                )
+            // ── Thread context (root/parent shown above a reply) ──
+            // Full posts from the feed payload, oldest first, joined by a
+            // rail. Dotted breaks mark skipped generations.
+            if !livePost.threadAncestors.isEmpty {
+                ForEach(Array(livePost.threadAncestors.enumerated()), id: \.element.id) { index, ancestor in
+                    if index == 1, livePost.threadContextHasGap {
+                        ThreadGapRow(onTap: onTap)
+                    }
+                    AncestorPostRow(
+                        post: ancestor,
+                        isFirst: index == 0,
+                        onTap: onTap,
+                        onMentionTap: onMentionTap
+                    )
+                }
+                if livePost.threadContextIsDetached {
+                    ThreadGapRow(onTap: onTap)
+                }
             }
 
             // ── The post itself ──
@@ -123,7 +136,10 @@ struct FeedItemView: View {
                 }
             }
             .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
-            .padding(.vertical, AtmoTheme.Feed.verticalPadding)
+            // With thread context above, the ancestor's rail runs flush to
+            // this row so the avatars read as one connected chain.
+            .padding(.top, livePost.threadAncestors.isEmpty ? AtmoTheme.Feed.verticalPadding : 0)
+            .padding(.bottom, AtmoTheme.Feed.verticalPadding)
         }
         // Make dead-zone areas (horizontal padding, avatar column below the avatar) respond
         // to taps. .onTapGesture on the outer VStack fires only when no interactive child
@@ -144,72 +160,90 @@ struct FeedItemView: View {
     }
 }
 
-// MARK: - Thread Context View
-// Shows parent posts above a reply in the timeline.
-// Fetches up to 2 parent posts via getPostThread; if the thread root is further
-// away, shows a "more in thread" indicator at the top.
-//
-// IMPORTANT: This view uses a fixed minimum height to prevent layout jumps when
-// the async parent fetch completes and the skeleton transitions to real content.
-// The skeleton and loaded states are kept at approximately equal heights.
-private struct ThreadContextView: View {
+// MARK: - Ancestor Post Row
+// A full-size post row for thread context above a reply — same visual weight
+// as the main post (name line, rich text, embeds) minus the action bar, with
+// a rail running from the avatar to the next row. Tapping opens the thread,
+// where the full conversation and all actions live.
+private struct AncestorPostRow: View {
     let post: PostItem
+    /// First row of the feed cell — carries the cell's top breathing room.
+    let isFirst: Bool
     var onTap: (() -> Void)?
+    var onMentionTap: ((String) -> Void)?
 
-    @Environment(ATProtoService.self) private var service
-    @State private var parents: [PostItem] = []   // ordered: oldest first
-    @State private var hasMoreAbove: Bool = false
-    @State private var loaded: Bool = false
-
-    private let maxParentsShown = 2
-    private let ctxAvatarSize: CGFloat = 32
+    @Environment(\.hashtagSearch) private var hashtagSearch
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if !loaded {
-                skeletonRow
-            } else {
-                if !parents.isEmpty {
-                    // "More in thread" pill
-                    if hasMoreAbove {
-                        moreIndicatorRow
-                    }
-
-                    // Parent rows + vertical connector lines
-                    ForEach(Array(parents.enumerated()), id: \.element.id) { _, parent in
-                        ParentPostRow(
-                            post: parent,
-                            avatarSize: ctxAvatarSize,
-                            onTap: onTap
-                        )
-                        threadConnectorLine(
-                            centerX: AtmoTheme.Feed.horizontalPadding + ctxAvatarSize / 2
-                        )
-                    }
+        HStack(alignment: .top, spacing: AtmoTheme.Feed.avatarTextSpacing) {
+            // Avatar column: avatar + continuation rail down to the next row.
+            VStack(spacing: 3) {
+                NavigationLink(value: post.authorDID) {
+                    AvatarView(url: post.authorAvatarURL, size: AtmoTheme.Feed.avatarSize)
                 }
-                // If parents is empty after loading (fetch failed / no parents), show nothing
-                // — height collapses to 0, which is correct (no parent to show)
+                .buttonStyle(.plain)
+
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
             }
-        }
-        // Suppress implicit animations on the skeleton → content transition.
-        // Without this, the height change as parents load fires a layout animation
-        // that scrolls the feed content visibly during momentum scroll.
-        .animation(.none, value: loaded)
-        .task(id: post.id) {
-            await fetchParents()
-        }
-    }
+            .frame(width: AtmoTheme.Feed.avatarSize)
 
-    // Small vertical line connecting parent avatar to the next row
-    private func threadConnectorLine(centerX: CGFloat) -> some View {
-        Rectangle()
-            .fill(Color.secondary.opacity(0.25))
-            .frame(width: 2, height: 12)
-            .padding(.leading, centerX - 1)
-    }
+            VStack(alignment: .leading, spacing: AtmoTheme.Spacing.xs) {
+                HStack(alignment: .center, spacing: AtmoTheme.Spacing.xs) {
+                    if let name = post.authorDisplayName {
+                        Text(name)
+                            .font(AtmoFonts.authorName)
+                            .lineLimit(1)
+                    }
+                    Text("@\(post.authorHandle)")
+                        .font(AtmoFonts.authorHandle)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(post.indexedAt.atmoFormatted())
+                        .font(AtmoFonts.timestamp)
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { onTap?() }
 
-    // Dotted "more in thread" row
-    private var moreIndicatorRow: some View {
+                if !post.displayText.isEmpty {
+                    RichTextView(
+                        text: post.displayText,
+                        facets: post.facets,
+                        onMentionTap: { handle in onMentionTap?(handle) },
+                        onHashtagTap: { tag in hashtagSearch(tag) }
+                    )
+                }
+
+                if let embed = post.embed {
+                    PostEmbedView(embed: embed)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onTap?() }
+                        .padding(.top, AtmoTheme.Spacing.xs)
+                }
+            }
+            // Breathing room before the next row lives INSIDE the content
+            // column, so the rail beside it runs unbroken to the row's edge.
+            .padding(.bottom, AtmoTheme.Spacing.md)
+        }
+        .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+        .padding(.top, isFirst ? AtmoTheme.Feed.verticalPadding : 0)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
+    }
+}
+
+// MARK: - Thread Gap Row
+// Dotted "More in thread" break shown where the visible context skips
+// generations (parent isn't a direct reply to the root, or the direct
+// parent is deleted/blocked). Tapping opens the full thread.
+private struct ThreadGapRow: View {
+    var onTap: (() -> Void)?
+
+    var body: some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
             VStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { _ in
@@ -218,113 +252,11 @@ private struct ThreadContextView: View {
                         .frame(width: 3, height: 3)
                 }
             }
-            .frame(width: ctxAvatarSize, alignment: .center)
+            .frame(width: AtmoTheme.Feed.avatarSize, alignment: .center)
 
             Text("More in thread")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
-        .padding(.vertical, AtmoTheme.Spacing.xs)
-        .contentShape(Rectangle())
-        .onTapGesture { onTap?() }
-    }
-
-    // Placeholder skeleton while fetching — matches approximate height of a single parent row
-    private var skeletonRow: some View {
-        HStack(alignment: .top, spacing: AtmoTheme.Feed.avatarTextSpacing) {
-            Circle()
-                .fill(Color.secondary.opacity(0.12))
-                .frame(width: ctxAvatarSize, height: ctxAvatarSize)
-            VStack(alignment: .leading, spacing: 4) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.secondary.opacity(0.12))
-                    .frame(width: 100, height: 10)
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
-                    .frame(width: 200, height: 10)
-            }
-        }
-        .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
-        .padding(.vertical, AtmoTheme.Spacing.xs)
-    }
-
-    // Walk the thread parent chain using getPostThread.
-    // Guard on `loaded` first — LazyVStack re-triggers .task on scroll recycling;
-    // this ensures we never re-fetch or re-render once the data is in place.
-    private func fetchParents() async {
-        guard !loaded else { return }
-        guard let kit = service.atProtoKit else { loaded = true; return }
-        do {
-            let output = try await kit.getPostThread(from: post.uri)
-            guard case .threadViewPost(let thread) = output.thread else {
-                loaded = true; return
-            }
-
-            // Walk parent chain (ATProto nests parents recursively)
-            var chain: [PostItem] = []
-            var current = thread.parent
-            while let parentUnion = current {
-                if case .threadViewPost(let parentThread) = parentUnion {
-                    chain.append(PostItem(postView: parentThread.post))
-                    current = parentThread.parent
-                } else {
-                    break
-                }
-            }
-
-            // chain is newest-first; reverse so oldest is first in display
-            chain.reverse()
-
-            if chain.count > maxParentsShown {
-                hasMoreAbove = true
-                parents = Array(chain.suffix(maxParentsShown))
-            } else {
-                hasMoreAbove = false
-                parents = chain
-            }
-        } catch {
-            // Silently fail — thread context is a nice-to-have
-        }
-        loaded = true
-    }
-}
-
-// MARK: - Parent Post Row
-// A compact, read-only row showing a parent post in thread context.
-private struct ParentPostRow: View {
-    let post: PostItem
-    let avatarSize: CGFloat
-    var onTap: (() -> Void)?
-
-    var body: some View {
-        HStack(alignment: .top, spacing: AtmoTheme.Feed.avatarTextSpacing) {
-            AvatarView(url: post.authorAvatarURL, size: avatarSize)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: AtmoTheme.Spacing.xs) {
-                    if let name = post.authorDisplayName {
-                        Text(name)
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-                    }
-                    Text("@\(post.authorHandle)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Text(post.indexedAt.atmoFormatted())
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-
-                if !post.text.isEmpty {
-                    Text(post.text)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
         }
         .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
         .padding(.vertical, AtmoTheme.Spacing.xs)

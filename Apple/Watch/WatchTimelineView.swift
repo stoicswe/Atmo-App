@@ -83,6 +83,13 @@ struct WatchPostRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            // Reply context — the parent ships in the timeline payload.
+            if let parent = post.threadAncestors.last {
+                Label("@\(parent.authorHandle)", systemImage: "arrowshape.turn.up.left.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Text(post.displayText)
                 .font(.caption)
                 .lineLimit(4)

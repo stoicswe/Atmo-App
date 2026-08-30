@@ -329,16 +329,25 @@ struct AppNavigation: View {
     private var phoneTabView: some View {
         ZStack(alignment: .bottomTrailing) {
             TabView(selection: $selectedItem) {
-                // Primary tabs — Timeline gets its own owned NavigationPath so
-                // Spotlight deep-links can push a thread onto it from AppNavigation.
+                // Primary tabs — Timeline renders FLAT inside this stack (via
+                // splitNavPath) so exactly one NavigationStack is ever active;
+                // nesting a second one doubled the top chrome (blank band above
+                // the title). The stack owns the NavigationPath so Spotlight
+                // deep-links can push a thread onto it from AppNavigation.
                 NavigationStack(path: $phoneTimelineNavPath) {
-                    detailView(for: .timeline)
-                        .navigationDestination(for: PostNavTarget.self) { target in
-                            ThreadView(postURI: target.uri)
-                        }
-                        .navigationDestination(for: String.self) { did in
-                            ProfileView(actorDID: did)
-                        }
+                    TimelineView(
+                        viewModel: getOrCreateTimelineViewModel(),
+                        splitNavPath: $phoneTimelineNavPath
+                    )
+                    // Compact bar; the feed flows edge-to-edge beneath it.
+                    .navigationTitle("Home")
+                    .toolbarTitleDisplayMode(.inline)
+                    .navigationDestination(for: PostNavTarget.self) { target in
+                        ThreadView(postURI: target.uri)
+                    }
+                    .navigationDestination(for: String.self) { did in
+                        ProfileView(actorDID: did)
+                    }
                 }
                 .tabItem {
                     Label(SidebarItem.timeline.rawValue,
@@ -348,20 +357,19 @@ struct AppNavigation: View {
                 }
                 .tag(Optional(SidebarItem.timeline))
 
-                // Remaining primary tabs (search, notifications, messages)
+                // Remaining primary tabs (search, notifications, messages) —
+                // these views own their NavigationStack, so no wrapper here.
                 ForEach(primaryItems.filter { $0 != .timeline }) { item in
-                    NavigationStack {
-                        detailView(for: item)
-                    }
-                    .tabItem {
-                        Label(item.rawValue,
-                              systemImage: selectedItem == item ? item.filledIcon : item.icon)
-                    }
-                    .tag(Optional(item))
+                    detailView(for: item)
+                        .tabItem {
+                            Label(item.rawValue,
+                                  systemImage: selectedItem == item ? item.filledIcon : item.icon)
+                        }
+                        .tag(Optional(item))
                 }
 
-                // Profile tab
-                NavigationStack { detailView(for: .profile) }
+                // Profile tab (owns its NavigationStack)
+                detailView(for: .profile)
                     .tabItem {
                         Label(SidebarItem.profile.rawValue,
                               systemImage: selectedItem == .profile
@@ -370,8 +378,8 @@ struct AppNavigation: View {
                     }
                     .tag(Optional(SidebarItem.profile))
 
-                // Bookmarks tab
-                NavigationStack { detailView(for: .bookmarks) }
+                // Bookmarks tab (owns its NavigationStack)
+                detailView(for: .bookmarks)
                     .tabItem {
                         Label(SidebarItem.bookmarks.rawValue,
                               systemImage: selectedItem == .bookmarks
@@ -380,7 +388,8 @@ struct AppNavigation: View {
                     }
                     .tag(Optional(SidebarItem.bookmarks))
 
-                // Settings tab
+                // Settings tab — SettingsView has no stack of its own, so the
+                // wrapper here provides the nav bar for its title.
                 NavigationStack { detailView(for: .settings) }
                     .tabItem {
                         Label(SidebarItem.settings.rawValue,

@@ -13,6 +13,9 @@ extension MainView {
         let time: String
         let text: String
         let repostedBy: String?
+        /// Author of the post this one replies to (from the embedded thread
+        /// context); full inline parent rows are still TODO — see PORTING.md.
+        let replyToAuthor: String?
         let likeCount: Int
         let repostCount: Int
         let replyCount: Int
@@ -35,6 +38,9 @@ extension MainView {
                     time: post.createdAt.atmoFormatted(),
                     text: post.displayText,
                     repostedBy: repostedBy,
+                    replyToAuthor: post.threadAncestors.last.map {
+                        $0.authorDisplayName ?? "@\($0.authorHandle)"
+                    },
                     likeCount: post.likeCount,
                     repostCount: post.repostCount,
                     replyCount: post.replyCount,
@@ -93,6 +99,11 @@ extension MainView {
         VStack(spacing: 4) {
             if let repostedBy = row.repostedBy {
                 Text("↻ Reposted by \(repostedBy)")
+                    .style("dim-label")
+                    .halign(.start)
+            }
+            if let replyToAuthor = row.replyToAuthor {
+                Text("↩ Replying to \(replyToAuthor)")
                     .style("dim-label")
                     .halign(.start)
             }

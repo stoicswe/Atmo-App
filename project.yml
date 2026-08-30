@@ -89,6 +89,10 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Atmo
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
+        # Export compliance, answered at build time: the app uses only
+        # standard HTTPS/TLS (exempt), so TestFlight skips the "Missing
+        # Compliance" hold and auto-distributes to internal testers.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": YES
@@ -144,6 +148,10 @@ targets:
         # inheriting $(CFBundleIdentifier).
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Atmo
+        # Same export-compliance declaration as the iOS/macOS target —
+        # the embedded watch app must answer it too or it re-triggers the
+        # TestFlight compliance hold.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_WKApplication: YES
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: stoicswe.com-atmin-app
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES

@@ -48,9 +48,10 @@ public final class TimelineViewModel {
         return max(0, seenDIDs.count - Self.pillAvatarLimit)
     }
 
-    /// The URI of the first post that existed *before* the most recent silent prepend.
-    /// The view should immediately (no animation) scroll to this URI after new posts are
-    /// prepended so the existing content doesn't visually jump upward.
+    /// The highest pre-existing post still rendered after the most recent
+    /// silent prepend. UIs whose scroll views don't preserve position on
+    /// insert (e.g. the GTK front end) can re-anchor the viewport to it;
+    /// SwiftUI's `.scrollPosition(id:)` handles this natively and ignores it.
     public private(set) var newPostsAnchorURI: String? = nil
     public private(set) var error: Error? = nil
     private var cursor: String? = nil
@@ -186,10 +187,6 @@ public final class TimelineViewModel {
         defer { isCheckingForNew = false }
 
         do {
-            // Capture the first existing post's URI BEFORE mutating — the caller
-            // will use this to re-anchor the scroll position after prepending.
-            let anchorURI = posts.first?.uri
-
             // Fetch one page from the start (no cursor = freshest posts)
             let output = try await kit.getTimeline(limit: 50, cursor: nil)
             let fetched = output.feed.map { PostItem(feedPost: $0) }
@@ -202,11 +199,10 @@ public final class TimelineViewModel {
 
             guard !newItems.isEmpty else { return (0, nil) }
 
-            // Deduplicate thread context within the new batch, then re-run
-            // deduplication across the seam between the new and existing posts
-            // so a parent cell at the tail of the new batch isn't shown twice
-            // if the first existing post is a reply to it.
-            let deduped = Self.deduplicateThreadContext(newItems + posts)
+            // Collapse thread slices within the new batch, then again across
+            // the seam between the new and existing posts, so a fresh reply
+            // absorbs the cell its conversation already had further down.
+            let deduped = Self.collapseThreadSlices(newItems + posts)
             posts = deduped
 
             // Track the new posts as "unseen" — but only ones that survived
@@ -216,6 +212,10 @@ public final class TimelineViewModel {
             unseenNewPostURIs.formUnion(
                 newItems.map(\.uri).filter { renderedURIs.contains($0) }
             )
+
+            // Anchor = the highest pre-existing post still rendered; the view
+            // keeps the viewport glued to it while new rows land above.
+            let anchorURI = deduped.first(where: { existingURIs.contains($0.uri) })?.uri
             newPostsAnchorURI = anchorURI
 
             return (newItems.count, anchorURI)
@@ -263,7 +263,7 @@ public final class TimelineViewModel {
         do {
             let output = try await kit.getTimeline(limit: 50, cursor: cursor)
             let newItems = output.feed.map { PostItem(feedPost: $0) }
-            let dedupedItems = Self.deduplicateThreadContext(newItems)
+            let dedupedItems = Self.collapseThreadSlices(newItems)
             if replacing || cursor == nil {
                 // Full replace — deduplicate within the fresh batch itself
                 // in case the API returns the same post twice (e.g. a repost
@@ -286,29 +286,73 @@ public final class TimelineViewModel {
         }
     }
 
-    /// Removes posts that would appear redundantly as both a standalone feed cell AND
-    /// as inline thread context above the reply that follows them.
+    /// Tidies raw timeline pages so one conversation occupies ONE feed cell
+    /// instead of several scattered slices.
     ///
-    /// When the timeline contains post A immediately followed by post B (a direct reply
-    /// to A), the feed cell fetches and shows A as a parent above B. Keeping A as its
-    /// own cell too means the user sees it twice in a row.
+    /// The raw timeline includes every followed account's reply as its own
+    /// feed item, so an active conversation appears as many separate cells,
+    /// each re-rendering the same parents as inline context ("More in
+    /// thread" soup). Two passes fix that:
     ///
-    /// Rule: suppress post[i] if post[i+1].replyParentURI == post[i].uri.
-    /// We only suppress the *immediately preceding* cell — not any further ancestors —
-    /// so longer reply chains still show their own cells (they only inline up to 2 parents).
+    ///  1. Adjacent-parent suppression — drop post[i] when post[i+1] is its
+    ///     direct reply; the reply's cell renders the parent inline.
+    ///  2. Thread grouping — every organic (non-repost) post belongs to a
+    ///     thread, keyed by its reply root (or itself for root posts). Only
+    ///     one cell per thread survives: the newest post in it, placed at
+    ///     the highest feed position any member occupied. The newest reply
+    ///     renders its ancestors inline and the "More in thread" affordance
+    ///     opens the full conversation, so nothing is lost.
+    ///
+    /// Reposts are exempt from both passes — "X reposted" is its own story
+    /// — and exact-URI duplicates are handled by the fetch/prepend merges.
     /// Internal (not private) so the unit tests can exercise it directly.
-    static func deduplicateThreadContext(_ items: [PostItem]) -> [PostItem] {
+    static func collapseThreadSlices(_ items: [PostItem]) -> [PostItem] {
         guard items.count > 1 else { return items }
-        var result: [PostItem] = []
-        result.reserveCapacity(items.count)
+
+        // Pass 1: parent cell sitting directly above its own reply.
+        var slices: [PostItem] = []
+        slices.reserveCapacity(items.count)
         for (index, post) in items.enumerated() {
-            // Check whether the *next* item in the feed is a direct reply to this post.
-            // If so, skip this cell — the reply's thread context will show it inline.
-            if index + 1 < items.count,
+            if post.reason == nil,
+               index + 1 < items.count,
                items[index + 1].replyParentURI == post.uri {
                 continue
             }
-            result.append(post)
+            slices.append(post)
+        }
+
+        // Pass 2: one cell per thread.
+        func threadKey(_ post: PostItem) -> String {
+            post.replyRootURI ?? post.replyParentURI ?? post.uri
+        }
+
+        // Representative per thread: the newest member (ties prefer a reply
+        // over the bare root, since replies carry their context inline).
+        var newestInThread: [String: PostItem] = [:]
+        for post in slices where post.reason == nil {
+            let key = threadKey(post)
+            if let current = newestInThread[key] {
+                let isNewer = post.indexedAt > current.indexedAt
+                    || (post.indexedAt == current.indexedAt
+                        && post.replyParentURI != nil
+                        && current.replyParentURI == nil)
+                if isNewer { newestInThread[key] = post }
+            } else {
+                newestInThread[key] = post
+            }
+        }
+
+        var emittedThreads = Set<String>()
+        var result: [PostItem] = []
+        result.reserveCapacity(slices.count)
+        for post in slices {
+            if post.reason != nil {
+                result.append(post)
+                continue
+            }
+            let key = threadKey(post)
+            guard emittedThreads.insert(key).inserted else { continue }
+            result.append(newestInThread[key] ?? post)
         }
         return result
     }
