@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder app icon: a sky-gradient rounded square with a cloud
+     mark. Replace with the real Atmo icon when branding lands. -->
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4facfe"/>
+      <stop offset="1" stop-color="#00c6fb"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#sky)"/>
+  <g fill="#ffffff" opacity="0.95">
+    <circle cx="96" cy="148" r="34"/>
+    <circle cx="136" cy="124" r="42"/>
+    <circle cx="172" cy="152" r="30"/>
+    <rect x="96" y="146" width="76" height="36" rx="18"/>
+  </g>
+</svg>

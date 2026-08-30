@@ -1,0 +1,109 @@
+# Snap package for the Linux app (LinuxApp/ + AtmoCore/).
+#
+# Base is core26 (Ubuntu 26.04 LTS) because the UI toolkit needs
+# libadwaita >= 1.7 — core24's 1.5 is too old.
+#
+# TODO: switch to `extensions: [gnome]` once the gnome extension
+# supports core26 (https://github.com/canonical/snapcraft/issues/6185).
+# That replaces the hand-staged GTK stack, the launcher script's env
+# plumbing, and most of the interface plugs below with the shared GNOME
+# platform snap — smaller snap, better theming.
+name: atmo
+base: core26
+adopt-info: atmo
+summary: "Atmo — a Bluesky client"
+description: |
+  Atmo is a Bluesky (AT Protocol) client. Timeline, notifications,
+  posting, likes and reposts — sharing its model layer (AtmoCore) with
+  the macOS, iOS, and watchOS apps.
+license: MIT
+grade: stable
+confinement: strict
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+  arm64:
+    build-on: [arm64]
+    build-for: [arm64]
+
+apps:
+  atmo:
+    command: usr/bin/atmo-launch
+    desktop: meta/gui/atmo.desktop
+    plugs:
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - opengl
+      - gsettings
+      - home
+      - network
+
+parts:
+  atmo:
+    plugin: nil
+    source: .
+    build-packages:
+      - binutils
+      - build-essential
+      - ca-certificates
+      - curl
+      - git
+      - libcurl4-openssl-dev
+      - libedit2
+      - libglib2.0-bin
+      - libncurses-dev
+      - libsqlite3-0
+      - libxml2-dev
+      - pkg-config
+      - zlib1g-dev
+      - libadwaita-1-dev
+    stage-packages:
+      - libgtk-4-1
+      - libadwaita-1-0
+      - adwaita-icon-theme
+      - shared-mime-info
+      - libgdk-pixbuf2.0-bin
+      - libssl3t64
+    override-pull: |
+      craftctl default
+      # Snap versions are capped at 32 characters, so keep the SHA short
+      # and truncate; the leading "v" only adds noise in store listings.
+      version="$(git -C "$CRAFT_PART_SRC" describe --tags --always --abbrev=7 2>/dev/null || echo dev)"
+      version="${version#v}"
+      craftctl set version="${version:0:32}"
+    override-build: |
+      set -eu
+      # swift.org toolchain — Ubuntu's apt swiftlang (6.1) is too old for
+      # the UI toolkit's Swift 6.2 manifests. The 24.04 build runs on
+      # 26.04 with a libxml2 soname shim (26.04 renamed .so.2 -> .so.16).
+      SWIFT_VERSION=6.2.3
+      case "$(uname -m)" in
+          x86_64)  DIR="ubuntu2404";         SUF="" ;;
+          aarch64) DIR="ubuntu2404-aarch64"; SUF="-aarch64" ;;
+          *) echo "unsupported arch" >&2; exit 1 ;;
+      esac
+      if [ ! -d /opt/swift ]; then
+          curl -fsSL "https://download.swift.org/swift-${SWIFT_VERSION}-release/${DIR}/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.04${SUF}.tar.gz" \
+              | tar xz -C /opt
+          mv /opt/swift-${SWIFT_VERSION}-RELEASE-ubuntu24.04${SUF} /opt/swift
+      fi
+      real=$(ls /usr/lib/*/libxml2.so.* | grep -E 'so\.[0-9]+$' | head -1)
+      [ -e "$(dirname "$real")/libxml2.so.2" ] || ln -s "$real" "$(dirname "$real")/libxml2.so.2"
+      export PATH="/opt/swift/usr/bin:$PATH"
+      swift build --package-path LinuxApp -c release --static-swift-stdlib --product Atmo
+      install -Dm755 LinuxApp/.build/release/Atmo "$CRAFT_PART_INSTALL/usr/bin/atmo"
+      install -Dm755 LinuxApp/snap-assets/atmo-launch "$CRAFT_PART_INSTALL/usr/bin/atmo-launch"
+      # Also install the icon under its app id so GNOME shell and the
+      # About dialog (which take an icon *name*) can find it.
+      install -Dm644 snap/gui/icon.svg \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/com.stoicswe.atmo.svg"
+    override-prime: |
+      craftctl default
+      # Staged schemas ship uncompiled; GTK needs the compiled cache.
+      if [ -d usr/share/glib-2.0/schemas ]; then
+          glib-compile-schemas usr/share/glib-2.0/schemas || true
+      fi

@@ -1,0 +1,23 @@
+{
+  "pins": [
+    {
+      "identity": "atprotokit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/MasterJ93/ATProtoKit.git",
+      "state": {
+        "revision": "263f093f211d4c68ee7c77f3dc5b4dab1530cc5c",
+        "version": "0.34.1"
+      }
+    },
+    {
+      "identity": "swift-log",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/stoicswe/swift-log.git",
+      "state": {
+        "branch": "main",
+        "revision": "47a917767fde0cd7f5b5dfdabbec733d2cb2dd95"
+      }
+    }
+  ],
+  "version": 3
+}

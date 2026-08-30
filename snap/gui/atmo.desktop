@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Atmo
+Comment=A Bluesky client
+Exec=atmo %U
+Icon=${SNAP}/meta/gui/icon.svg
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupWMClass=com.stoicswe.atmo

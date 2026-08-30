@@ -1,0 +1,78 @@
+{
+  "originHash" : "5cab96f2a49367344c0b4a238d0f08f2059b660e37944a8c6399ea04e926f907",
+  "pins" : [
+    {
+      "identity" : "adwaita-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://git.aparoksha.dev/aparoksha/adwaita-swift",
+      "state" : {
+        "branch" : "main",
+        "revision" : "476f9e36d34239aed78ce141b8af435d8825c859"
+      }
+    },
+    {
+      "identity" : "atprotokit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/MasterJ93/ATProtoKit.git",
+      "state" : {
+        "revision" : "263f093f211d4c68ee7c77f3dc5b4dab1530cc5c",
+        "version" : "0.34.1"
+      }
+    },
+    {
+      "identity" : "csqlite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephencelis/CSQLite",
+      "state" : {
+        "revision" : "8ad83035460a3d1029a2c5a0cca4f980297a9ca2",
+        "version" : "3.53.3"
+      }
+    },
+    {
+      "identity" : "levenshtein-transformations",
+      "kind" : "remoteSourceControl",
+      "location" : "https://git.aparoksha.dev/aparoksha/levenshtein-transformations",
+      "state" : {
+        "branch" : "main",
+        "revision" : "06577a2c4c6419ed859e34a8fb7be87a3b8975da"
+      }
+    },
+    {
+      "identity" : "meta",
+      "kind" : "remoteSourceControl",
+      "location" : "https://git.aparoksha.dev/aparoksha/meta",
+      "state" : {
+        "branch" : "main",
+        "revision" : "394b376ac691fb3fd3a62f30066dccbe3fad2786"
+      }
+    },
+    {
+      "identity" : "meta-sqlite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://git.aparoksha.dev/aparoksha/meta-sqlite",
+      "state" : {
+        "branch" : "main",
+        "revision" : "56bc247d90a381eed65e0adf37ff36b5a6d674d8"
+      }
+    },
+    {
+      "identity" : "sqlite.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephencelis/SQLite.swift",
+      "state" : {
+        "revision" : "964c300fb0736699ce945c9edb56ecd62eba27a3",
+        "version" : "0.16.0"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stoicswe/swift-log.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "47a917767fde0cd7f5b5dfdabbec733d2cb2dd95"
+      }
+    }
+  ],
+  "version" : 3
+}
