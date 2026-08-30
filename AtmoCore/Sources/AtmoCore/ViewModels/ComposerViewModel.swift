@@ -93,6 +93,39 @@ public final class ComposerViewModel {
         slots.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
+    // MARK: Exit policy
+
+    /// What should happen to the draft when the composer is closed without
+    /// posting.
+    public enum ExitDraftPolicy: Sendable {
+        /// Nothing was typed — close silently and clear any stale autosave.
+        case discardSilently
+        /// A single post with content — ask the user whether to keep it.
+        case promptToSave
+        /// A multi-post thread — too much work to risk on a mis-tap: keep
+        /// it without asking.
+        case autoSave
+    }
+
+    /// Policy for the current slots. Only typed text counts as content —
+    /// drafts persist image *file names*, not the images, so an image-only
+    /// slot would restore to nothing worth keeping.
+    public var exitDraftPolicy: ExitDraftPolicy {
+        Self.exitDraftPolicy(forSlotTexts: slots.map(\.text))
+    }
+
+    /// Pure decision core, exposed for the unit tests.
+    static func exitDraftPolicy(forSlotTexts texts: [String]) -> ExitDraftPolicy {
+        let contentful = texts.filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+        switch contentful {
+        case 0:  return .discardSilently
+        case 1:  return .promptToSave
+        default: return .autoSave
+        }
+    }
+
     // MARK: Validation
     /// True only when every slot can be posted and at least one slot exists.
     public var canSubmitThread: Bool {
@@ -171,6 +204,12 @@ public final class ComposerViewModel {
     }
 
     public func saveDraft() {
+        // Never persist an empty draft — and if the user typed, autosave
+        // fired, then they deleted everything, remove the stale copy too.
+        guard hasMeaningfulContent else {
+            draftStore.delete(id: draftID)
+            return
+        }
         let draftPosts = slots.map { slot in
             DraftPost(
                 id: slot.id,

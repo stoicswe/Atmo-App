@@ -17,13 +17,15 @@ import Translation
 //     has content)
 //   • Bottom bar: "Post Options" · character ring · Post pill
 //
-// Draft behaviour (unchanged):
-//   • Text is auto-saved 400 ms after each keystroke via ComposerViewModel.
-//   • Pressing Cancel with content shows a "Discard / Save Draft / Keep Editing"
-//     confirmation. "Save Draft" explicitly saves and dismisses.
-//   • Dismissing via any other path (swipe on iOS, click-outside or native
-//     Cancel on macOS) auto-saves the draft when there is meaningful content,
-//     then fires the draftSaved environment action to show the toast.
+// Draft behaviour (driven by ComposerViewModel.exitDraftPolicy):
+//   • Text is auto-saved 400 ms after each keystroke via ComposerViewModel
+//     (the VM refuses to persist empty drafts and clears stale autosaves).
+//   • Exiting with NO typed content closes silently — no draft is kept.
+//   • Exiting a SINGLE post with content prompts "Save / Discard / Keep
+//     Editing" (interactive swipe-dismiss is blocked in this state so the
+//     prompt can't be bypassed accidentally).
+//   • Exiting a MULTI-POST thread auto-saves without asking — too much
+//     work to risk on a mis-tap — and shows the "Draft saved" toast.
 //   • Submitting successfully auto-discards the draft and dismisses the sheet.
 struct ComposerView: View {
     var replyTo: PostItem? = nil
@@ -202,15 +204,21 @@ struct ComposerView: View {
             .task {
                 await viewModel?.fetchCurrentUserAvatar()
             }
-            // Swipe-to-dismiss detection:
-            // When the sheet is pulled down interactively, SwiftUI removes the view
-            // without going through our Cancel button. We detect this via onDisappear —
-            // if dismissedExplicitly is still false at that point, the user swiped.
-            // We then ensure the draft is saved (the debounced auto-save may not have
-            // flushed yet) and notify the caller to show a toast.
+            // Single contentful post: the exit decision belongs to the user,
+            // so the swipe can't bypass the Save/Discard prompt — Cancel is
+            // the way out. Empty and multi-post states dismiss freely.
+            .interactiveDismissDisabled(viewModel?.exitDraftPolicy == .promptToSave)
+            // External dismissal (swipe on iOS, click-outside or native Cancel
+            // on macOS) never went through handleCancel — apply the exit
+            // policy here. promptToSave can still land here on macOS paths
+            // where no prompt is possible; saving is the safe default there.
             .onDisappear {
-                guard let vm = viewModel else { return }
-                if !dismissedExplicitly && vm.hasMeaningfulContent {
+                guard let vm = viewModel, !dismissedExplicitly else { return }
+                switch vm.exitDraftPolicy {
+                case .discardSilently:
+                    // Clears any stale autosave from text that was deleted.
+                    vm.discardDraft()
+                case .promptToSave, .autoSave:
                     // Flush the debounced auto-save immediately and notify
                     // both the direct callback (if any) and the environment action.
                     vm.saveDraft()
@@ -234,14 +242,23 @@ struct ComposerView: View {
             dismiss()
             return
         }
-        if vm.hasMeaningfulContent {
-            // Show the action sheet — the user chooses Discard or Keep Editing.
-            // dismissedExplicitly is set to true inside the Discard button action.
-            showDiscardAlert = true
-        } else {
-            // Nothing to save — close cleanly without a draft.
+        switch vm.exitDraftPolicy {
+        case .discardSilently:
+            // Nothing typed — close cleanly without a draft.
             dismissedExplicitly = true
             vm.discardDraft()
+            dismiss()
+        case .promptToSave:
+            // Single post: the user chooses Save / Discard / Keep Editing.
+            // dismissedExplicitly is set inside the chosen button's action.
+            showDiscardAlert = true
+        case .autoSave:
+            // Multi-post thread: keep it without asking, with the toast as
+            // the receipt.
+            dismissedExplicitly = true
+            vm.saveDraft()
+            onDraftSaved?()
+            draftSavedAction()
             dismiss()
         }
     }

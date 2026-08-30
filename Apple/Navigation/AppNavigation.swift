@@ -348,8 +348,14 @@ struct AppNavigation: View {
     private var phoneTabView: some View {
         ZStack(alignment: .leading) {
             phoneMainShell
-                .clipShape(RoundedRectangle(
-                    cornerRadius: phoneMenuOpen ? 40 : 0, style: .continuous))
+                // Card clip for the receded state. When CLOSED the shape is
+                // expanded well past the view's bounds — clipping at the
+                // bounds would sever the background's bleed under the status
+                // bar and home indicator, leaving black bands at both edges.
+                .clipShape(
+                    RoundedRectangle(cornerRadius: phoneMenuOpen ? 40 : 0, style: .continuous)
+                        .inset(by: phoneMenuOpen ? 0 : -200)
+                )
                 // "Slides backwards away from the viewer": scale down and
                 // nudge right so the drawer reads as a layer above it.
                 .scaleEffect(phoneMenuOpen ? 0.90 : 1)
@@ -484,7 +490,16 @@ struct AppNavigation: View {
                 Spacer(minLength: 0)
             }
 
-            ComposeFAB { showComposer = true }
+            // Search page: the right circle dismisses the keyboard instead
+            // of composing — the field lives in this bar, so this is its
+            // natural "done" affordance. Compose is on every other page.
+            if selectedItem == .search {
+                DismissKeyboardFAB()
+                    .transition(.blurReplace)
+            } else {
+                ComposeFAB { showComposer = true }
+                    .transition(.blurReplace)
+            }
         }
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.top, AtmoTheme.Spacing.xs)
@@ -574,6 +589,8 @@ private struct PhoneSideMenu: View {
     let onSelect: (SidebarItem) -> Void
 
     var body: some View {
+        // A floating Liquid Glass panel: inset from the top and bottom
+        // edges with rounded corners, rather than an edge-to-edge sheet.
         VStack(alignment: .leading, spacing: 0) {
             Text("Atmo")
                 .font(.largeTitle.bold())
@@ -585,10 +602,12 @@ private struct PhoneSideMenu: View {
                 menuRow(item)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, ignoresSafeAreaEdges: .all)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 36, style: .continuous))
+        .padding(.leading, AtmoTheme.Spacing.sm)
+        .padding(.vertical, AtmoTheme.Spacing.lg)
     }
 
     @ViewBuilder
@@ -666,6 +685,28 @@ private struct PhoneSearchField: View {
             // is already active, keep the results visible instead.
             if viewModel.query.isEmpty { focused = true }
         }
+    }
+}
+
+// MARK: - Dismiss Keyboard FAB
+// Takes compose's slot on the Search page only — the search field lives in
+// the bottom bar there, so the circle acts as its "done" control.
+private struct DismissKeyboardFAB: View {
+    var body: some View {
+        Button {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
+        } label: {
+            Image(systemName: "keyboard.chevron.compact.down")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(AtmoColors.accent)
+                .frame(width: 56, height: 56)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(FABButtonStyle())
+        .accessibilityLabel("Dismiss Keyboard")
     }
 }
 #endif
