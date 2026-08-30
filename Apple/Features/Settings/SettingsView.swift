@@ -7,8 +7,9 @@ import Combine
 // Multi-tab settings, mirroring the {m.txt} editor's preferences window:
 // Appearance (auto/light/dark + the shared accent palette), Accessibility,
 // Account (session + sign out), and About (developer profile + tip jar).
-// macOS gets a native preferences TabView; iOS switches tabs with a
-// segmented control.
+// macOS gets a native preferences TabView; iOS switches sections with a
+// Mail-style category chip bar — the selected section is an expanded
+// accent capsule with icon + label, the rest collapse to icon circles.
 struct SettingsView: View {
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
@@ -50,15 +51,19 @@ struct SettingsView: View {
         .navigationTitle("Settings")
 #else
         VStack(spacing: 0) {
-            Picker("Section", selection: $selectedTab) {
-                ForEach(SettingsTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AtmoTheme.Spacing.sm) {
+                    ForEach(SettingsTab.allCases) { tab in
+                        CategoryChip(tab: tab, isSelected: selectedTab == tab) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTab = tab
+                            }
+                        }
+                    }
                 }
+                .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+                .padding(.vertical, AtmoTheme.Spacing.sm)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
-            .padding(.vertical, AtmoTheme.Spacing.sm)
 
             switch selectedTab {
             case .appearance:    AppearanceTab()
@@ -72,6 +77,40 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
 #endif
     }
+
+#if os(iOS)
+    // Mail-style category chip: a compact icon circle that expands into a
+    // tinted capsule with its label when selected.
+    private struct CategoryChip: View {
+        let tab: SettingsTab
+        let isSelected: Bool
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 15, weight: .medium))
+                    if isSelected {
+                        Text(tab.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                            .fixedSize()
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
+                    }
+                }
+                .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                .padding(.horizontal, isSelected ? AtmoTheme.Spacing.lg : 0)
+                .frame(height: 40)
+                .frame(minWidth: 40)
+                .background {
+                    Capsule().fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.12))
+                }
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+#endif
 }
 
 // MARK: - Appearance
@@ -92,6 +131,22 @@ private struct AppearanceTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+#if os(iOS)
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                Section {
+                    NavigationLink("Customize Bottom Menu") {
+                        BottomMenuEditorView()
+                    }
+                } header: {
+                    Text("Navigation")
+                } footer: {
+                    Text("Choose which items join Home in the bottom menu, and their order. Everything else lives in the menu that slides in from the left.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+#endif
 
             Section {
                 Picker("Appearance", selection: $schemeRaw) {
@@ -134,6 +189,111 @@ private struct AppearanceTab: View {
         .formStyle(.grouped)
     }
 }
+
+#if os(iOS)
+// MARK: - Bottom Menu Editor
+// Mail-style favorites editor: the top section is the bottom bar (Home
+// pinned, chosen items removable and drag-reorderable), the bottom section
+// is everything living in the side menu, addable with a tap.
+private struct BottomMenuEditorView: View {
+    @AppStorage(PhoneBarConfig.storageKey) private var barItemsRaw = PhoneBarConfig.defaultValue
+
+    private var barItems: [SidebarItem] {
+        Array(PhoneBarConfig.decode(barItemsRaw).prefix(PhoneBarConfig.maxCustomTabs))
+    }
+
+    private var sidebarItems: [SidebarItem] {
+        let chosen = barItems
+        return PhoneBarConfig.eligible.filter { !chosen.contains($0) }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                // Home is pinned — always present, always first.
+                HStack(spacing: 12) {
+                    Image(systemName: SidebarItem.timeline.icon)
+                        .frame(width: 28)
+                    Text(SidebarItem.timeline.rawValue)
+                    Spacer()
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.secondary)
+
+                ForEach(barItems) { item in
+                    HStack(spacing: 12) {
+                        Button {
+                            remove(item)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                        Image(systemName: item.icon)
+                            .frame(width: 28)
+                        Text(item.rawValue)
+                    }
+                }
+                .onMove { from, to in
+                    var items = barItems
+                    items.move(fromOffsets: from, toOffset: to)
+                    barItemsRaw = PhoneBarConfig.encode(items)
+                }
+            } header: {
+                Text("Bottom menu")
+            } footer: {
+                Text("Up to \(PhoneBarConfig.maxCustomTabs) items join Home. Drag to reorder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                ForEach(sidebarItems) { item in
+                    HStack(spacing: 12) {
+                        Button {
+                            add(item)
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(barItems.count >= PhoneBarConfig.maxCustomTabs
+                                                 ? Color.secondary : Color.green)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(barItems.count >= PhoneBarConfig.maxCustomTabs)
+                        Image(systemName: item.icon)
+                            .frame(width: 28)
+                        Text(item.rawValue)
+                    }
+                }
+            } header: {
+                Text("Side menu")
+            } footer: {
+                Text("These stay in the menu that slides in from the left edge.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        // Keeps the reorder handles visible without an Edit button.
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("Bottom Menu")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func remove(_ item: SidebarItem) {
+        withAnimation {
+            barItemsRaw = PhoneBarConfig.encode(barItems.filter { $0 != item })
+        }
+    }
+
+    private func add(_ item: SidebarItem) {
+        guard barItems.count < PhoneBarConfig.maxCustomTabs else { return }
+        withAnimation {
+            barItemsRaw = PhoneBarConfig.encode(barItems + [item])
+        }
+    }
+}
+#endif
 
 // MARK: - Notifications
 

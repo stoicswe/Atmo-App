@@ -238,15 +238,17 @@ struct TimelineView: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.newPostsCount > 0)
 
             // ── Scroll-to-top FAB ──
-            // Appears in the bottom-trailing corner once the user has scrolled
-            // away from the top. Tapping scrolls smoothly back to the first post.
+            // Appears once the user has scrolled away from the top, stacked
+            // directly ABOVE the compose control (never behind it): on the
+            // iPhone that's just over the bottom bar's compose circle, on
+            // iPad/macOS just over the floating compose FAB.
             if !isAtTop {
                 ScrollToTopButton {
                     jumpToTop(vm: vm)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, AtmoTheme.Spacing.xxl)
-                .padding(.bottom, AtmoTheme.Spacing.xxl)
+                .padding(.trailing, scrollToTopTrailingPadding)
+                .padding(.bottom, scrollToTopBottomPadding)
                 .transition(.scale(scale: 0.7).combined(with: .opacity))
                 .zIndex(9)
                 .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isAtTop)
@@ -273,6 +275,30 @@ struct TimelineView: View {
                 positionStore.save(topPostURI: uri)
             }
         }
+    }
+
+    /// Horizontal position: center the 44pt button over the compose circle
+    /// (56pt wide — at the bottom bar's lg inset on iPhone, at the floating
+    /// FAB's xxl inset on iPad/macOS).
+    private var scrollToTopTrailingPadding: CGFloat {
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return AtmoTheme.Spacing.lg + 6
+        }
+#endif
+        return AtmoTheme.Spacing.xxl + 6
+    }
+
+    /// Vertical position: clear the compose control below.
+    private var scrollToTopBottomPadding: CGFloat {
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            // Above the floating bottom bar (pill + compose circle).
+            return 88
+        }
+#endif
+        // Above the floating compose FAB (56pt circle + its xxl inset).
+        return AtmoTheme.Spacing.xxl + 56 + AtmoTheme.Spacing.md
     }
 
     /// Scrolls to the newest post and retires the pill. Shared by the pill
@@ -319,6 +345,22 @@ struct TimelineView: View {
                 isAtTop = nowAtTop
             }
         }
+
+#if os(iOS)
+        // Native-style bar minimize on the phone: scrolling down collapses
+        // the bottom bar to a corner button; scrolling up (or returning to
+        // the top) restores it. Writes are guarded so per-frame samples
+        // don't churn the observable.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            let chrome = PhoneChromeState.shared
+            let delta = offset - previous
+            if nowAtTop || delta > 8 {
+                if chrome.barCollapsed { chrome.barCollapsed = false }
+            } else if offset < -120, delta < -4, !chrome.barCollapsed {
+                chrome.barCollapsed = true
+            }
+        }
+#endif
 
         // ── Pull-to-refresh ──
         // offset > 0 means the user has actively pulled the scroll content below its

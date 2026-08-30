@@ -47,10 +47,40 @@ private let primaryItems: [SidebarItem] = [.timeline, .search, .notifications, .
 private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .drafts, .settings]
 
 #if os(iOS)
-// iPhone shell: three tabs grouped in the bottom pill (Phone-app style)…
-private let phoneTabs: [SidebarItem] = [.timeline, .search, .notifications]
-// …and everything else in the left drawer menu.
-private let phoneMenuItems: [SidebarItem] = [.messages, .profile, .bookmarks, .drafts, .settings]
+// MARK: - Phone Bar Configuration
+/// User-configurable bottom-menu composition for the iPhone shell
+/// (Settings → Appearance → Customize Bottom Menu). Home is always pinned
+/// first; up to three chosen items join it, and everything else lives in
+/// the left drawer.
+enum PhoneBarConfig {
+    static let storageKey = "atmo.phone.barItems"
+    static let defaultValue = "Search,Activity,Profile"
+    static let maxCustomTabs = 3
+    /// Everything that can be placed in either the bar or the drawer.
+    static let eligible: [SidebarItem] =
+        [.search, .notifications, .messages, .profile, .bookmarks, .drafts, .settings]
+
+    static func decode(_ raw: String) -> [SidebarItem] {
+        raw.split(separator: ",")
+            .compactMap { SidebarItem(rawValue: String($0)) }
+            .filter { eligible.contains($0) }
+    }
+
+    static func encode(_ items: [SidebarItem]) -> String {
+        items.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+/// Shared chrome state for the iPhone shell. Scrollable views (the feed)
+/// collapse the bottom bar on scroll-down and restore it on scroll-up,
+/// mirroring the native tab bar's minimize behavior.
+@MainActor
+@Observable
+final class PhoneChromeState {
+    static let shared = PhoneChromeState()
+    /// True while the tab pill is minimized to a single corner button.
+    var barCollapsed = false
+}
 #endif
 
 // MARK: - Root Navigation
@@ -66,6 +96,24 @@ struct AppNavigation: View {
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
+    /// iPhone: a DM conversation is on top of the stack — its own message
+    /// input takes over the bottom edge, so the app bar steps aside.
+    @State private var phoneConversationOpen = false
+    /// iPhone: user-chosen bottom-bar items (comma-joined rawValues).
+    @AppStorage(PhoneBarConfig.storageKey) private var phoneBarItemsRaw = PhoneBarConfig.defaultValue
+    /// iPhone: shared bar-minimize state, written by scrolling views.
+    private let phoneChrome = PhoneChromeState.shared
+
+    /// Home plus the user's chosen tabs, in their chosen order.
+    private var phoneTabItems: [SidebarItem] {
+        [.timeline] + Array(PhoneBarConfig.decode(phoneBarItemsRaw).prefix(PhoneBarConfig.maxCustomTabs))
+    }
+
+    /// Everything eligible that isn't in the bar goes to the drawer.
+    private var phoneDrawerItems: [SidebarItem] {
+        let tabs = phoneTabItems
+        return PhoneBarConfig.eligible.filter { !tabs.contains($0) }
+    }
 #endif
 
     /// Bound to AtmoApp — set when the user taps a Spotlight bookmark result.
@@ -352,10 +400,9 @@ struct AppNavigation: View {
                 // expanded well past the view's bounds — clipping at the
                 // bounds would sever the background's bleed under the status
                 // bar and home indicator, leaving black bands at both edges.
-                .clipShape(
-                    RoundedRectangle(cornerRadius: phoneMenuOpen ? 40 : 0, style: .continuous)
-                        .inset(by: phoneMenuOpen ? 0 : -200)
-                )
+                // RecedeCardShape animates its progress, so the crop eases
+                // in with the spring instead of popping.
+                .clipShape(RecedeCardShape(progress: phoneMenuOpen ? 1 : 0))
                 // "Slides backwards away from the viewer": scale down and
                 // nudge right so the drawer reads as a layer above it.
                 .scaleEffect(phoneMenuOpen ? 0.90 : 1)
@@ -368,7 +415,7 @@ struct AppNavigation: View {
                     .onTapGesture { phoneMenuOpen = false }
                     .transition(.opacity)
 
-                PhoneSideMenu(active: selectedItem) { item in
+                PhoneSideMenu(active: selectedItem, items: phoneDrawerItems) { item in
                     selectedItem = item
                     phoneMenuOpen = false
                 }
@@ -410,11 +457,21 @@ struct AppNavigation: View {
                 }
                 .navigationDestination(for: ConversationItem.self) { convo in
                     ConversationDetailView(conversation: convo)
+                        // The conversation's own input bar owns the bottom
+                        // edge while it's on top — hide the app bar with it.
+                        .onAppear { phoneConversationOpen = true }
+                        .onDisappear { phoneConversationOpen = false }
                 }
         }
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
-        .safeAreaInset(edge: .bottom, spacing: 0) { phoneBottomBar }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !phoneConversationOpen {
+                phoneBottomBar
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: phoneConversationOpen)
     }
 
     /// The three pill tabs stay alive (opacity toggle) so their scroll
@@ -447,6 +504,11 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .notifications)
                 .navigationTitle(active == .notifications ? "Activity" : "")
 
+            ProfileView(actorDID: nil, splitNavPath: $phoneTimelineNavPath)
+                .opacity(active == .profile ? 1 : 0)
+                .allowsHitTesting(active == .profile)
+                .navigationTitle(active == .profile ? "Profile" : "")
+
             // Drawer destinations — recreated on entry, which is fine (they
             // were separate coldly-switched tabs before).
             Group {
@@ -454,9 +516,6 @@ struct AppNavigation: View {
                 case .messages:
                     ConversationListView(embeddedInSplitView: true)
                         .navigationTitle("Messages")
-                case .profile:
-                    ProfileView(actorDID: nil, splitNavPath: $phoneTimelineNavPath)
-                        .navigationTitle("Profile")
                 case .bookmarks:
                     BookmarksView(splitNavPath: $phoneTimelineNavPath)
                         .navigationTitle("Bookmarks")
@@ -484,6 +543,31 @@ struct AppNavigation: View {
             if selectedItem == .search, let searchVm = searchViewModel {
                 PhoneSearchField(viewModel: searchVm)
                     .transition(.blurReplace)
+            } else if phoneChrome.barCollapsed {
+                // Minimized (scroll-down): a single corner button showing
+                // the current tab. Tap expands the pill; long-press offers
+                // the tabs directly via the native menu.
+                Menu {
+                    ForEach(phoneTabItems) { item in
+                        Button {
+                            selectedItem = item
+                            phoneChrome.barCollapsed = false
+                        } label: {
+                            Label(item.rawValue, systemImage: item.icon)
+                        }
+                    }
+                } label: {
+                    Image(systemName: (selectedItem ?? .timeline).filledIcon)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(AtmoColors.accent)
+                        .frame(width: 48, height: 48)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                } primaryAction: {
+                    phoneChrome.barCollapsed = false
+                }
+                .buttonStyle(.plain)
+                .transition(.blurReplace)
+                Spacer(minLength: 0)
             } else {
                 phoneTabPill
                     .transition(.blurReplace)
@@ -505,13 +589,15 @@ struct AppNavigation: View {
         .padding(.top, AtmoTheme.Spacing.xs)
         .padding(.bottom, AtmoTheme.Spacing.sm)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedItem == .search)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phoneChrome.barCollapsed)
     }
 
     private var phoneTabPill: some View {
         HStack(spacing: 2) {
-            ForEach(phoneTabs) { item in
+            ForEach(phoneTabItems) { item in
                 Button {
                     selectedItem = item
+                    phoneChrome.barCollapsed = false
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: selectedItem == item ? item.filledIcon : item.icon)
@@ -520,7 +606,7 @@ struct AppNavigation: View {
                             .font(.system(size: 10, weight: .medium))
                     }
                     .foregroundStyle(selectedItem == item ? AtmoColors.accent : Color.secondary)
-                    .frame(width: 62, height: 48)
+                    .frame(width: 58, height: 48)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -582,10 +668,39 @@ struct AppNavigation: View {
 
 // MARK: - Liquid Glass Compose FAB
 #if os(iOS)
+// MARK: - Recede Card Shape
+// The crop applied to the main shell as the drawer opens. progress 0 =
+// expanded 200pt past the bounds (nothing visibly clipped, edge-to-edge
+// bleed intact), progress 1 = a tight 40pt rounded card. A single
+// animatable value drives both the inset and the corner radius — a plain
+// `RoundedRectangle().inset(by:)` doesn't interpolate inside clipShape,
+// which made the crop appear as a sudden glitch instead of easing in.
+private struct RecedeCardShape: Shape {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let expansion = (1 - progress) * 200
+        let radius = progress * 40
+        let cardRect = rect.insetBy(dx: -expansion, dy: -expansion)
+        return Path(
+            roundedRect: cardRect,
+            cornerRadius: radius,
+            style: .continuous
+        )
+    }
+}
+
 // MARK: - Phone Side Menu
 // The left drawer holding everything that isn't one of the three pill tabs.
 private struct PhoneSideMenu: View {
     let active: SidebarItem?
+    /// Everything the user did NOT place in the bottom bar.
+    let items: [SidebarItem]
     let onSelect: (SidebarItem) -> Void
 
     var body: some View {
@@ -598,7 +713,7 @@ private struct PhoneSideMenu: View {
                 .padding(.top, AtmoTheme.Spacing.xl)
                 .padding(.bottom, AtmoTheme.Spacing.lg)
 
-            ForEach(phoneMenuItems) { item in
+            ForEach(items) { item in
                 menuRow(item)
             }
 

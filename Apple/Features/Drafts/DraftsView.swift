@@ -45,27 +45,39 @@ struct DraftsView: View {
         if store.drafts.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(store.drafts) { draft in
-                        DraftRowView(draft: draft)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onOpenDraft?(draft) }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    withAnimation {
-                                        store.delete(id: draft.id)
-                                    }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+            // A real List — swipeActions are inert inside a plain
+            // ScrollView/LazyVStack, which left drafts undeletable.
+            List {
+                ForEach(store.drafts) { draft in
+                    DraftRowView(draft: draft)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onOpenDraft?(draft) }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    store.delete(id: draft.id)
                                 }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
                             }
-
-                        Divider()
-                            .overlay(Color.secondary.opacity(0.1))
-                    }
+                        }
+                        // Right-click / long-press fallback, mainly for macOS
+                        // where swipe is less discoverable.
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    store.delete(id: draft.id)
+                                }
+                            } label: {
+                                Label("Delete Draft", systemImage: "trash")
+                            }
+                        }
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparatorTint(Color.secondary.opacity(0.1))
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
