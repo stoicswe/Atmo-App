@@ -16,7 +16,7 @@ struct TwoFactorView: View {
                 VStack(spacing: AtmoTheme.Spacing.xxl) {
                     Image(systemName: "lock.shield.fill")
                         .font(.system(size: 48))
-                        .foregroundStyle(AtmoColors.skyBlue)
+                        .foregroundStyle(AtmoColors.accent)
                         .symbolEffect(.pulse)
 
                     VStack(spacing: AtmoTheme.Spacing.sm) {
@@ -54,7 +54,7 @@ struct TwoFactorView: View {
                         Text("Verify")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(AtmoColors.skyBlue)
+                            .background(AtmoColors.accent)
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.large, style: .continuous))
                     }

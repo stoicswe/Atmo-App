@@ -8,6 +8,8 @@ struct AtmoApp: App {
     /// Post URI received from a Spotlight tap — propagated to AppNavigation via environment.
     @State private var spotlightPostURI: String? = nil
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         // Install the Apple implementations of AtmoCore's platform seams
         // (Keychain, iCloud KVS, Spotlight, lifecycle notifications) before
@@ -18,13 +20,22 @@ struct AtmoApp: App {
         // Must happen here (not in a .task or .onAppear) so the static
         // URLSession in AsyncCachedImage picks up the enlarged cache.
         URLCache.configureSharedCache()
+
+        // Background sync (interaction + subscribed-post notifications).
+        // Must be set up during launch: iOS requires the BGTaskScheduler
+        // handler to be registered before the app finishes launching.
+        let service = ATProtoService()
+        _atProtoService = State(initialValue: service)
+        BackgroundSync.configure(service: service)
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView(spotlightPostURI: $spotlightPostURI)
                 .environment(atProtoService)
-                .atmoTint()
+                // Appearance (auto/light/dark), accent, text size, and
+                // reduce-motion — all from Settings → Appearance/Accessibility.
+                .atmoTheme()
                 // Handle Spotlight search result taps.
                 // The system delivers a NSUserActivity with type CSSearchableItemActionType
                 // and a userInfo key CSSearchableItemActivityIdentifier whose value is the
@@ -34,6 +45,16 @@ struct AtmoApp: App {
                     spotlightPostURI = uri
                 }
         }
+#if os(iOS)
+        // Re-arm the background refresh request whenever the app leaves
+        // the foreground — the system then picks battery-friendly moments
+        // to run the sync passes.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                BackgroundSync.scheduleNextRefresh()
+            }
+        }
+#endif
 #if os(macOS)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))

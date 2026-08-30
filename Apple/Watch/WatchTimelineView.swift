@@ -34,14 +34,21 @@ struct WatchTimelineView: View {
                 }
             }
 
-            // Tail row doubles as the infinite-scroll trigger.
+            // Tail row: infinite-scroll trigger, or a manual Load More
+            // button when the shared feed preference turns paging off.
             if !viewModel.posts.isEmpty {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
+                if FeedPreferences.infiniteScrollEnabled {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .task { await viewModel.loadMore() }
+                } else if viewModel.canLoadMore {
+                    Button("Load More") {
+                        Task { await viewModel.loadMore() }
+                    }
                 }
-                .task { await viewModel.loadMore() }
             }
         }
         .navigationDestination(for: String.self) { uri in

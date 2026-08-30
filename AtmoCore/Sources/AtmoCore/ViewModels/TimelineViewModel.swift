@@ -9,11 +9,45 @@ public final class TimelineViewModel {
     public private(set) var posts: [PostItem] = []
     public private(set) var isLoading: Bool = false
     public private(set) var isRefreshing: Bool = false
-    /// Number of new posts silently prepended at the top (drives the "new posts" pill)
-    public private(set) var newPostsCount: Int = 0
-    /// Unique authors of the new posts, in the order they were prepended (newest first).
-    /// Used by NewPostsPill to show avatar stacks. Capped at 4 for display purposes.
-    public private(set) var newPostAuthors: [PostItem] = []
+
+    /// URIs of silently-prepended posts the user hasn't scrolled past yet.
+    /// Rows report themselves seen via `markNewPostSeen(uri:)`, so the
+    /// pill's count and avatar stack shrink live as the user scrolls up
+    /// through the new content.
+    private var unseenNewPostURIs: Set<String> = []
+
+    /// How many avatars the new-posts pill shows before collapsing the
+    /// rest into a "+N" badge.
+    public static let pillAvatarLimit = 5
+
+    /// Number of not-yet-seen new posts (drives the "new posts" pill).
+    public var newPostsCount: Int { unseenNewPostURIs.count }
+
+    /// One post per unique author among the unseen new posts, in feed
+    /// order (newest first), capped at `pillAvatarLimit` for the pill's
+    /// avatar stack.
+    public var newPostAuthors: [PostItem] {
+        var seenDIDs = Set<String>()
+        var authors: [PostItem] = []
+        for post in posts where unseenNewPostURIs.contains(post.uri) {
+            if seenDIDs.insert(post.authorDID).inserted {
+                authors.append(post)
+                if authors.count == Self.pillAvatarLimit { break }
+            }
+        }
+        return authors
+    }
+
+    /// How many unique unseen authors did NOT fit in the pill's avatar
+    /// stack — the pill renders this as "+N".
+    public var newPostsOverflowAuthorCount: Int {
+        var seenDIDs = Set<String>()
+        for post in posts where unseenNewPostURIs.contains(post.uri) {
+            seenDIDs.insert(post.authorDID)
+        }
+        return max(0, seenDIDs.count - Self.pillAvatarLimit)
+    }
+
     /// The URI of the first post that existed *before* the most recent silent prepend.
     /// The view should immediately (no animation) scroll to this URI after new posts are
     /// prepended so the existing content doesn't visually jump upward.
@@ -33,6 +67,8 @@ public final class TimelineViewModel {
     @ObservationIgnored nonisolated(unsafe) private var refreshTimerTask: Task<Void, Never>? = nil
     /// Retained task that listens for foreground-resume notifications.
     @ObservationIgnored nonisolated(unsafe) private var sceneObservationTask: Task<Void, Never>? = nil
+    /// Retained task that listens for app-backgrounded notifications.
+    @ObservationIgnored nonisolated(unsafe) private var backgroundObservationTask: Task<Void, Never>? = nil
 
     public init(service: ATProtoService) {
         self.service = service
@@ -47,6 +83,7 @@ public final class TimelineViewModel {
     deinit {
         refreshTimerTask?.cancel()
         sceneObservationTask?.cancel()
+        backgroundObservationTask?.cancel()
     }
 
     // MARK: - Periodic Background Refresh
@@ -55,28 +92,54 @@ public final class TimelineViewModel {
     /// the interval the platform configured (`Atmo.platform` — shorter on
     /// desktop, battery-friendlier on mobile). The task respects any in-flight
     /// loading operations (guarded by checkForNewPosts's own guards).
+    ///
+    /// Energy: the sleep carries a 10% tolerance so the OS can coalesce the
+    /// wake-up with other timers instead of spinning the CPU up on its own.
     private func startPeriodicRefresh() {
+        guard refreshTimerTask == nil else { return }
         let interval = Atmo.platform.timelineRefreshInterval
         refreshTimerTask = Task { [weak self] in
             // Wait one interval before the first tick so we don't double-fetch
             // on launch (loadInitial already runs at startup).
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(interval))
+                try? await Task.sleep(
+                    for: .seconds(interval),
+                    tolerance: .seconds(interval * 0.1)
+                )
                 guard !Task.isCancelled else { break }
                 await self?.checkForNewPosts()
             }
         }
     }
 
-    /// Listens for the platform's app-foregrounded notification (if it
-    /// provides one) and triggers a silent check immediately when it fires.
+    private func pausePeriodicRefresh() {
+        refreshTimerTask?.cancel()
+        refreshTimerTask = nil
+    }
+
+    /// Foreground/background lifecycle:
+    ///   • app foregrounded → resume the poll timer and check immediately;
+    ///   • app backgrounded → stop the timer entirely. While the user is
+    ///     away, freshness is the job of the platforms' system-coalesced
+    ///     background sync, not a live timer draining the battery.
     private func startSceneObservation() {
-        guard let notificationName = Atmo.platform.foregroundNotification else { return }
-        sceneObservationTask = Task { [weak self] in
-            let stream = NotificationCenter.default.signals(named: notificationName)
-            for await _ in stream {
-                guard !Task.isCancelled else { break }
-                await self?.checkForNewPosts()
+        if let foreground = Atmo.platform.foregroundNotification {
+            sceneObservationTask = Task { [weak self] in
+                let stream = NotificationCenter.default.signals(named: foreground)
+                for await _ in stream {
+                    guard !Task.isCancelled else { break }
+                    self?.startPeriodicRefresh()
+                    await self?.checkForNewPosts()
+                }
+            }
+        }
+        if let background = Atmo.platform.backgroundNotification {
+            backgroundObservationTask = Task { [weak self] in
+                let stream = NotificationCenter.default.signals(named: background)
+                for await _ in stream {
+                    guard !Task.isCancelled else { break }
+                    self?.pausePeriodicRefresh()
+                }
             }
         }
     }
@@ -145,21 +208,15 @@ public final class TimelineViewModel {
             // if the first existing post is a reply to it.
             let deduped = Self.deduplicateThreadContext(newItems + posts)
             posts = deduped
-            newPostsCount = newItems.count
-            newPostsAnchorURI = anchorURI
 
-            // Build a deduplicated author list for the pill avatar stack.
-            // Walk new items newest-first, collect up to 4 unique authors.
-            var seenDIDs = Set<String>()
-            var authors: [PostItem] = []
-            for item in newItems {
-                let did = item.authorDID
-                if seenDIDs.insert(did).inserted {
-                    authors.append(item)
-                    if authors.count == 4 { break }
-                }
-            }
-            newPostAuthors = authors
+            // Track the new posts as "unseen" — but only ones that survived
+            // dedup and will actually render, or the rows could never
+            // report themselves seen and the pill would stick.
+            let renderedURIs = Set(deduped.map(\.uri))
+            unseenNewPostURIs.formUnion(
+                newItems.map(\.uri).filter { renderedURIs.contains($0) }
+            )
+            newPostsAnchorURI = anchorURI
 
             return (newItems.count, anchorURI)
         } catch {
@@ -170,9 +227,27 @@ public final class TimelineViewModel {
 
     /// Called after the user acknowledges the new-posts pill (taps it or pull-refreshes).
     public func clearNewPostsCount() {
-        newPostsCount = 0
-        newPostAuthors = []
+        unseenNewPostURIs = []
         newPostsAnchorURI = nil
+    }
+
+    /// Reports that the user's viewport reached this post. New-post rows
+    /// call it as they appear, so scrolling up through the fresh content
+    /// drains the pill one post at a time — its count drops and an
+    /// author's avatar leaves the stack once their last unseen post has
+    /// been passed.
+    public func markNewPostSeen(uri: String) {
+        guard unseenNewPostURIs.contains(uri) else { return }
+        unseenNewPostURIs.remove(uri)
+        if unseenNewPostURIs.isEmpty {
+            newPostsAnchorURI = nil
+        }
+    }
+
+    /// Whether more pages exist beyond the currently loaded posts —
+    /// drives the manual "Load More" control when infinite scroll is off.
+    public var canLoadMore: Bool {
+        hasMore && cursor != nil
     }
 
     public func loadMore() async {

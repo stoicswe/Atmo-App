@@ -33,7 +33,7 @@ struct AvatarView: View {
         Circle()
             .fill(
                 LinearGradient(
-                    colors: [AtmoColors.skyBlue.opacity(0.5), Color.indigo.opacity(0.4)],
+                    colors: [AtmoColors.accent.opacity(0.5), Color.indigo.opacity(0.4)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )

@@ -31,13 +31,13 @@ struct TranslateButton: View {
         } label: {
             Label("Translate", systemImage: "character.bubble")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
                 .padding(.horizontal, AtmoTheme.Spacing.sm)
                 .padding(.vertical, 3)
                 .background {
                     Capsule()
-                        .fill(AtmoColors.skyBlue.opacity(0.10))
-                        .strokeBorder(AtmoColors.skyBlue.opacity(0.25), lineWidth: 0.5)
+                        .fill(AtmoColors.accent.opacity(0.10))
+                        .strokeBorder(AtmoColors.accent.opacity(0.25), lineWidth: 0.5)
                 }
         }
         .buttonStyle(.plain)

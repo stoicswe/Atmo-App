@@ -44,7 +44,7 @@ struct NotificationRowView: View {
             // Unread indicator
             if !notification.isRead {
                 Circle()
-                    .fill(AtmoColors.skyBlue)
+                    .fill(AtmoColors.accent)
                     .frame(width: 8, height: 8)
             }
         }
@@ -57,7 +57,7 @@ struct NotificationRowView: View {
         switch notification.reason {
         case .like:   return AtmoColors.likeRed
         case .repost: return AtmoColors.repostGreen
-        case .follow: return AtmoColors.skyBlue
+        case .follow: return AtmoColors.accent
         default:      return .secondary
         }
     }

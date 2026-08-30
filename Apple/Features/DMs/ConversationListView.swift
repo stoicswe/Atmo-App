@@ -111,7 +111,7 @@ private struct ConversationRowView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(AtmoColors.skyBlue)
+                    .background(AtmoColors.accent)
                     .clipShape(Capsule())
             }
         }

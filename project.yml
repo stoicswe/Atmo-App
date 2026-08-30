@@ -11,6 +11,11 @@ options:
     macOS: "26.2"
     watchOS: "26.2"
 
+# Loose project files (no target membership). The StoreKit configuration
+# must live in the project so the scheme's StoreKit setting can find it.
+fileGroups:
+  - Atmo.storekit
+
 settings:
   base:
     DEVELOPMENT_TEAM: P22P7U46RW
@@ -142,6 +147,9 @@ schemes:
         Atmo: all
     run:
       config: Debug
+      # Local tip-jar testing: Run uses the test products in Atmo.storekit.
+      # Archive/Release builds ignore this and talk to the real App Store.
+      storeKitConfiguration: Atmo.storekit
     profile:
       config: Release
     analyze:

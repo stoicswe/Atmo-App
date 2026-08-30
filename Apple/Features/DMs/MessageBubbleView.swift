@@ -14,7 +14,7 @@ struct MessageBubbleView: View {
                     .padding(.horizontal, AtmoTheme.Spacing.md)
                     .padding(.vertical, AtmoTheme.Spacing.sm)
                     .background(
-                        isFromMe ? AtmoColors.skyBlue : Color.secondary.opacity(0.15)
+                        isFromMe ? AtmoColors.accent : Color.secondary.opacity(0.15)
                     )
                     .foregroundStyle(isFromMe ? .white : .primary)
                     .clipShape(

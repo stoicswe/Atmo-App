@@ -58,7 +58,7 @@ struct ProfileView: View {
                 Task { await vm.load() }
             }
             .buttonStyle(.borderedProminent)
-            .tint(AtmoColors.skyBlue)
+            .tint(AtmoColors.accent)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 120)

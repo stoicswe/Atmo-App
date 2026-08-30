@@ -119,6 +119,51 @@ struct ThreadView: View {
         return result
     }
 
+    // MARK: - Connector rails
+    // Reddit-style tree rails with iMessage-style curved elbows: every
+    // ancestor branch that continues below a row draws an unbroken
+    // vertical rail through that row's full height, and each reply's
+    // elbow curves off its parent's rail into the avatar.
+
+    /// Per-row rail layout, derived from the *visible* rows so collapsed
+    /// subtrees never leave dangling rails.
+    struct ReplyRailInfo {
+        /// Ancestor levels (0-based depth of the ancestor) whose rail runs
+        /// the full height of this row — i.e. that ancestor has another
+        /// child further down. Includes `depth - 1` when this row itself
+        /// has a later sibling.
+        var levels: Set<Int> = []
+    }
+
+    /// For each visible row, walks forward to find which ancestor branches
+    /// are still open (another child at that level appears before the
+    /// branch closes). O(rows × depth) — negligible for thread sizes.
+    private func computeRails(for rows: [ThreadReply]) -> [ReplyRailInfo] {
+        var result: [ReplyRailInfo] = []
+        result.reserveCapacity(rows.count)
+
+        for (i, row) in rows.enumerated() {
+            var info = ReplyRailInfo()
+            // Ancestor levels not yet resolved (open until a row at the
+            // same-or-shallower depth closes them).
+            var open = Set(0..<row.depth)
+            var j = i + 1
+            while j < rows.count, !open.isEmpty {
+                let dj = rows[j].depth
+                // A row at depth dj ends every open branch deeper than it…
+                open = open.filter { $0 < dj }
+                // …and is itself another child of the ancestor at dj - 1.
+                if open.contains(dj - 1) {
+                    info.levels.insert(dj - 1)
+                    open.remove(dj - 1)
+                }
+                j += 1
+            }
+            result.append(info)
+        }
+        return result
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
         ZStack(alignment: .bottomTrailing) {
@@ -170,6 +215,7 @@ struct ThreadView: View {
 
                         // ── Replies ──
                         let visible = visibleReplies
+                        let rails = computeRails(for: visible)
                         ForEach(Array(visible.enumerated()), id: \.element.id) { index, reply in
                             let isLast = index == visible.count - 1
                             let nextDepth = isLast ? -1 : visible[index + 1].depth
@@ -181,6 +227,7 @@ struct ThreadView: View {
                                 reply: reply,
                                 viewModel: vm,
                                 continuesBelow: continuesBelow,
+                                railLevels: rails[index].levels,
                                 isCollapsed: isCollapsed,
                                 isFocused: isFocused,
                                 onToggleCollapse: {
@@ -434,7 +481,7 @@ private struct ReplySortHeader: View {
                             .background {
                                 if sortOrder == order {
                                     Capsule()
-                                        .fill(AtmoColors.skyBlue)
+                                        .fill(AtmoColors.accent)
                                 } else {
                                     Capsule()
                                         .fill(Color.secondary.opacity(0.10))
@@ -537,6 +584,9 @@ private struct ReplyRowView: View {
     let reply: ThreadReply
     let viewModel: TimelineViewModel
     let continuesBelow: Bool
+    /// Ancestor depth levels whose rail runs the full height of this row
+    /// (computed by ThreadView.computeRails from the visible rows).
+    let railLevels: Set<Int>
     let isCollapsed: Bool
     let isFocused: Bool
     let onToggleCollapse: () -> Void
@@ -560,29 +610,57 @@ private struct ReplyRowView: View {
         AtmoTheme.Feed.horizontalPadding + CGFloat(reply.depth - 1) * indentStep + replyAvatarSize / 2
     }
 
+    /// X of the rail for an ancestor at the given depth level.
+    private func railX(_ level: Int) -> CGFloat {
+        AtmoTheme.Feed.horizontalPadding + CGFloat(level) * indentStep + replyAvatarSize / 2
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
 
-            // ── Curved connector from parent avatar ──
-            if reply.depth > 0 {
-                CurvedConnector(fromX: parentAvatarCenterX, toX: avatarCenterX, lineWidth: lineWidth)
-                    .stroke(
-                        Color.secondary.opacity(0.3),
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
-                    )
-                    // Tall enough frame so the cubic Bézier loop has room to arc
-                    // smoothly. rect.midY (= connectorHeight / 2) is where the
-                    // horizontal arm meets the child avatar center.
-                    .frame(height: connectorHeight)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            // ── Ancestor rails ──
+            // Unbroken vertical lines spanning the row's full height, one per
+            // ancestor branch that has more children further down. These are
+            // what keep sibling replies visually connected across the rows
+            // between them (Reddit-style comment rails).
+            ForEach(railLevels.sorted(), id: \.self) { level in
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: lineWidth)
+                    .padding(.leading, railX(level) - lineWidth / 2)
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
 
-            // ── Vertical continuation line ──
+            // ── Curved elbow from the parent's rail into this avatar ──
+            // When the parent's rail continues below (this row has a later
+            // sibling), the full-height rail above already provides the
+            // vertical stem, so the elbow is just the branch curve. When this
+            // is the parent's last child, the elbow carries the stem itself
+            // and rounds off the branch (iMessage-style terminal curve).
+            if reply.depth > 0 {
+                CurvedConnector(
+                    fromX: parentAvatarCenterX,
+                    toX: avatarCenterX,
+                    lineWidth: lineWidth,
+                    includeStem: !railLevels.contains(reply.depth - 1)
+                )
+                .stroke(
+                    Color.secondary.opacity(0.3),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+                )
+                // Tall enough frame so the curve has room to arc smoothly.
+                // rect.midY (= connectorHeight / 2) is where the horizontal
+                // arm meets the child avatar center.
+                .frame(height: connectorHeight)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+
+            // ── Own child rail ──
             // Starts just below this row's avatar bottom edge so it connects
-            // down to the child row's CurvedConnector (which begins at y = -1).
+            // down to the first child row's elbow (which begins at y = -1).
             if continuesBelow && !isCollapsed {
                 Rectangle()
-                    .fill(Color.secondary.opacity(0.25))
+                    .fill(Color.secondary.opacity(0.3))
                     .frame(width: lineWidth)
                     .padding(.leading, avatarCenterX - lineWidth / 2)
                     .padding(.top, replyAvatarSize + AtmoTheme.Spacing.xs)
@@ -710,14 +788,14 @@ private struct ReplyRowView: View {
         }
         .background(
             reply.isPending
-                ? AtmoColors.skyBlue.opacity(0.04)
-                : isFocused ? AtmoColors.skyBlue.opacity(0.07) : Color.clear
+                ? AtmoColors.accent.opacity(0.04)
+                : isFocused ? AtmoColors.accent.opacity(0.07) : Color.clear
         )
         .overlay(alignment: .leading) {
             // Subtle left accent line on pending replies
             if reply.isPending {
                 Rectangle()
-                    .fill(AtmoColors.skyBlue.opacity(0.4))
+                    .fill(AtmoColors.accent.opacity(0.4))
                     .frame(width: 2)
             }
         }
@@ -742,24 +820,34 @@ private struct CurvedConnector: Shape {
     let fromX: CGFloat
     let toX: CGFloat
     let lineWidth: CGFloat
+    /// When true, the path includes the vertical stem from the row top down
+    /// to the bend (last-child terminal curve). When false, an ancestor rail
+    /// already draws that vertical span and the path is only the branch
+    /// curve — avoiding a double-stroked (darker) overlap.
+    var includeStem: Bool = true
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
 
-        // Overlap the parent row's continuation line so there is no gap.
+        // Overlap the previous row's rail by half a stroke so there is no gap.
         let startY: CGFloat = -lineWidth / 2
 
         // Horizontal arm lands at the child avatar's vertical centre.
         let endY: CGFloat = rect.midY
 
-        // Corner radius for the elbow — capped so it fits within the frame.
-        let r: CGFloat = min(8, endY - startY, toX - fromX)
+        // Corner radius for the elbow — generous for an iMessage-soft curve,
+        // capped so it fits within the frame.
+        let r: CGFloat = min(10, endY - startY, toX - fromX)
 
         // Straight vertical segment, stopping one radius before the bend.
         let turnY = endY - r
 
-        p.move(to: CGPoint(x: fromX, y: startY))
-        p.addLine(to: CGPoint(x: fromX, y: turnY))
+        if includeStem {
+            p.move(to: CGPoint(x: fromX, y: startY))
+            p.addLine(to: CGPoint(x: fromX, y: turnY))
+        } else {
+            p.move(to: CGPoint(x: fromX, y: turnY))
+        }
 
         // Rounded elbow: cubic Bézier from (fromX, turnY) → (fromX+r, endY).
         // cp1 keeps the path vertical as it enters the curve;
@@ -785,16 +873,11 @@ private struct ReplyFAB: View {
         Button(action: action) {
             Image(systemName: "arrowshape.turn.up.left.fill")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
                 .frame(width: 56, height: 56)
-                .background {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                }
+                .glassEffect(.regular.interactive(), in: Circle())
         }
         .buttonStyle(ReplyFABButtonStyle())
-        .atmoShadow(AtmoTheme.Shadow.floating)
     }
 }
 

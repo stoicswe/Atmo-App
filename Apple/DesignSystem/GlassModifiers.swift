@@ -11,12 +11,22 @@ struct GlassCardModifier: ViewModifier {
     var cornerRadius: CGFloat = AtmoTheme.CornerRadius.large
     var interactive: Bool = false
 
+    // Accessibility: "Solid surfaces" swaps the glass for an opaque fill.
+    @AppStorage(ThemeKeys.solidSurfaces) private var solidSurfaces: Bool = false
+
     func body(content: Content) -> some View {
-        content
-            .glassEffect(
-                interactive ? .regular.interactive() : .regular,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if solidSurfaces {
+            content
+                .background(AtmoColors.solidSurface, in: shape)
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+        } else {
+            content
+                .glassEffect(
+                    interactive ? .regular.interactive() : .regular,
+                    in: shape
+                )
+        }
     }
 }
 
@@ -42,6 +52,60 @@ struct FloatingGlassButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Neumorphic Glass Card
+/// A soft-UI ("neumorphism") take on a content card that still belongs to
+/// the Liquid Glass era: the surface stays a system material, but the card
+/// reads as gently extruded — a "lit from above" gradient rim plus the
+/// classic dual soft shadows (dark toward bottom-trailing, light toward
+/// top-leading). Deliberately subtle, and tuned per color scheme so the
+/// highlight doesn't glow in dark mode or vanish in light mode.
+///
+/// Used for embedded content cards (quoted/reposted posts, link previews)
+/// — the floating control layer keeps pure `glassEffect` instead.
+struct NeumorphicGlassCardModifier: ViewModifier {
+    var cornerRadius: CGFloat = AtmoTheme.CornerRadius.medium
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Accessibility: "Solid surfaces" swaps the material for an opaque
+    // fill — which is in fact the *classic* neumorphic look; the rim and
+    // dual shadows below still apply.
+    @AppStorage(ThemeKeys.solidSurfaces) private var solidSurfaces: Bool = false
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let dark = colorScheme == .dark
+
+        content
+            .background {
+                if solidSurfaces {
+                    shape.fill(AtmoColors.solidSurface)
+                } else {
+                    shape.fill(.thinMaterial)
+                }
+            }
+            .clipShape(shape)
+            .overlay {
+                // Top-light rim — the extruded edge catching the light.
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(dark ? 0.14 : 0.50),
+                            .white.opacity(dark ? 0.02 : 0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+            }
+            // Flatten before shadowing so the shadows trace the card
+            // silhouette, not every subview.
+            .compositingGroup()
+            .shadow(color: .black.opacity(dark ? 0.32 : 0.10), radius: 5, x: 2, y: 3)
+            .shadow(color: .white.opacity(dark ? 0.04 : 0.50), radius: 5, x: -2, y: -3)
+    }
+}
+
 // MARK: - View Extensions
 extension View {
     /// Applies a native Liquid Glass card background.
@@ -54,8 +118,13 @@ extension View {
         modifier(GlassRowModifier())
     }
 
+    /// Applies the soft-UI content-card treatment (see NeumorphicGlassCardModifier).
+    func neumorphicGlassCard(cornerRadius: CGFloat = AtmoTheme.CornerRadius.medium) -> some View {
+        modifier(NeumorphicGlassCardModifier(cornerRadius: cornerRadius))
+    }
+
     /// Sets the app's sky-blue accent tint.
     func atmoTint() -> some View {
-        tint(AtmoColors.skyBlue)
+        tint(AtmoColors.accent)
     }
 }

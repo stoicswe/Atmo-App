@@ -26,7 +26,9 @@ extension AtmoPlatform {
             // 0.34 credential-storage migration.
             makeCredentialStore: { AppleSecureKeychain() },
             foregroundNotification: foregroundNotification,
-            timelineRefreshInterval: timelineRefreshInterval
+            backgroundNotification: backgroundNotification,
+            timelineRefreshInterval: timelineRefreshInterval,
+            alertPresenter: UserNotificationsPresenter()
         )
     }
 
@@ -45,6 +47,19 @@ extension AtmoPlatform {
         NSApplication.didBecomeActiveNotification
 #else
         WKApplication.didBecomeActiveNotification
+#endif
+    }
+
+    // While the app is away from the foreground, in-app poll timers stop
+    // (battery); freshness is handed to BackgroundSync's system-coalesced
+    // schedulers instead.
+    private static var backgroundNotification: Notification.Name {
+#if os(iOS)
+        UIApplication.didEnterBackgroundNotification
+#elseif os(macOS)
+        NSApplication.didResignActiveNotification
+#else
+        WKApplication.didEnterBackgroundNotification
 #endif
     }
 

@@ -76,7 +76,8 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Session restore / logout | ✅ | `restoreSession()` on launch; primary-menu Sign Out |
 | Credential storage | 🟡 | Core `FileCredentialStore` (0600 JSON under XDG app-support). **TODO:** libsecret-backed `SecretsStoring`/`ATCredentialStore` for keyring-grade storage |
 | Timeline (pages, refresh, like, repost) | ✅ | `MainView+Timeline` on shared `TimelineViewModel` — dedup, optimistic updates, and rollback come from core for free |
-| New-posts pill + scroll anchoring | ⬜ | Core exposes `newPostsCount`/`newPostsAnchorURI`; needs a GTK overlay + ScrolledWindow adjustment work |
+| Infinite scroll | 🟡 | **Deviation (for now):** a "Load More" button. adwaita-swift's `edgeReached` fires for *every* edge without saying which, so hooking it would fetch pages whenever the user hits the *top*. Needs a position-aware `edge-reached` connection (via CAdw in `.inspect`) honoring core `FeedPreferences.infiniteScrollEnabled` |
+| New-posts pill + scroll anchoring | ⬜ | Core exposes the full live-draining model (`newPostsCount`, `newPostAuthors`, `newPostsOverflowAuthorCount`, `markNewPostSeen`); needs a GTK overlay + ScrolledWindow adjustment work |
 | Thread view | ⬜ | Core `PostItem` carries reply URIs; needs a `NavigationView` push page |
 | Composer (single post) | ✅ | `.dialog` with `TextEditor`, 300-char counter, `createPostRecord` |
 | Composer (threads, images, reply/quote) | ⬜ | Reuse `ComposerViewModel` + `PostSlot`; image picking via portal `fileImporter` |

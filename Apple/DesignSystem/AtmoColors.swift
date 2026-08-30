@@ -2,8 +2,25 @@ import SwiftUI
 
 enum AtmoColors {
     // MARK: - Primary Accent
-    /// Sky blue — Bluesky brand color
+    /// Sky blue — Bluesky brand color (the default accent preset).
     static let skyBlue = Color(red: 0, green: 133 / 255, blue: 1.0)
+
+    /// The user's chosen accent color (Settings → Appearance). Reads the
+    /// current preset each render; the root `atmoTheme()` tint keeps
+    /// system-tinted controls in sync reactively.
+    static var accent: Color { AccentPresets.current.color }
+
+    /// Opaque card surface used when the "Solid surfaces" accessibility
+    /// setting replaces translucent materials.
+    static var solidSurface: Color {
+#if os(iOS)
+        Color(UIColor.secondarySystemBackground)
+#elseif os(macOS)
+        Color(NSColor.controlBackgroundColor)
+#else
+        Color.gray.opacity(0.15)
+#endif
+    }
 
     // MARK: - Action Colors
     static let likeRed = Color(red: 1.0, green: 64 / 255, blue: 64 / 255)

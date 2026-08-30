@@ -2,11 +2,62 @@ import Foundation
 import ATProtoKit
 import Observation
 
+// MARK: - Activity Category
+/// The pill-tab filters of the Activity section: everything, then one tab
+/// per Bluesky notification reason.
+public enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
+    case notifications = "Notifications"
+    case follows = "Follows"
+    case replies = "Replies"
+    case mentions = "Mentions"
+    case quotes = "Quotes"
+    case reposts = "Reposts"
+    case likes = "Likes"
+
+    public var id: String { rawValue }
+
+    /// SF Symbol for the pill.
+    public var icon: String {
+        switch self {
+        case .notifications: return "bell"
+        case .follows:       return "person.badge.plus"
+        case .replies:       return "bubble.left"
+        case .mentions:      return "at"
+        case .quotes:        return "quote.bubble"
+        case .reposts:       return "arrow.2.squarepath"
+        case .likes:         return "heart"
+        }
+    }
+
+    /// The notification reason this category shows; nil = show everything.
+    var reason: NotificationItem.NotificationReason? {
+        switch self {
+        case .notifications: return nil
+        case .follows:       return .follow
+        case .replies:       return .reply
+        case .mentions:      return .mention
+        case .quotes:        return .quote
+        case .reposts:       return .repost
+        case .likes:         return .like
+        }
+    }
+}
+
 @Observable
 @MainActor
 public final class NotificationsViewModel {
 
     public private(set) var notifications: [NotificationItem] = []
+
+    /// The active Activity pill. Filtering is client-side over the loaded
+    /// pages, so switching tabs is instant.
+    public var selectedCategory: ActivityCategory = .notifications
+
+    /// The notifications matching the active category.
+    public var filteredNotifications: [NotificationItem] {
+        guard let reason = selectedCategory.reason else { return notifications }
+        return notifications.filter { $0.reason == reason }
+    }
     public private(set) var isLoading: Bool = false
     public private(set) var error: Error? = nil
     public private(set) var unreadCount: Int = 0

@@ -8,5 +8,9 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.stoicswe.atmo.refresh</string>
+	</array>
 </dict>
 </plist>

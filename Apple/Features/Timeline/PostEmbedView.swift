@@ -164,12 +164,7 @@ private struct ExternalLinkCardView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(AtmoTheme.Spacing.md)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
-                    .stroke(AtmoColors.glassBorder, lineWidth: 0.5)
-            )
+            .neumorphicGlassCard()
         }
         .buttonStyle(.plain)
     }
@@ -204,12 +199,7 @@ private struct QuotePostView: View {
                 }
             }
             .padding(AtmoTheme.Spacing.md)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
-                    .stroke(AtmoColors.glassBorder, lineWidth: 0.5)
-            )
+            .neumorphicGlassCard()
         }
         .buttonStyle(.plain)
         .navigationDestination(for: PostNavTarget.self) { target in

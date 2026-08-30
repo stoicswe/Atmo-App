@@ -116,6 +116,23 @@ public struct NoopPostIndexer: PostIndexing {
     public func removeFromIndex(uris: [String]) {}
 }
 
+// MARK: - AlertPresenting
+
+/// Presents `FeedAlert`s produced by the background sync engine — local
+/// user notifications on Apple platforms; a desktop-notification bridge
+/// on Linux later. The no-op default swallows alerts.
+public protocol AlertPresenting: Sendable {
+    /// Ask the OS for permission to notify. Returns whether granted.
+    func requestAuthorization() async -> Bool
+    func present(_ alerts: [FeedAlert]) async
+}
+
+public struct NoopAlertPresenter: AlertPresenting {
+    public init() {}
+    public func requestAuthorization() async -> Bool { false }
+    public func present(_ alerts: [FeedAlert]) async {}
+}
+
 // MARK: - AtmoPlatform
 
 /// The bundle of platform implementations AtmoCore's services use.
@@ -130,8 +147,14 @@ public struct AtmoPlatform: Sendable {
     /// (`UIApplication.didBecomeActiveNotification` etc.); `nil` disables
     /// foreground-triggered refreshes.
     public var foregroundNotification: Notification.Name?
+    /// The notification posted when the app leaves the foreground; when
+    /// set, periodic polling pauses until the foreground notification
+    /// fires again (battery: no timers while the user is away).
+    public var backgroundNotification: Notification.Name?
     /// Seconds between silent timeline refresh checks.
     public var timelineRefreshInterval: TimeInterval
+    /// Presents background-sync alerts to the user.
+    public var alertPresenter: any AlertPresenting
 
     public init(
         secrets: any SecretsStoring = UserDefaultsSecretsStore(),
@@ -139,14 +162,18 @@ public struct AtmoPlatform: Sendable {
         postIndexer: any PostIndexing = NoopPostIndexer(),
         makeCredentialStore: @escaping @Sendable () -> any ATCredentialStore,
         foregroundNotification: Notification.Name? = nil,
-        timelineRefreshInterval: TimeInterval = 3 * 60
+        backgroundNotification: Notification.Name? = nil,
+        timelineRefreshInterval: TimeInterval = 3 * 60,
+        alertPresenter: any AlertPresenting = NoopAlertPresenter()
     ) {
         self.secrets = secrets
         self.syncedKeyValue = syncedKeyValue
         self.postIndexer = postIndexer
         self.makeCredentialStore = makeCredentialStore
         self.foregroundNotification = foregroundNotification
+        self.backgroundNotification = backgroundNotification
         self.timelineRefreshInterval = timelineRefreshInterval
+        self.alertPresenter = alertPresenter
     }
 
     /// Portable default: file-backed credential storage next to the other

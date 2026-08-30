@@ -21,7 +21,7 @@ struct ProfileHeaderView: View {
                             image.resizable().scaledToFill()
                         } else {
                             LinearGradient(
-                                colors: [AtmoColors.skyBlue.opacity(0.4), Color.indigo.opacity(0.3)],
+                                colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -29,7 +29,7 @@ struct ProfileHeaderView: View {
                     }
                 } else {
                     LinearGradient(
-                        colors: [AtmoColors.skyBlue.opacity(0.4), Color.indigo.opacity(0.3)],
+                        colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -68,29 +68,25 @@ struct ProfileHeaderView: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, AtmoTheme.Spacing.md)
                         .padding(.vertical, AtmoTheme.Spacing.xs)
-                        .background {
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                                .glassEffect(.regular.interactive(), in: Capsule())
-                        }
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(AtmoColors.glassBorder, lineWidth: 1)
-                        }
+                        .glassEffect(.regular.interactive(), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .padding(.top, AtmoTheme.Spacing.md)
                 } else {
-                    Button {
-                        onFollowTap()
-                    } label: {
-                        Text(profile.isFollowing ? "Following" : "Follow")
-                            .fontWeight(.semibold)
-                            .frame(minWidth: 80)
+                    HStack(spacing: AtmoTheme.Spacing.sm) {
+                        Button {
+                            onFollowTap()
+                        } label: {
+                            Text(profile.isFollowing ? "Following" : "Follow")
+                                .fontWeight(.semibold)
+                                .frame(minWidth: 80)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(profile.isFollowing ? .secondary : AtmoColors.accent)
+                        .controlSize(.regular)
+
+                        subscriptionBell
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(profile.isFollowing ? .secondary : AtmoColors.skyBlue)
-                    .controlSize(.regular)
                     .padding(.top, AtmoTheme.Spacing.md)
                 }
             }
@@ -128,6 +124,51 @@ struct ProfileHeaderView: View {
                 EditProfileView(profile: profile, viewModel: vm)
             }
         }
+    }
+
+    // MARK: - Post-notification subscription bell
+    // Lets the user subscribe to this account's posts: All Posts (their
+    // reposts included) or Original Posts Only. Delivered by the
+    // battery-friendly background sync as local notifications; managed
+    // later from Settings → Notifications.
+    private var subscriptionBell: some View {
+        let store = NotificationSettingsStore.shared
+        let currentMode = store.subscription(for: profile.did)?.mode ?? .off
+
+        return Menu {
+            ForEach([UserPostNotificationMode.allPosts, .originalPostsOnly, .off]) { mode in
+                Button {
+                    store.setSubscription(
+                        did: profile.did,
+                        handle: profile.handle,
+                        displayName: profile.displayName,
+                        mode: mode
+                    )
+                    if mode != .off {
+                        // Make sure the OS will actually deliver these.
+                        Task { @MainActor in
+                            _ = await Atmo.platform.alertPresenter.requestAuthorization()
+                        }
+                    }
+                } label: {
+                    if mode == currentMode || (mode == .off && currentMode == .off) {
+                        Label(mode.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(mode.displayName)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: currentMode == .off ? "bell" : "bell.badge.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(currentMode == .off ? Color.secondary : AtmoColors.accent)
+                .frame(width: 34, height: 34)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Post notifications: \(currentMode.displayName)")
     }
 
     private func statItem(count: Int, label: String) -> some View {

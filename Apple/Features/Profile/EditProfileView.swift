@@ -34,11 +34,8 @@ struct EditProfileView: View {
 
     var body: some View {
         ZStack {
-            // Subtle tinted backdrop so glass cards read cleanly
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-
+            // The system sheet background is the backdrop — the glass
+            // cards below refract it directly.
             ScrollView {
                 VStack(spacing: AtmoTheme.Spacing.lg) {
 
@@ -96,13 +93,13 @@ struct EditProfileView: View {
             Group {
                 if isSaving {
                     ProgressView()
-                        .tint(AtmoColors.skyBlue)
+                        .tint(AtmoColors.accent)
                 } else {
                     Button("Save") {
                         Task { await save() }
                     }
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(AtmoColors.skyBlue)
+                    .foregroundStyle(AtmoColors.accent)
                     .disabled(isSaving)
                 }
             }
@@ -141,23 +138,19 @@ struct EditProfileView: View {
                     .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
 
                     // Camera badge — glass pill
-                    ZStack {
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .glassEffect(.regular.interactive(), in: Circle())
-                            .frame(width: 30, height: 30)
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AtmoColors.skyBlue)
-                    }
-                    .offset(x: 3, y: 3)
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AtmoColors.accent)
+                        .frame(width: 30, height: 30)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .offset(x: 3, y: 3)
                 }
             }
             .buttonStyle(.plain)
 
             Text("Tap to change photo")
                 .font(.caption)
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, AtmoTheme.Spacing.xl)
@@ -241,11 +234,11 @@ struct EditProfileView: View {
             // Icon chip
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtmoColors.skyBlue.opacity(0.12))
+                    .fill(AtmoColors.accent.opacity(0.12))
                     .frame(width: 30, height: 30)
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AtmoColors.skyBlue)
+                    .foregroundStyle(AtmoColors.accent)
             }
             .padding(.top, 2)
 

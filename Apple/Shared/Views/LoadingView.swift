@@ -10,7 +10,7 @@ struct LoadingView: View {
         VStack(spacing: AtmoTheme.Spacing.md) {
             ProgressView()
                 .controlSize(compact ? .small : .regular)
-                .tint(AtmoColors.skyBlue)
+                .tint(AtmoColors.accent)
             if !compact {
                 Text(message)
                     .font(.subheadline)

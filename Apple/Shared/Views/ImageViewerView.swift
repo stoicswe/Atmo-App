@@ -53,7 +53,7 @@ struct ImageViewerView: View {
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(Circle().fill(.ultraThinMaterial.opacity(0.85)))
+                            .glassEffect(.regular.interactive(), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(currentIndex == 0)
@@ -70,7 +70,7 @@ struct ImageViewerView: View {
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(Circle().fill(.ultraThinMaterial.opacity(0.85)))
+                            .glassEffect(.regular.interactive(), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(currentIndex == images.count - 1)
@@ -89,10 +89,7 @@ struct ImageViewerView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background {
-                        Circle()
-                            .fill(.ultraThinMaterial.opacity(0.85))
-                    }
+                    .glassEffect(.regular.interactive(), in: Circle())
             }
             .buttonStyle(.plain)
             .padding(.top, 56)
@@ -107,10 +104,7 @@ struct ImageViewerView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
-                    .background {
-                        Capsule()
-                            .fill(.ultraThinMaterial.opacity(0.75))
-                    }
+                    .glassEffect(.regular, in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 44)
             }
@@ -280,10 +274,7 @@ private struct AltTextBadge: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background {
-                RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.85))
-            }
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
         }
         .buttonStyle(.plain)
     }

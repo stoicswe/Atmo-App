@@ -32,7 +32,12 @@ struct TimelineView: View {
 
     // iCloud position store
     private let positionStore = PositionStore.shared
-    @State private var positionSaveTask: Task<Void, Never>? = nil
+    /// One-shot: restore the iCloud-synced read position after first load.
+    @State private var didRestorePosition = false
+
+    /// Settings → Appearance → Feed. On: pages load automatically near the
+    /// end. Off: a manual "Load More" control.
+    @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled = true
 
     /// The active nav path binding — external (split view) or internal (iPhone).
     private var navPath: Binding<NavigationPath> {
@@ -127,7 +132,15 @@ struct TimelineView: View {
                         .frame(height: 0)
                         .id("__top__")
                         .onAppear {
-                            Task { @MainActor in isAtTop = true }
+                            Task { @MainActor in
+                                isAtTop = true
+                                // Reaching the top IS the read position —
+                                // record it (synced across devices via
+                                // iCloud KVS in PositionStore).
+                                if let first = viewModel.posts.first {
+                                    positionStore.save(topPostURI: first.uri)
+                                }
+                            }
                         }
                         .onDisappear {
                             Task { @MainActor in isAtTop = false }
@@ -151,7 +164,10 @@ struct TimelineView: View {
                                 }
                             )
                             .onAppear {
-                                if post.id == vm.posts.last?.id {
+                                // Scrolling up past a freshly-prepended post
+                                // drains it from the new-posts pill.
+                                vm.markNewPostSeen(uri: post.uri)
+                                if infiniteScrollEnabled, post.id == vm.posts.last?.id {
                                     Task { await vm.loadMore() }
                                 }
                             }
@@ -163,6 +179,18 @@ struct TimelineView: View {
                         if vm.isLoading && !vm.posts.isEmpty {
                             ProgressView()
                                 .padding(AtmoTheme.Spacing.xxl)
+                        }
+
+                        // Manual paging when infinite scroll is turned off.
+                        if !infiniteScrollEnabled, vm.canLoadMore, !vm.isLoading {
+                            Button {
+                                Task { await vm.loadMore() }
+                            } label: {
+                                Label("Load More", systemImage: "arrow.down.circle")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .buttonStyle(.glass)
+                            .padding(AtmoTheme.Spacing.lg)
                         }
                     }
                 }
@@ -183,8 +211,14 @@ struct TimelineView: View {
                 }
 
                 // ── New Posts Pill ──
+                // Anchored top-center over the feed; drains live as the
+                // user scrolls up past the new posts (see markNewPostSeen).
                 if showNewPostsPill && vm.newPostsCount > 0 {
-                    NewPostsPill(count: vm.newPostsCount, authors: vm.newPostAuthors) {
+                    NewPostsPill(
+                        count: vm.newPostsCount,
+                        authors: vm.newPostAuthors,
+                        overflowAuthorCount: vm.newPostsOverflowAuthorCount
+                    ) {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                             showNewPostsPill = false
                         }
@@ -198,6 +232,7 @@ struct TimelineView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(10)
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: showNewPostsPill)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.newPostsCount)
                 }
 
                 // Invisible change-watcher — not rendered, just reacts to ViewModel state.
@@ -207,7 +242,21 @@ struct TimelineView: View {
                 // content doesn't visually jump upward as new rows are inserted above it.
                 Color.clear
                     .frame(width: 0, height: 0)
+                    // ── iCloud read-position restore ──
+                    // Once, after the first page arrives: jump (without
+                    // animation) to the position saved by whichever Apple
+                    // device the user read the feed on last.
+                    .onAppear { attemptPositionRestore(vm: vm, proxy: proxy) }
+                    .onChange(of: vm.posts.isEmpty) { _, empty in
+                        if !empty { attemptPositionRestore(vm: vm, proxy: proxy) }
+                    }
                     .onChange(of: vm.newPostsCount) { oldCount, newCount in
+                        // Fully drained by scrolling: retire the pill.
+                        if newCount == 0, showNewPostsPill {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                showNewPostsPill = false
+                            }
+                        }
                         guard newCount > 0, oldCount == 0 else { return }
                         // Re-anchor scroll FIRST (no animation) so the viewport stays
                         // glued to the same post even though new rows were inserted above.
@@ -301,12 +350,20 @@ struct TimelineView: View {
             }
         }
 
-        // ── Debounce position save ──
-        positionSaveTask?.cancel()
-        positionSaveTask = Task {
-            try? await Task.sleep(for: .milliseconds(600))
-            guard !Task.isCancelled else { return }
-            // The first post visible is roughly our scroll position — saved via positionStore
+    }
+
+    /// One-shot scroll to the iCloud-synced read position. Runs after the
+    /// first page loads; skipped when the saved post is no longer in the
+    /// feed (too old) or is already the top row.
+    private func attemptPositionRestore(vm: TimelineViewModel, proxy: ScrollViewProxy) {
+        guard !didRestorePosition, !vm.posts.isEmpty else { return }
+        didRestorePosition = true
+        guard let saved = positionStore.savedTopPostURI,
+              saved != vm.posts.first?.uri,
+              vm.posts.contains(where: { $0.uri == saved }) else { return }
+        // Next runloop tick so the LazyVStack has laid out its rows.
+        DispatchQueue.main.async {
+            proxy.scrollTo(saved, anchor: .top)
         }
     }
 }
@@ -339,7 +396,7 @@ private struct RefreshIndicatorView: View {
                 if isRefreshing {
                     // Spinning indefinitely while fetch is in progress
                     ProgressView()
-                        .tint(AtmoColors.skyBlue)
+                        .tint(AtmoColors.accent)
                         .scaleEffect(0.9)
                         .transition(.scale.combined(with: .opacity))
                 } else {
@@ -347,7 +404,7 @@ private struct RefreshIndicatorView: View {
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(
-                            AtmoColors.skyBlue.opacity(0.25 + 0.75 * progress),
+                            AtmoColors.accent.opacity(0.25 + 0.75 * progress),
                             style: StrokeStyle(lineWidth: 2, lineCap: .round)
                         )
                         .frame(width: 22, height: 22)
@@ -360,7 +417,7 @@ private struct RefreshIndicatorView: View {
                     if progress > 0.7 {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(AtmoColors.skyBlue)
+                            .foregroundStyle(AtmoColors.accent)
                             .opacity((progress - 0.7) / 0.3)
                             .rotationEffect(.degrees(progress >= 1 ? 180 : 0))
                             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: progress >= 1)
@@ -368,11 +425,7 @@ private struct RefreshIndicatorView: View {
                 }
             }
             .frame(width: 32, height: 32)
-            .background {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
-            }
+            .glassEffect(.regular, in: Circle())
             .opacity(progress)
             .scaleEffect(0.7 + 0.3 * progress)
             Spacer()
@@ -382,20 +435,21 @@ private struct RefreshIndicatorView: View {
 }
 
 // MARK: - New Posts Pill
-// Shows up to 4 stacked author avatars, an overflow badge when there are more
-// unseen authors, and a label with the new-post count.
+// Liquid Glass pill anchored top-center over the feed. Shows up to 5
+// stacked author avatars for the *unseen* new posts, a "+N" badge when
+// more than 5 unique accounts posted, and the unseen-post count.
 //
-// Layout:  [avatar][avatar][avatar][+N]  ↑ N new posts
+// Layout:  [avatar][avatar][avatar][avatar][avatar][+N]  ↑ N new posts
 //
-// • Each avatar is 28 pt, overlapping by 8 pt so the stack stays compact.
-// • Overflow badge ("+" + remaining unique-author count) appears after the
-//   4th avatar only when more than 4 distinct authors posted.
-// • When only 1 author posted the label reads "1 new post".
-// • The whole pill is a tappable Button that scrolls to the top and dismisses.
+// Live-draining: the ViewModel removes posts from the unseen set as the
+// user scrolls up past them, so the count ticks down and avatars leave
+// the stack once their author's last unseen post has been passed.
 private struct NewPostsPill: View {
     let count: Int
-    /// Up to 4 unique-author PostItems, newest-first (from TimelineViewModel).
+    /// Up to 5 unique-author PostItems, newest-first (from TimelineViewModel).
     let authors: [PostItem]
+    /// Unique unseen authors beyond the 5 shown — rendered as "+N".
+    let overflowAuthorCount: Int
     let action: () -> Void
 
     // Size constants
@@ -410,6 +464,16 @@ private struct NewPostsPill: View {
                     avatarStack
                 }
 
+                // ── Overflow badge: unique authors beyond the stack ──
+                if overflowAuthorCount > 0 {
+                    Text("+\(overflowAuthorCount)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .frame(height: 22)
+                        .background(Capsule().fill(Color.white.opacity(0.25)))
+                }
+
                 // ── Up arrow + count label ──
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.up")
@@ -422,11 +486,8 @@ private struct NewPostsPill: View {
             .padding(.leading, authors.isEmpty ? AtmoTheme.Spacing.md : AtmoTheme.Spacing.sm)
             .padding(.trailing, AtmoTheme.Spacing.md)
             .padding(.vertical, AtmoTheme.Spacing.sm)
-            .background {
-                Capsule()
-                    .fill(AtmoColors.skyBlue)
-                    .shadow(color: AtmoColors.skyBlue.opacity(0.4), radius: 8, y: 4)
-            }
+            // Tinted Liquid Glass — the prominent-action treatment.
+            .glassEffect(.regular.tint(AtmoColors.accent).interactive(), in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -436,13 +497,13 @@ private struct NewPostsPill: View {
     private var avatarStack: some View {
         // ZStack with negative spacing produces the overlapping fan effect.
         // We render in reverse order so the first (newest) author sits on top.
-        let displayed = authors // already capped at 4 in the ViewModel
+        let displayed = authors // already capped at 5 in the ViewModel
         ZStack(alignment: .leading) {
             ForEach(Array(displayed.enumerated()), id: \.element.authorDID) { index, author in
                 AvatarView(url: author.authorAvatarURL, size: avatarSize)
                     .overlay(
                         Circle()
-                            .strokeBorder(AtmoColors.skyBlue, lineWidth: 1.5)
+                            .strokeBorder(AtmoColors.accent, lineWidth: 1.5)
                     )
                     .offset(x: CGFloat(index) * (avatarSize - overlap))
                     .zIndex(Double(displayed.count - index)) // first author on top
@@ -466,16 +527,11 @@ struct ScrollToTopButton: View {
         Button(action: action) {
             Image(systemName: "arrow.up")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
                 .frame(width: 44, height: 44)
-                .background {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                }
+                .glassEffect(.regular.interactive(), in: Circle())
         }
         .buttonStyle(ScrollToTopButtonStyle())
-        .atmoShadow(AtmoTheme.Shadow.floating)
     }
 }
 

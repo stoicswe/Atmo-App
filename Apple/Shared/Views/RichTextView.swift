@@ -116,7 +116,7 @@ struct RichTextView: View {
                     // Use the canonical URI from the facet even when the display text is truncated
                     if let url = URL(string: link.uri) {
                         attributed[attrRange].link = url
-                        attributed[attrRange].foregroundColor = AtmoColors.skyBlue
+                        attributed[attrRange].foregroundColor = AtmoColors.accent
                     }
 
                 case .mention(let mention):
@@ -127,14 +127,14 @@ struct RichTextView: View {
                         withAllowedCharacters: .urlPathAllowed
                     ) ?? mention.did
                     attributed[attrRange].link = URL(string: "atmo://profile/\(encoded)")
-                    attributed[attrRange].foregroundColor = AtmoColors.skyBlue
+                    attributed[attrRange].foregroundColor = AtmoColors.accent
 
                 case .tag(let tagFeature):
                     let encoded = tagFeature.tag.addingPercentEncoding(
                         withAllowedCharacters: .urlPathAllowed
                     ) ?? tagFeature.tag
                     attributed[attrRange].link = URL(string: "atmo://hashtag/\(encoded)")
-                    attributed[attrRange].foregroundColor = AtmoColors.skyBlue
+                    attributed[attrRange].foregroundColor = AtmoColors.accent
 
                 default:
                     // .unknown or future feature types — skip
@@ -171,7 +171,7 @@ struct RichTextView: View {
             let handle  = String(text[handleStringRange])
             let encoded = handle.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? handle
 
-            attributed[attrRange].foregroundColor = AtmoColors.skyBlue
+            attributed[attrRange].foregroundColor = AtmoColors.accent
             attributed[attrRange].link = URL(string: "atmo://profile/\(encoded)")
         }
     }
@@ -205,7 +205,7 @@ struct RichTextView: View {
             let tag     = String(text[tagStringRange])
             let encoded = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
 
-            attributed[attrRange].foregroundColor = AtmoColors.skyBlue
+            attributed[attrRange].foregroundColor = AtmoColors.accent
             attributed[attrRange].link = URL(string: "atmo://hashtag/\(encoded)")
         }
     }

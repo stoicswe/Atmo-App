@@ -128,9 +128,9 @@ struct SearchView: View {
             // results (or empty state) stay mounted so no view rebuild occurs.
             if vm.isLoading {
                 ProgressView()
-                    .tint(AtmoColors.skyBlue)
+                    .tint(AtmoColors.accent)
                     .padding(AtmoTheme.Spacing.lg)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
@@ -281,10 +281,7 @@ private struct SearchBar: View {
         }
         .padding(.horizontal, AtmoTheme.Spacing.md)
         .padding(.vertical, AtmoTheme.Spacing.sm)
-        .background {
-            RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: query.isEmpty)
     }
 }
@@ -307,14 +304,14 @@ private struct CategoryChip: View {
                 if let count = count, count > 0 {
                     Text("\(count)")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : AtmoColors.skyBlue)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : AtmoColors.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background {
                             Capsule()
                                 .fill(isSelected
                                       ? Color.white.opacity(0.25)
-                                      : AtmoColors.skyBlue.opacity(0.15))
+                                      : AtmoColors.accent.opacity(0.15))
                         }
                 }
             }
@@ -323,7 +320,7 @@ private struct CategoryChip: View {
             .padding(.vertical, AtmoTheme.Spacing.xs)
             .background {
                 Capsule()
-                    .fill(isSelected ? AtmoColors.skyBlue : Color.secondary.opacity(0.1))
+                    .fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.1))
             }
         }
         .buttonStyle(.plain)
@@ -421,11 +418,11 @@ private struct HashtagRow: View {
         HStack(spacing: AtmoTheme.Spacing.md) {
             ZStack {
                 Circle()
-                    .fill(AtmoColors.skyBlue.opacity(0.12))
+                    .fill(AtmoColors.accent.opacity(0.12))
                     .frame(width: 36, height: 36)
                 Text("#")
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(AtmoColors.skyBlue)
+                    .foregroundStyle(AtmoColors.accent)
             }
 
             Text("#\(tag)")

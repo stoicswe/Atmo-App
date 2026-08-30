@@ -67,12 +67,9 @@ struct ComposerView: View {
 
     var body: some View {
         NavigationStack {
+            // The system sheet already provides the correct Liquid Glass
+            // era background — no custom material layer on top of it.
             ZStack {
-                // Background: thin glass
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .ignoresSafeArea()
-
                 if let vm = viewModel {
                     ScrollView {
                         VStack(spacing: 0) {
@@ -315,7 +312,7 @@ struct ComposerView: View {
 
         HStack(spacing: AtmoTheme.Spacing.sm) {
             Image(systemName: "character.bubble")
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
                 .font(.subheadline)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -338,13 +335,13 @@ struct ComposerView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, AtmoTheme.Spacing.sm)
                     .padding(.vertical, 5)
-                    .background { Capsule().fill(AtmoColors.skyBlue) }
+                    .background { Capsule().fill(AtmoColors.accent) }
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.vertical, AtmoTheme.Spacing.sm)
-        .background(AtmoColors.skyBlue.opacity(0.07))
+        .background(AtmoColors.accent.opacity(0.07))
     }
 }
 
@@ -556,7 +553,7 @@ private struct SlotComposerRow: View {
                                     Capsule().fill(
                                         img.altText.isEmpty
                                             ? Color.black.opacity(0.6)
-                                            : AtmoColors.skyBlue
+                                            : AtmoColors.accent
                                     )
                                 )
                         }
@@ -590,15 +587,7 @@ private struct SlotComposerRow: View {
         }
         .padding(AtmoTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(
-            cornerRadius: AtmoTheme.CornerRadius.medium,
-            style: .continuous
-        ))
-        .overlay(
-            RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
-                .stroke(AtmoColors.glassBorder, lineWidth: 0.5)
-        )
+        .neumorphicGlassCard()
     }
 
     // MARK: - Helpers

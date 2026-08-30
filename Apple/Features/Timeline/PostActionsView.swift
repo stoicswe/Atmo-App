@@ -118,7 +118,7 @@ struct PostActionsView: View {
                 } label: {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.callout)
-                        .foregroundStyle(isBookmarked ? AtmoColors.skyBlue : .secondary)
+                        .foregroundStyle(isBookmarked ? AtmoColors.accent : .secondary)
                         .symbolEffect(.bounce, value: isBookmarked)
                 }
                 .buttonStyle(.plain)

@@ -103,11 +103,11 @@ private struct DraftRowView: View {
             // Icon badge
             ZStack {
                 Circle()
-                    .fill(AtmoColors.skyBlue.opacity(0.12))
+                    .fill(AtmoColors.accent.opacity(0.12))
                     .frame(width: AtmoTheme.Feed.avatarSize, height: AtmoTheme.Feed.avatarSize)
                 Image(systemName: iconName)
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(AtmoColors.skyBlue)
+                    .foregroundStyle(AtmoColors.accent)
             }
 
             VStack(alignment: .leading, spacing: AtmoTheme.Spacing.xs) {
@@ -117,7 +117,7 @@ private struct DraftRowView: View {
                     if let ctx = contextLabel {
                         Text(ctx)
                             .font(AtmoFonts.authorHandle)
-                            .foregroundStyle(AtmoColors.skyBlue)
+                            .foregroundStyle(AtmoColors.accent)
                         Text("·")
                             .font(AtmoFonts.authorHandle)
                             .foregroundStyle(.tertiary)

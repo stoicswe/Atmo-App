@@ -5,7 +5,7 @@ import AtmoCore
 enum SidebarItem: String, CaseIterable, Identifiable {
     case timeline      = "Home"
     case search        = "Search"
-    case notifications = "Notifications"
+    case notifications = "Activity"
     case messages      = "Messages"
     case profile       = "Profile"
     case bookmarks     = "Bookmarks"
@@ -73,6 +73,15 @@ struct AppNavigation: View {
     // Owned NavigationPath for the iPhone timeline tab — lets us push a
     // Spotlight-opened thread onto the timeline stack from AppNavigation.
     @State private var phoneTimelineNavPath = NavigationPath()
+
+    // Sidebar rows don't inherit the tint environment on macOS — their
+    // icons take the asset-catalog accent instead. Observing the preset
+    // here and applying it via listItemTint keeps the sidebar in sync
+    // with Settings → Appearance, live.
+    @AppStorage(ThemeKeys.accentPresetID) private var accentPresetID: String = AccentPresets.defaultID
+    private var sidebarTint: Color {
+        AccentPresets.preset(forID: accentPresetID).color
+    }
 
     var body: some View {
         platformView
@@ -176,43 +185,29 @@ struct AppNavigation: View {
     // Custom sidebar: scrollable primary items at top, Profile + Settings pinned at bottom.
     private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-
-                // ── Scrollable primary items ──
-                List(primaryItems, selection: $selectedItem) { item in
-                    sidebarLabel(for: item)
-                        .tag(item)
-                }
-                .listStyle(.sidebar)
-                .frame(maxHeight: .infinity)
-
-                Divider()
-                    .overlay(Color.secondary.opacity(0.2))
-
-                // ── Bottom-pinned: Profile + Settings ──
-                VStack(spacing: 2) {
-                    ForEach(bottomItems) { item in
-                        Button {
-                            selectedItem = item
-                        } label: {
-                            sidebarLabel(for: item)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
-                                .background {
-                                    if selectedItem == item {
-                                        RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small)
-                                            .fill(Color.accentColor.opacity(0.15))
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
+            // One native sidebar List, sectioned like Mail/Notes: every row
+            // gets the system selection highlight, hover states, spacing,
+            // and badge rendering — no custom-styled rows.
+            List(selection: $selectedItem) {
+                Section {
+                    ForEach(primaryItems) { item in
+                        sidebarLabel(for: item)
+                            .tag(item)
+                            .listItemTint(.fixed(sidebarTint))
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+
+                Section("Library") {
+                    ForEach(bottomItems) { item in
+                        sidebarLabel(for: item)
+                            .tag(item)
+                            .listItemTint(.fixed(sidebarTint))
+                    }
+                }
             }
+            .listStyle(.sidebar)
+            // Wide enough that "Notifications" and "Messages" don't truncate.
+            .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .navigationTitle("Atmo")
         } detail: {
             // One NavigationStack owns the entire detail column.
@@ -274,7 +269,7 @@ struct AppNavigation: View {
             NotificationsView(embeddedInSplitView: true)
                 .opacity(active == .notifications ? 1 : 0)
                 .allowsHitTesting(active == .notifications)
-                .navigationTitle(active == .notifications ? "Notifications" : "")
+                .navigationTitle(active == .notifications ? "Activity" : "")
 
             ConversationListView(embeddedInSplitView: true)
                 .opacity(active == .messages ? 1 : 0)
@@ -313,7 +308,7 @@ struct AppNavigation: View {
         switch item {
         case .timeline:      return "Home"
         case .search:        return "Search"
-        case .notifications: return "Notifications"
+        case .notifications: return "Activity"
         case .messages:      return "Messages"
         case .profile:       return "Profile"
         case .bookmarks:     return "Bookmarks"
@@ -395,6 +390,9 @@ struct AppNavigation: View {
                     }
                     .tag(Optional(SidebarItem.settings))
             }
+            // Native iOS 26 behavior: the Liquid Glass tab bar shrinks out
+            // of the way while scrolling the feed and returns on scroll-up.
+            .tabBarMinimizeBehavior(.onScrollDown)
 
             // Liquid Glass FAB — above tab bar
             ComposeFAB { showComposer = true }
@@ -490,7 +488,7 @@ private struct ComposeFAB: View {
         Button(action: action) {
             Image(systemName: "square.and.pencil")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
                 .frame(width: 56, height: 56)
                 .glassEffect(.regular.interactive(), in: Circle())
         }
@@ -514,7 +512,7 @@ private struct DraftSavedToast: View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
             Image(systemName: "doc.text.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AtmoColors.skyBlue)
+                .foregroundStyle(AtmoColors.accent)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Draft saved")

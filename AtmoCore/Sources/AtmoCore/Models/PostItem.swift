@@ -201,7 +201,9 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         authorHandle: String = "alice.test",
         text: String = "",
         replyParentURI: String? = nil,
-        replyRootURI: String? = nil
+        replyRootURI: String? = nil,
+        indexedAt: Date = Date(),
+        isRepost: Bool = false
     ) {
         self.uri = testURI
         self.id = testURI
@@ -212,9 +214,8 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorAvatarURL = nil
         self.text = text
         self.facets = []
-        let now = Date()
-        self.createdAt = now
-        self.indexedAt = now
+        self.createdAt = indexedAt
+        self.indexedAt = indexedAt
         self.likeCount = 0
         self.repostCount = 0
         self.replyCount = 0
@@ -226,7 +227,9 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.embed = nil
         self.replyParentURI = replyParentURI
         self.replyRootURI = replyRootURI
-        self.reason = nil
+        self.reason = isRepost
+            ? .repost(byDID: authorDID, byHandle: authorHandle, byDisplayName: nil, indexedAt: indexedAt)
+            : nil
     }
 
     // MARK: - Display Text

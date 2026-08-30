@@ -18,7 +18,7 @@ struct LoginView: View {
             // Subtle animated blobs for depth
             GeometryReader { geo in
                 Circle()
-                    .fill(AtmoColors.skyBlue.opacity(0.18))
+                    .fill(AtmoColors.accent.opacity(0.18))
                     .frame(width: geo.size.width * 0.7)
                     .blur(radius: 80)
                     .offset(x: -geo.size.width * 0.2, y: -geo.size.height * 0.1)
@@ -41,7 +41,7 @@ struct LoginView: View {
                             .font(.system(size: 64, weight: .light))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [AtmoColors.skyBlue, .white.opacity(0.8)],
+                                    colors: [AtmoColors.accent, .white.opacity(0.8)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -125,7 +125,7 @@ struct LoginView: View {
                             .frame(maxWidth: .infinity)
                             .padding(AtmoTheme.Spacing.lg)
                             .background(
-                                viewModel.canSubmit ? AtmoColors.skyBlue : Color.secondary.opacity(0.3)
+                                viewModel.canSubmit ? AtmoColors.accent : Color.secondary.opacity(0.3)
                             )
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.large, style: .continuous))

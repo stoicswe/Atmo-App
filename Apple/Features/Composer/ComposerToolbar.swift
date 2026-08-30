@@ -35,9 +35,8 @@ struct ComposerToolbar: View {
                     Text("Post Options")
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass)
             .popover(isPresented: $showPostOptions, arrowEdge: .bottom) {
                 postOptionsContent
             }
@@ -48,6 +47,8 @@ struct ComposerToolbar: View {
             characterRing(remaining: remaining, progress: progress)
 
             // ── Post pill ──
+            // Prominent Liquid Glass button: the system supplies the
+            // capsule, tint, pressed states, and disabled dimming.
             Button {
                 Task { await viewModel.submit() }
             } label: {
@@ -58,28 +59,20 @@ struct ComposerToolbar: View {
                     } else {
                         Text(viewModel.slots.count > 1 ? "Post All" : "Post")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
                     }
                 }
                 .frame(minWidth: 52)
-                .padding(.horizontal, AtmoTheme.Spacing.md)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule().fill(
-                        viewModel.canSubmitThread
-                            ? AtmoColors.skyBlue
-                            : Color.secondary.opacity(0.35)
-                    )
-                )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glassProminent)
+            .tint(AtmoColors.accent)
             .disabled(!viewModel.canSubmitThread)
             .animation(.easeInOut(duration: 0.15), value: viewModel.canSubmitThread)
             .animation(.easeInOut(duration: 0.15), value: viewModel.slots.count)
         }
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.vertical, AtmoTheme.Spacing.sm)
-        .background(.regularMaterial)
+        // No bar material: the controls are glass and float over the
+        // sheet's own background, letting content scroll beneath them.
     }
 
     // MARK: - Character ring
@@ -103,7 +96,7 @@ struct ComposerToolbar: View {
                     .stroke(
                         remaining < 0 ? Color.red :
                         remaining < 50 ? Color.orange :
-                        AtmoColors.skyBlue,
+                        AtmoColors.accent,
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
@@ -132,12 +125,12 @@ struct ComposerToolbar: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .tint(AtmoColors.skyBlue)
+            .tint(AtmoColors.accent)
 
             if showTranslationDisclosureOption {
                 Label("You translated the post you're replying to.", systemImage: "character.bubble")
                     .font(.caption)
-                    .foregroundStyle(AtmoColors.skyBlue)
+                    .foregroundStyle(AtmoColors.accent)
             }
         }
         .padding(AtmoTheme.Spacing.lg)

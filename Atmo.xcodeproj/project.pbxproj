@@ -9,7 +9,9 @@
 /* Begin PBXBuildFile section */
 		0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 159C86922803A5EE97A1D0B3 /* GlassModifiers.swift */; };
 		08B19C0F3DD2FFC095D6913A /* AtmoColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE2293C659B96F8502E117 /* AtmoColors.swift */; };
+		0BEE367ACF73BAA1DEB8E681 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
 		17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECBF46F2260DDDFB90663C7 /* TranslationHelper.swift */; };
+		1843786BDF6D8A2D2A15ED7D /* ThemeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */; };
 		1B86384E09352AC5D7806E10 /* AsyncCachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */; };
 		1FD075E8CE0F3E8D42D1958C /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35D8ECCAC181EE3791D987A6 /* GlassCard.swift */; };
 		22BC73F208891F3B99FDD44C /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD035BF0A58A2F8E60C0E74 /* DraftsView.swift */; };
@@ -37,10 +39,12 @@
 		6DA828B883E3B1912E20D3F5 /* EditProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0313DE856480435B53F1F399 /* EditProfileView.swift */; };
 		7314CAAA255AFD978D889749 /* NewConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D1E7B8D83296E87147911D /* NewConversationView.swift */; };
 		744CEA9BEE824804F8AEA7FC /* PostEmbedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC7B1466B45A8EACAE111A51 /* PostEmbedView.swift */; };
+		74EF77254149C0663801FD81 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */; };
 		81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
 		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */; };
+		9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		A96680C4D87175D11D055E72 /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
 		AA7AEB11D4F63900E31D774F /* SpotlightPostIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */; };
 		AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B04EE931B31F8F7BFBE70C9 /* View+Atmo.swift */; };
@@ -64,6 +68,7 @@
 		E92762AD164A88086C21B0A8 /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810F3101A6618E68B1AC2A36 /* AvatarView.swift */; };
 		EDBF8BC2F06A2A30279639E1 /* KeychainSecretsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */; };
 		EDDDF319E4EAB088ECDDAD6B /* AtmoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 00BA650A642C01670434726A /* AtmoCore */; };
+		EE1432A2731D07E549451814 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
 		F1E7A2C138947A1556C26B77 /* ATProtoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5DFD0103A658C3BEAD99D4A2 /* ATProtoKit */; };
 /* End PBXBuildFile section */
 
@@ -99,15 +104,18 @@
 		1852C1676F9B93E2152D1D2C /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		1E27E161212025CBDA762FF7 /* AtmoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoApp.swift; sourceTree = "<group>"; };
 		24D4C752CD2EE12A1600868A /* AtmoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoTheme.swift; sourceTree = "<group>"; };
+		2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSettings.swift; sourceTree = "<group>"; };
 		29A102F8922C0C58A2E8AFC5 /* WatchNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNotificationsView.swift; sourceTree = "<group>"; };
 		314CED221A493CBD1616999A /* FeedItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedItemView.swift; sourceTree = "<group>"; };
 		31F5CC67B73F5649C235A041 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		35D8ECCAC181EE3791D987A6 /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationsPresenter.swift; sourceTree = "<group>"; };
 		487A47451110A7905995A9DF /* ComposerToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolbar.swift; sourceTree = "<group>"; };
 		60BFCDD1F37B662C607BF339 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		66FE2F6749F651AF55F5CEFD /* WatchLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLoginView.swift; sourceTree = "<group>"; };
 		67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTimelineView.swift; sourceTree = "<group>"; };
+		6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSync.swift; sourceTree = "<group>"; };
 		72EE8B6712C41D5DFE13C192 /* ConversationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDetailView.swift; sourceTree = "<group>"; };
 		7A042721FAAFC56FB1EF66BA /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
 		810F3101A6618E68B1AC2A36 /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
@@ -116,6 +124,7 @@
 		900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslateButton.swift; sourceTree = "<group>"; };
 		90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCachedImage.swift; sourceTree = "<group>"; };
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretsStore.swift; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
@@ -229,6 +238,7 @@
 				9DB491E5F7834CC957834164 /* Apple */,
 				FE109089682981726601229B /* Packages */,
 				6F8D308871B13EED9BDD3799 /* Resources */,
+				91938DD29517C10C03A830ED /* Atmo.storekit */,
 				A728244928710EB3D14B4875 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -384,6 +394,7 @@
 			isa = PBXGroup;
 			children = (
 				9084323DF95DF070B6E3BC73 /* SettingsView.swift */,
+				2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -401,9 +412,11 @@
 			isa = PBXGroup;
 			children = (
 				B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */,
+				6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */,
 				A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */,
 				E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */,
 				F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */,
+				36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */,
 			);
 			path = Platform;
 			sourceTree = "<group>";
@@ -533,9 +546,11 @@
 			files = (
 				81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */,
 				BA547FD6B799B74C41882C96 /* AtmoWatchApp.swift in Sources */,
+				EE1432A2731D07E549451814 /* BackgroundSync.swift in Sources */,
 				AFA3D7D5DD6407DF10099411 /* KeychainSecretsStore.swift in Sources */,
 				AA7AEB11D4F63900E31D774F /* SpotlightPostIndexer.swift in Sources */,
 				B346F6A39232B0B8C9FE1592 /* UbiquitousKeyValueStore.swift in Sources */,
+				74EF77254149C0663801FD81 /* UserNotificationsPresenter.swift in Sources */,
 				DC523B4305411F0780BAB576 /* WatchLoginView.swift in Sources */,
 				3F89056E069A824C40873F76 /* WatchNotificationsView.swift in Sources */,
 				8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */,
@@ -554,6 +569,7 @@
 				5AB9600490C0216F7643C6E8 /* AtmoFonts.swift in Sources */,
 				54BA4BC259F1F2EDF4DB2490 /* AtmoTheme.swift in Sources */,
 				E92762AD164A88086C21B0A8 /* AvatarView.swift in Sources */,
+				0BEE367ACF73BAA1DEB8E681 /* BackgroundSync.swift in Sources */,
 				DAEA684A5B95EDDD12466274 /* BookmarksView.swift in Sources */,
 				5937998BA3B19976F6A6D359 /* ComposerToolbar.swift in Sources */,
 				D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */,
@@ -582,12 +598,14 @@
 				CCD3FF9032F6926429B85AB8 /* SearchView.swift in Sources */,
 				B449D5D49FCF4C84E2842261 /* SettingsView.swift in Sources */,
 				269CDC34B769809348CDC5A4 /* SpotlightPostIndexer.swift in Sources */,
+				1843786BDF6D8A2D2A15ED7D /* ThemeSettings.swift in Sources */,
 				4C4B14C8E18179FDD53D0A24 /* ThreadView.swift in Sources */,
 				D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */,
 				C0C560B337FACFEC4A5AE2BE /* TranslateButton.swift in Sources */,
 				17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */,
 				CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */,
 				68E35D479091FE23D6CBE6DC /* UbiquitousKeyValueStore.swift in Sources */,
+				9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */,
 				AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

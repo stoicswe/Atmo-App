@@ -22,7 +22,7 @@ struct ErrorBannerView: View {
                 Button("Retry", action: onRetry)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .tint(AtmoColors.skyBlue)
+                    .tint(AtmoColors.accent)
             }
         }
         .padding(AtmoTheme.Spacing.md)
