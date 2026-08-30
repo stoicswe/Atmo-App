@@ -18,7 +18,7 @@ extension AtmoPlatform {
     static var apple: AtmoPlatform {
         AtmoPlatform(
             secrets: KeychainSecretsStore(),
-            syncedKeyValue: UbiquitousKeyValueStore(),
+            syncedKeyValue: syncedKeyValueStore,
             postIndexer: postIndexer,
             // ATProtoKit's own Keychain-backed store. The default service
             // name ("ATProtoKit") is deliberately preserved so refresh
@@ -30,6 +30,17 @@ extension AtmoPlatform {
             timelineRefreshInterval: timelineRefreshInterval,
             alertPresenter: UserNotificationsPresenter()
         )
+    }
+
+    // iCloud KVS needs the ubiquity-kvstore entitlement. The watch app
+    // ships without one (see project.yml), so it uses local storage
+    // instead of making iCloud calls that would silently no-op.
+    private static var syncedKeyValueStore: any SyncedKeyValueStore {
+#if os(watchOS)
+        LocalKeyValueStore()
+#else
+        UbiquitousKeyValueStore()
+#endif
     }
 
     private static var postIndexer: any PostIndexing {

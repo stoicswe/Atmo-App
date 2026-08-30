@@ -129,7 +129,19 @@ targets:
         PRODUCT_NAME: AtmoWatch
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        CODE_SIGN_ENTITLEMENTS: Resources/Atmo.entitlements
+        # Deliberately NO entitlements file. Sharing the iOS app's would
+        # request iCloud KVS, and `$(CFBundleIdentifier)` expands per
+        # target — the watch would get its OWN container
+        # (…app.watchkitapp), so it could never share data with the phone
+        # anyway, while forcing the iCloud capability onto the watch App
+        # ID (which broke Xcode Cloud's export: automatic signing cannot
+        # add capabilities to a registered bundle ID).
+        #
+        # To give the watch real iCloud sync later: enable iCloud on the
+        # watchkitapp App ID in the Developer portal, add a watch-only
+        # entitlements file, and HARDCODE the parent's container
+        # ($(TeamIdentifierPrefix)stoicswe.com-atmin-app) rather than
+        # inheriting $(CFBundleIdentifier).
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Atmo
         INFOPLIST_KEY_WKApplication: YES

@@ -2,6 +2,8 @@ import Foundation
 import AtmoCore
 #if os(iOS)
 import BackgroundTasks
+#elseif os(watchOS)
+import WatchKit
 #endif
 
 // MARK: - BackgroundSync
@@ -16,8 +18,10 @@ import BackgroundTasks
 //     (even minimized), deferred and batched by the system with a wide
 //     tolerance, at utility QoS — the API macOS provides specifically
 //     so periodic work doesn't defeat App Nap or timer coalescing.
-//   • watchOS: nothing scheduled here — the paired iPhone app carries
-//     notification duty.
+//   • watchOS: WKApplication background refresh, so a standalone watch
+//     (no phone nearby) still checks on its own. The system coalesces
+//     these tightly — expect roughly hourly unless the app has a
+//     complication on the active watch face, which raises the budget.
 //
 // A pass restores the session if needed (background launches skip the
 // UI's restore path), runs one engine pass, and hands the resulting
@@ -42,6 +46,8 @@ enum BackgroundSync {
         scheduleNextRefresh()
 #elseif os(macOS)
         startActivityScheduler()
+#elseif os(watchOS)
+        scheduleNextRefresh()
 #endif
     }
 
@@ -84,6 +90,27 @@ enum BackgroundSync {
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         try? BGTaskScheduler.shared.submit(request)
+    }
+#endif
+
+#if os(watchOS)
+    // MARK: - watchOS: WKApplication background refresh
+    //
+    // The task *handler* lives in WatchAppDelegate (WatchKit delivers
+    // background tasks through the application delegate, not a closure
+    // registry like BGTaskScheduler). This only arms the next request.
+
+    /// Ask for a wake-up no sooner than 15 minutes out. watchOS treats
+    /// this as a preference, not a promise — it batches wake-ups by
+    /// wrist state, battery, and complication presence.
+    static func scheduleNextRefresh() {
+        WKApplication.shared().scheduleBackgroundRefresh(
+            withPreferredDate: Date(timeIntervalSinceNow: 15 * 60),
+            userInfo: nil
+        ) { _ in
+            // Scheduling failures are non-actionable here; the next
+            // foreground launch re-arms.
+        }
     }
 #endif
 

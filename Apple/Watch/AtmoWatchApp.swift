@@ -1,25 +1,67 @@
 import SwiftUI
+import WatchKit
 import AtmoCore
 
-// The watchOS companion experience: a compact, read-and-react client.
-// Timeline and notifications with like/repost — composing, DMs, search,
-// and the full design system stay on the bigger screens. Everything below
-// runs on the same AtmoCore services as the other platforms.
+// The watchOS experience: a compact, read-and-react client that also
+// works fully standalone — it signs in with its own Keychain session,
+// talks to Bluesky over the watch's Wi-Fi/LTE, and runs its own
+// background sync for notifications when no iPhone is around.
+// Composing, DMs, search, and the full design system stay on the
+// bigger screens. Everything below runs on the same AtmoCore services
+// as the other platforms.
 @main
 struct AtmoWatchApp: App {
-    @State private var atProtoService = ATProtoService()
+    @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var atProtoService: ATProtoService
 
     init() {
         // Install the Apple implementations of AtmoCore's platform seams
         // before any AtmoCore service singleton is touched. On watchOS the
-        // Spotlight seam resolves to the no-op indexer automatically.
+        // Spotlight seam resolves to the no-op indexer and storage is
+        // local-only (no iCloud entitlement — see project.yml).
         Atmo.platform = .apple
+
+        // Standalone background sync: the watch schedules its own
+        // WKApplication background refreshes and presents local
+        // notifications, so interactions arrive without a paired phone.
+        let service = ATProtoService()
+        _atProtoService = State(initialValue: service)
+        BackgroundSync.configure(service: service)
     }
 
     var body: some Scene {
         WindowGroup {
             WatchRootView()
                 .environment(atProtoService)
+        }
+        // Re-arm the refresh request whenever the app leaves the
+        // foreground — the system then picks battery-friendly moments.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                BackgroundSync.scheduleNextRefresh()
+            }
+        }
+    }
+}
+
+// MARK: - Application Delegate
+// WatchKit delivers background tasks through the application delegate
+// (there is no closure-registration API like iOS's BGTaskScheduler).
+final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+
+    func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
+        for task in backgroundTasks {
+            if let refresh = task as? WKApplicationRefreshBackgroundTask {
+                Task { @MainActor in
+                    await BackgroundSync.runPass()
+                    BackgroundSync.scheduleNextRefresh()
+                    refresh.setTaskCompletedWithSnapshot(false)
+                }
+            } else {
+                // Snapshot/connectivity/URLSession tasks we don't use yet.
+                task.setTaskCompletedWithSnapshot(false)
+            }
         }
     }
 }
@@ -53,6 +95,10 @@ struct WatchHomeView: View {
             NavigationStack {
                 WatchNotificationsView()
                     .navigationTitle("Activity")
+            }
+            NavigationStack {
+                WatchSettingsView()
+                    .navigationTitle("Settings")
             }
         }
         .tabViewStyle(.verticalPage)
