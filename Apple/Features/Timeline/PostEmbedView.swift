@@ -60,25 +60,34 @@ private struct ImageGridView: View {
         let count = images.count
         Group {
             if count == 1 {
-                AsyncCachedImage(url: images[0].fullSizeImageURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Color.secondary.opacity(0.2)
+                // The box is sized from the API-provided aspect ratio BEFORE
+                // the image loads, so the row never changes height when the
+                // download lands — mid-scroll height shifts are what made the
+                // feed feel jumpy. The ratio is clamped so very tall images
+                // crop (like other clients) instead of dominating the feed.
+                Color.clear
+                    .aspectRatio(Self.displayAspectRatio(images[0].aspectRatio), contentMode: .fit)
+                    .overlay {
+                        AsyncCachedImage(url: images[0].fullSizeImageURL) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Color.secondary.opacity(0.2)
+                            }
+                        }
                     }
-                }
-                .frame(maxHeight: 300)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onImageTap?(images, 0)
-                }
-                // Show a subtle "tap to expand" affordance when interactive
-                .overlay(alignment: .bottomTrailing) {
-                    if onImageTap != nil {
-                        expandBadge
+                    .frame(maxHeight: 480)
+                    .clipped()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onImageTap?(images, 0)
                     }
-                }
+                    // Show a subtle "tap to expand" affordance when interactive
+                    .overlay(alignment: .bottomTrailing) {
+                        if onImageTap != nil {
+                            expandBadge
+                        }
+                    }
             } else {
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: min(count, 2)),
@@ -103,6 +112,17 @@ private struct ImageGridView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+    }
+
+    /// Width/height display ratio for reserving media space pre-load.
+    /// Falls back to 3:2 when the record carries no ratio; clamps so
+    /// portrait media caps near 6:7 (crops) and panoramas near 3:1.
+    static func displayAspectRatio(
+        _ ratio: AppBskyLexicon.Embed.AspectRatioDefinition?
+    ) -> CGFloat {
+        guard let ratio, ratio.height > 0, ratio.width > 0 else { return 1.5 }
+        let raw = CGFloat(ratio.width) / CGFloat(ratio.height)
+        return min(max(raw, 0.85), 3.0)
     }
 
     /// Small magnifying glass badge shown on single images to hint they're tappable.
@@ -213,27 +233,32 @@ private struct VideoEmbedView: View {
     let video: AppBskyLexicon.Embed.VideoDefinition.View
 
     var body: some View {
-        ZStack {
-            if let thumbString = video.thumbnailImageURL,
-               let thumbURL = URL(string: thumbString) {
-                AsyncCachedImage(url: thumbURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Color.black.opacity(0.4)
+        // Same pre-reserved sizing as images: the box height comes from the
+        // record's aspect ratio, not from whether the thumbnail has loaded.
+        Color.clear
+            .aspectRatio(ImageGridView.displayAspectRatio(video.aspectRatio), contentMode: .fit)
+            .overlay {
+                if let thumbString = video.thumbnailImageURL,
+                   let thumbURL = URL(string: thumbString) {
+                    AsyncCachedImage(url: thumbURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Color.black.opacity(0.4)
+                        }
                     }
+                } else {
+                    Color.black.opacity(0.4)
                 }
-            } else {
-                Color.black.opacity(0.4)
             }
-
-            Image(systemName: "play.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.white)
-                .atmoShadow(AtmoTheme.Shadow.floating)
-        }
-        .frame(maxHeight: 240)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+            .overlay {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.white)
+                    .atmoShadow(AtmoTheme.Shadow.floating)
+            }
+            .frame(maxHeight: 480)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
     }
 }

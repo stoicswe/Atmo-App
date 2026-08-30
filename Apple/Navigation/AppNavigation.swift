@@ -46,6 +46,13 @@ private let primaryItems: [SidebarItem] = [.timeline, .search, .notifications, .
 // Items pinned to the bottom of the sidebar panel (profile → bookmarks → drafts → settings)
 private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .drafts, .settings]
 
+#if os(iOS)
+// iPhone shell: three tabs grouped in the bottom pill (Phone-app style)…
+private let phoneTabs: [SidebarItem] = [.timeline, .search, .notifications]
+// …and everything else in the left drawer menu.
+private let phoneMenuItems: [SidebarItem] = [.messages, .profile, .bookmarks, .drafts, .settings]
+#endif
+
 // MARK: - Root Navigation
 struct AppNavigation: View {
     @Environment(ATProtoService.self) private var service
@@ -56,6 +63,10 @@ struct AppNavigation: View {
     /// Drives the "Draft saved" toast that appears after an implicit swipe-dismiss.
     @State private var showDraftSavedToast: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+#if os(iOS)
+    /// iPhone: whether the left drawer menu is open.
+    @State private var phoneMenuOpen = false
+#endif
 
     /// Bound to AtmoApp — set when the user taps a Spotlight bookmark result.
     /// When non-nil, we navigate immediately to that post's ThreadView then clear it.
@@ -324,122 +335,187 @@ struct AppNavigation: View {
             .badge(item == .drafts && draftCount > 0 ? draftCount : 0)
     }
 
-    // MARK: - iPhone Tab View
+    // MARK: - iPhone Shell
 #if os(iOS)
+    // Custom scaffold in place of the stock TabView:
+    //  • ONE NavigationStack (same single-stack rule as the split view)
+    //  • persistent content ZStack so tab state survives switches
+    //  • bottom bar: [Home / Search / Activity pill] + [compose circle],
+    //    Phone-app style; on the Search tab the pill morphs into a
+    //    Notes-style search field
+    //  • left drawer with Messages / Profile / Bookmarks / Drafts / Settings;
+    //    the content scales back and dims while it's open
     private var phoneTabView: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TabView(selection: $selectedItem) {
-                // Primary tabs — Timeline renders FLAT inside this stack (via
-                // splitNavPath) so exactly one NavigationStack is ever active;
-                // nesting a second one doubled the top chrome (blank band above
-                // the title). The stack owns the NavigationPath so Spotlight
-                // deep-links can push a thread onto it from AppNavigation.
-                NavigationStack(path: $phoneTimelineNavPath) {
-                    TimelineView(
-                        viewModel: getOrCreateTimelineViewModel(),
-                        splitNavPath: $phoneTimelineNavPath
-                    )
-                    // Compact bar; the feed flows edge-to-edge beneath it.
-                    .navigationTitle("Home")
-                    .toolbarTitleDisplayMode(.inline)
-                    .navigationDestination(for: PostNavTarget.self) { target in
-                        ThreadView(postURI: target.uri)
-                    }
-                    .navigationDestination(for: String.self) { did in
-                        ProfileView(actorDID: did)
-                    }
+        ZStack(alignment: .leading) {
+            phoneMainShell
+                .clipShape(RoundedRectangle(
+                    cornerRadius: phoneMenuOpen ? 40 : 0, style: .continuous))
+                // "Slides backwards away from the viewer": scale down and
+                // nudge right so the drawer reads as a layer above it.
+                .scaleEffect(phoneMenuOpen ? 0.90 : 1)
+                .offset(x: phoneMenuOpen ? 56 : 0)
+
+            if phoneMenuOpen {
+                // Dimming scrim — tap anywhere outside the drawer to close.
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+                    .onTapGesture { phoneMenuOpen = false }
+                    .transition(.opacity)
+
+                PhoneSideMenu(active: selectedItem) { item in
+                    selectedItem = item
+                    phoneMenuOpen = false
                 }
-                .tabItem {
-                    Label(SidebarItem.timeline.rawValue,
-                          systemImage: selectedItem == .timeline
-                          ? SidebarItem.timeline.filledIcon
-                          : SidebarItem.timeline.icon)
-                }
-                .tag(Optional(SidebarItem.timeline))
-
-                // Remaining primary tabs (search, notifications, messages) —
-                // these views own their NavigationStack, so no wrapper here.
-                ForEach(primaryItems.filter { $0 != .timeline }) { item in
-                    detailView(for: item)
-                        .tabItem {
-                            Label(item.rawValue,
-                                  systemImage: selectedItem == item ? item.filledIcon : item.icon)
-                        }
-                        .tag(Optional(item))
-                }
-
-                // Profile tab (owns its NavigationStack)
-                detailView(for: .profile)
-                    .tabItem {
-                        Label(SidebarItem.profile.rawValue,
-                              systemImage: selectedItem == .profile
-                              ? SidebarItem.profile.filledIcon
-                              : SidebarItem.profile.icon)
+                .frame(width: 290)
+                .transition(.move(edge: .leading))
+                .zIndex(2)
+                // Swipe the drawer back toward the edge to close it.
+                .gesture(
+                    DragGesture().onEnded { value in
+                        if value.translation.width < -40 { phoneMenuOpen = false }
                     }
-                    .tag(Optional(SidebarItem.profile))
-
-                // Bookmarks tab (owns its NavigationStack)
-                detailView(for: .bookmarks)
-                    .tabItem {
-                        Label(SidebarItem.bookmarks.rawValue,
-                              systemImage: selectedItem == .bookmarks
-                              ? SidebarItem.bookmarks.filledIcon
-                              : SidebarItem.bookmarks.icon)
-                    }
-                    .tag(Optional(SidebarItem.bookmarks))
-
-                // Settings tab — SettingsView has no stack of its own, so the
-                // wrapper here provides the nav bar for its title.
-                NavigationStack { detailView(for: .settings) }
-                    .tabItem {
-                        Label(SidebarItem.settings.rawValue,
-                              systemImage: selectedItem == .settings
-                              ? SidebarItem.settings.filledIcon
-                              : SidebarItem.settings.icon)
-                    }
-                    .tag(Optional(SidebarItem.settings))
+                )
             }
-            // Native iOS 26 behavior: the Liquid Glass tab bar shrinks out
-            // of the way while scrolling the feed and returns on scroll-up.
-            .tabBarMinimizeBehavior(.onScrollDown)
-
-            // Liquid Glass FAB — above tab bar
-            ComposeFAB { showComposer = true }
-                .padding(.trailing, AtmoTheme.Spacing.xl)
-                .padding(.bottom, 88)
         }
+        .background(Color.black.ignoresSafeArea())
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: phoneMenuOpen)
+    }
+
+    private var phoneMainShell: some View {
+        NavigationStack(path: $phoneTimelineNavPath) {
+            phonePersistentContent
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            phoneMenuOpen = true
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                        .accessibilityLabel("Menu")
+                    }
+                }
+                // All destinations registered once on the single stack.
+                .navigationDestination(for: PostNavTarget.self) { target in
+                    ThreadView(postURI: target.uri)
+                }
+                .navigationDestination(for: String.self) { did in
+                    ProfileView(actorDID: did)
+                }
+                .navigationDestination(for: ConversationItem.self) { convo in
+                    ConversationDetailView(conversation: convo)
+                }
+        }
+        // Floating bottom bar. safeAreaInset (not overlay) so scroll content
+        // gets the inset automatically and the bar rides above the keyboard.
+        .safeAreaInset(edge: .bottom, spacing: 0) { phoneBottomBar }
+    }
+
+    /// The three pill tabs stay alive (opacity toggle) so their scroll
+    /// position and state survive switches; drawer destinations render on
+    /// demand. Titles follow the split view's pattern — set per view, only
+    /// while active — so inactive views can't bleed theirs onto the bar.
+    @ViewBuilder
+    private var phonePersistentContent: some View {
+        let active = selectedItem ?? .timeline
+        let timelineVm = getOrCreateTimelineViewModel()
+        let searchVm = getOrCreateSearchViewModel()
+
+        ZStack {
+            TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath)
+                .opacity(active == .timeline ? 1 : 0)
+                .allowsHitTesting(active == .timeline)
+                .navigationTitle(active == .timeline ? "Home" : "")
+
+            SearchView(
+                viewModel: searchVm,
+                splitNavPath: $phoneTimelineNavPath,
+                hidesSearchField: true
+            )
+            .opacity(active == .search ? 1 : 0)
+            .allowsHitTesting(active == .search)
+            .navigationTitle(active == .search ? "Search" : "")
+
+            NotificationsView(embeddedInSplitView: true)
+                .opacity(active == .notifications ? 1 : 0)
+                .allowsHitTesting(active == .notifications)
+                .navigationTitle(active == .notifications ? "Activity" : "")
+
+            // Drawer destinations — recreated on entry, which is fine (they
+            // were separate coldly-switched tabs before).
+            Group {
+                switch active {
+                case .messages:
+                    ConversationListView(embeddedInSplitView: true)
+                        .navigationTitle("Messages")
+                case .profile:
+                    ProfileView(actorDID: nil, splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Profile")
+                case .bookmarks:
+                    BookmarksView(splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Bookmarks")
+                case .drafts:
+                    DraftsView(splitNavPath: $phoneTimelineNavPath, onOpenDraft: { draft in
+                        draftToResume = draft
+                    })
+                    .navigationTitle("Drafts")
+                case .settings:
+                    SettingsView()
+                default:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    // MARK: - iPhone Bottom Bar
+    // [three-tab glass pill] ......... [compose circle]
+    // On the Search tab the pill morphs into a search field (Notes-style),
+    // with compose staying put on the right.
+    @ViewBuilder
+    private var phoneBottomBar: some View {
+        HStack(spacing: AtmoTheme.Spacing.md) {
+            if selectedItem == .search, let searchVm = searchViewModel {
+                PhoneSearchField(viewModel: searchVm)
+                    .transition(.blurReplace)
+            } else {
+                phoneTabPill
+                    .transition(.blurReplace)
+                Spacer(minLength: 0)
+            }
+
+            ComposeFAB { showComposer = true }
+        }
+        .padding(.horizontal, AtmoTheme.Spacing.lg)
+        .padding(.top, AtmoTheme.Spacing.xs)
+        .padding(.bottom, AtmoTheme.Spacing.sm)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedItem == .search)
+    }
+
+    private var phoneTabPill: some View {
+        HStack(spacing: 2) {
+            ForEach(phoneTabs) { item in
+                Button {
+                    selectedItem = item
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: selectedItem == item ? item.filledIcon : item.icon)
+                            .font(.system(size: 17, weight: .medium))
+                        Text(item.rawValue)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(selectedItem == item ? AtmoColors.accent : Color.secondary)
+                    .frame(width: 62, height: 48)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: Capsule())
     }
 #endif
-
-    // MARK: - Detail Destination (iPhone only)
-    // On iPad/macOS the persistent ZStack in `persistentDetailStack` is used instead,
-    // which preserves scroll position by keeping all views alive simultaneously.
-    // iPhone TabView already preserves tab state natively, so a simple switch is fine here.
-    @ViewBuilder
-    private func detailView(for item: SidebarItem) -> some View {
-        switch item {
-        case .timeline:
-            let vm = getOrCreateTimelineViewModel()
-            TimelineView(viewModel: vm)
-        case .search:
-            let vm = getOrCreateSearchViewModel()
-            SearchView(viewModel: vm)
-        case .notifications:
-            NotificationsView()
-        case .messages:
-            ConversationListView()
-        case .profile:
-            ProfileView(actorDID: nil)
-        case .bookmarks:
-            BookmarksView()
-        case .drafts:
-            DraftsView(onOpenDraft: { draft in
-                draftToResume = draft
-            })
-        case .settings:
-            SettingsView()
-        }
-    }
 
     // MARK: - Composer Dismiss Handler
 
@@ -490,6 +566,110 @@ struct AppNavigation: View {
 }
 
 // MARK: - Liquid Glass Compose FAB
+#if os(iOS)
+// MARK: - Phone Side Menu
+// The left drawer holding everything that isn't one of the three pill tabs.
+private struct PhoneSideMenu: View {
+    let active: SidebarItem?
+    let onSelect: (SidebarItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Atmo")
+                .font(.largeTitle.bold())
+                .padding(.horizontal, AtmoTheme.Spacing.xl)
+                .padding(.top, AtmoTheme.Spacing.xl)
+                .padding(.bottom, AtmoTheme.Spacing.lg)
+
+            ForEach(phoneMenuItems) { item in
+                menuRow(item)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.regularMaterial, ignoresSafeAreaEdges: .all)
+    }
+
+    @ViewBuilder
+    private func menuRow(_ item: SidebarItem) -> some View {
+        let draftCount = DraftStore.shared.drafts.count
+        Button {
+            onSelect(item)
+        } label: {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                Image(systemName: active == item ? item.filledIcon : item.icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(width: 28)
+                Text(item.rawValue)
+                    .font(.body.weight(active == item ? .semibold : .regular))
+                Spacer(minLength: 0)
+                if item == .drafts, draftCount > 0 {
+                    Text("\(draftCount)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                }
+            }
+            .foregroundStyle(active == item ? AtmoColors.accent : Color.primary)
+            .padding(.horizontal, AtmoTheme.Spacing.xl)
+            .padding(.vertical, AtmoTheme.Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Phone Search Field
+// Notes-style bottom search bar. Backed by the same persistent
+// SearchViewModel as SearchView, so typing here drives the page directly.
+private struct PhoneSearchField: View {
+    @Bindable var viewModel: SearchViewModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search Bluesky", text: $viewModel.query)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                // Debounced fetch — same contract as SearchView's own bar:
+                // fired from onChange, never the binding setter, so typing
+                // doesn't rebuild the tree and drop keyboard focus.
+                .onChange(of: viewModel.query) { _, newValue in
+                    viewModel.onQueryChanged(newValue)
+                }
+
+            if !viewModel.query.isEmpty {
+                Button {
+                    viewModel.query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, AtmoTheme.Spacing.lg)
+        .frame(height: 48)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.regular, in: Capsule())
+        .onAppear {
+            // Fresh search: pop the keyboard like Notes does. When a query
+            // is already active, keep the results visible instead.
+            if viewModel.query.isEmpty { focused = true }
+        }
+    }
+}
+#endif
+
 private struct ComposeFAB: View {
     let action: () -> Void
 

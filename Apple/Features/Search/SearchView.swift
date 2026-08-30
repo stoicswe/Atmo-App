@@ -13,6 +13,9 @@ struct SearchView: View {
     /// When non-nil (iPad/macOS split view), navigation uses the shared parent
     /// NavigationStack in AppNavigation. When nil (iPhone), owns its own stack.
     var splitNavPath: Binding<NavigationPath>? = nil
+    /// iPhone shell: the bottom bar hosts the search field, so the in-page
+    /// one is hidden there (the category chips stay).
+    var hidesSearchField: Bool = false
     @State private var ownedNavPath = NavigationPath()
 
     private var navPath: Binding<NavigationPath> {
@@ -52,12 +55,14 @@ struct SearchView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     // ── Search bar ──
-                    SearchBar(query: $viewModel.query) { newValue in
-                        vm.onQueryChanged(newValue)
+                    if !hidesSearchField {
+                        SearchBar(query: $viewModel.query) { newValue in
+                            vm.onQueryChanged(newValue)
+                        }
+                        .padding(.horizontal, AtmoTheme.Spacing.md)
+                        .padding(.top, AtmoTheme.Spacing.sm)
+                        .padding(.bottom, AtmoTheme.Spacing.xs)
                     }
-                    .padding(.horizontal, AtmoTheme.Spacing.md)
-                    .padding(.top, AtmoTheme.Spacing.sm)
-                    .padding(.bottom, AtmoTheme.Spacing.xs)
 
                     // ── Category picker ──
                     categoryPicker(vm: vm)

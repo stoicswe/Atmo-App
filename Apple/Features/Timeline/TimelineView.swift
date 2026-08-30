@@ -20,7 +20,15 @@ struct TimelineView: View {
 
     // Scroll detection
     @State private var isAtTop: Bool = true
-    @State private var scrollOffset: CGFloat = 0
+
+    /// Non-observed scroll bookkeeping (previous offset, velocity). Lives in
+    /// a reference box so the per-frame samples during scrolling never
+    /// invalidate the view tree — only the deliberate flips below (isAtTop,
+    /// pullDistance) trigger renders. Writing a plain @State CGFloat here
+    /// re-evaluated the whole feed body every scroll tick, costing frames.
+    @State private var scrollMetrics = ScrollMetrics()
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The row the viewport is anchored to (topmost visible post URI).
     /// Bound to `.scrollPosition(id:)`, which keeps that row in place when
@@ -152,6 +160,13 @@ struct TimelineView: View {
                                 Task { await vm.loadMore() }
                             }
                         }
+                        // Subtle fade as rows materialize mid-scroll; skipped
+                        // while the feed is flying by (the eye can't track it
+                        // and the frames are needed for scrolling) and under
+                        // Reduce Motion. Each row fades at most once.
+                        .modifier(RowFadeIn(shouldAnimate: {
+                            !reduceMotion && scrollMetrics.velocity < 3000
+                        }))
                         .id(post.uri)
                     }
 
@@ -263,10 +278,23 @@ struct TimelineView: View {
     /// Scrolls to the newest post and retires the pill. Shared by the pill
     /// tap and the scroll-to-top FAB (a fast programmatic scroll can skip
     /// row onAppear callbacks, so the unseen set is cleared explicitly).
+    ///
+    /// Nearby, the scroll glides; from deep in the feed it snaps instead —
+    /// animating across dozens of lazy rows forces every one of them to lay
+    /// out mid-flight, which is exactly the stutter it would be trying to
+    /// look smooth through.
     private func jumpToTop(vm: TimelineViewModel) {
         vm.clearNewPostsCount()
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-            scrolledID = vm.posts.first?.uri
+        let currentIndex = scrolledID
+            .flatMap { id in vm.posts.firstIndex(where: { $0.uri == id }) } ?? 0
+        if reduceMotion || currentIndex > 25 {
+            var tx = Transaction()
+            tx.disablesAnimations = true
+            withTransaction(tx) { scrolledID = vm.posts.first?.uri }
+        } else {
+            withAnimation(.smooth(duration: 0.35)) {
+                scrolledID = vm.posts.first?.uri
+            }
         }
         if let first = vm.posts.first {
             positionStore.save(topPostURI: first.uri)
@@ -278,8 +306,8 @@ struct TimelineView: View {
         _ offset: CGFloat,
         vm: TimelineViewModel
     ) {
-        let previous = scrollOffset
-        scrollOffset = offset
+        let previous = scrollMetrics.previousOffset
+        scrollMetrics.sample(offset: offset)
 
         // ── At-top detection ──
         // Offset semantics (from onScrollGeometryChange): 0 at natural rest,
@@ -359,6 +387,58 @@ struct TimelineView: View {
             tx.disablesAnimations = true
             withTransaction(tx) { scrolledID = target }
         }
+    }
+}
+
+// MARK: - Scroll Metrics
+/// Reference box for per-frame scroll bookkeeping. Mutations here don't
+/// invalidate any view — @State only guarantees the instance's identity.
+@MainActor
+final class ScrollMetrics {
+    private(set) var previousOffset: CGFloat = 0
+    private var lastSampleTime: TimeInterval = 0
+    /// Smoothed vertical scroll speed in points/second. Drives the
+    /// "don't bother animating during a fling" gate.
+    private(set) var velocity: CGFloat = 0
+
+    func sample(offset: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let dt = now - lastSampleTime
+        if dt > 0, dt < 0.5 {
+            let instantaneous = abs(offset - previousOffset) / dt
+            // Light exponential smoothing so one long frame doesn't spike it.
+            velocity = velocity * 0.7 + instantaneous * 0.3
+        } else {
+            // Stale sample (first event, or the scroller idled): reset.
+            velocity = 0
+        }
+        lastSampleTime = now
+        previousOffset = offset
+    }
+}
+
+// MARK: - Row Fade-In
+/// A quick, subtle fade for rows materializing into the viewport. The gate
+/// closure runs at appear time; returning false (fast fling, Reduce Motion)
+/// shows the row instantly. State persists per row identity, so a row fades
+/// at most once — scrolling back over it never re-animates.
+private struct RowFadeIn: ViewModifier {
+    let shouldAnimate: () -> Bool
+    @State private var visible = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                guard !visible else { return }
+                if shouldAnimate() {
+                    withAnimation(.easeOut(duration: 0.18)) { visible = true }
+                } else {
+                    var tx = Transaction()
+                    tx.disablesAnimations = true
+                    withTransaction(tx) { visible = true }
+                }
+            }
     }
 }
 
