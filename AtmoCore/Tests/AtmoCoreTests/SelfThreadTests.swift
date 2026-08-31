@@ -137,4 +137,17 @@ struct SelfThreadTests {
     @Test func plainPostHasNoCount() {
         #expect(post("solo", by: author).selfThreadCount == nil)
     }
+
+    @Test func gappedSelfChainIsStillASlice() {
+        // Missing generations kill the exact count but the cell is still
+        // recognizably the author's own thread.
+        let main = cell(ancestorsBy: [author, author], selfBy: author, connected: false)
+        #expect(main.selfThreadCount == nil)
+        #expect(main.isSelfThreadSlice)
+    }
+
+    @Test func mixedAuthorsIsNotASlice() {
+        let main = cell(ancestorsBy: [author, other], selfBy: author)
+        #expect(!main.isSelfThreadSlice)
+    }
 }

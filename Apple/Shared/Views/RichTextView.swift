@@ -32,6 +32,12 @@ struct RichTextView: View {
     /// Called when the user taps a #hashtag. Receives the tag without the leading "#".
     var onHashtagTap: ((String) -> Void)? = nil
 
+    /// The enclosing openURL action, captured BEFORE this view's own
+    /// override — real web links are forwarded to it so AppNavigation's
+    /// in-app browser (which overrides openURL at the root) receives them.
+    /// Returning `.systemAction` here would skip that override entirely.
+    @Environment(\.openURL) private var parentOpenURL
+
     var body: some View {
         Text(styledText)
             .font(AtmoFonts.postText)
@@ -52,8 +58,10 @@ struct RichTextView: View {
                     onHashtagTap?(decoded)
                     return .handled
                 }
-                // Let the system handle real http/https URLs
-                return .systemAction
+                // Forward real URLs to the enclosing action (in-app browser
+                // on iOS, default browser elsewhere).
+                parentOpenURL(url)
+                return .handled
             })
     }
 

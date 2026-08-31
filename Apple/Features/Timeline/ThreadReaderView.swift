@@ -48,6 +48,9 @@ struct ThreadReaderView: View {
                 ImageViewerView(images: viewerImages, selectedIndex: $viewerIndex)
             }
         }
+        // Sheets can't lean on the root's browser host (a covered node
+        // cannot present) — the Reader hosts its own for its link cards.
+        .hostsInAppBrowser()
 #if os(macOS)
         .frame(minWidth: 520, minHeight: 620)
 #endif

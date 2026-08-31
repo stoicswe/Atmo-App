@@ -40,11 +40,20 @@ extension PostItem {
     /// ancestor `i` (oldest first) as post `i + 1` of the count, and this
     /// post as the last.
     public var selfThreadCount: Int? {
-        guard !threadAncestors.isEmpty,
+        guard isSelfThreadSlice,
               !threadContextHasGap,
-              !threadContextIsDetached,
-              threadAncestors.allSatisfy({ $0.authorDID == authorDID })
+              !threadContextIsDetached
         else { return nil }
         return threadAncestors.count + 1
+    }
+
+    /// True when every post shown in this cell (ancestors + self) is by the
+    /// same author — an author self-thread slice, even when generations are
+    /// missing (gap/detached). Only connected slices also report
+    /// `selfThreadCount`; a gapped slice can't be numbered truthfully from
+    /// the feed payload, so UIs show an unnumbered thread marker instead.
+    public var isSelfThreadSlice: Bool {
+        !threadAncestors.isEmpty
+            && threadAncestors.allSatisfy { $0.authorDID == authorDID }
     }
 }

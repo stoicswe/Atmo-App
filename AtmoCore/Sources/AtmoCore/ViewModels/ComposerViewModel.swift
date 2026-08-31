@@ -38,11 +38,15 @@ public final class PostSlot: Identifiable {
         public let data: Data
         public let fileName: String
         public var altText: String = ""
+        /// Display dimensions of the (transcoded) video, when known — sent
+        /// with the embed so clients reserve the right box before playback.
+        public let aspectRatio: (width: Int, height: Int)?
 
-        public init(data: Data, fileName: String, altText: String = "") {
+        public init(data: Data, fileName: String, altText: String = "", aspectRatio: (width: Int, height: Int)? = nil) {
             self.data = data
             self.fileName = fileName
             self.altText = altText
+            self.aspectRatio = aspectRatio
         }
     }
 
@@ -76,9 +80,9 @@ public final class PostSlot: Identifiable {
 
     /// Attaches a video, displacing any images (a post carries one or the
     /// other, never both).
-    public func attachVideo(data: Data, fileName: String) {
+    public func attachVideo(data: Data, fileName: String, aspectRatio: (width: Int, height: Int)? = nil) {
         attachedImages.removeAll()
-        attachedVideo = VideoAttachment(data: data, fileName: fileName)
+        attachedVideo = VideoAttachment(data: data, fileName: fileName, aspectRatio: aspectRatio)
     }
 
     public func removeVideo() {
@@ -359,7 +363,9 @@ public final class ComposerViewModel {
                         video: video.data,
                         captions: nil,
                         altText: video.altText.isEmpty ? nil : video.altText,
-                        aspectoRatio: nil
+                        aspectoRatio: video.aspectRatio.map {
+                            AppBskyLexicon.Embed.AspectRatioDefinition(width: $0.width, height: $0.height)
+                        }
                     )
                 } else if !imageQueries.isEmpty {
                     embed = .images(images: imageQueries)

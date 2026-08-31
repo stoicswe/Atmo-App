@@ -10,6 +10,7 @@
 		0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 159C86922803A5EE97A1D0B3 /* GlassModifiers.swift */; };
 		08B19C0F3DD2FFC095D6913A /* AtmoColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE2293C659B96F8502E117 /* AtmoColors.swift */; };
 		0BEE367ACF73BAA1DEB8E681 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
+		16413942467282E362CE91CD /* InAppBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967CF623DACB557545B3E065 /* InAppBrowser.swift */; };
 		17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECBF46F2260DDDFB90663C7 /* TranslationHelper.swift */; };
 		1843786BDF6D8A2D2A15ED7D /* ThemeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */; };
 		1B86384E09352AC5D7806E10 /* AsyncCachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */; };
@@ -45,6 +46,7 @@
 		8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */; };
 		81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
 		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A30966828A3215EB97F9E95 /* VideoPreparer.swift */; };
 		97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A585053040099E29C26DAB2B /* VerifiedBadge.swift */; };
 		9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */; };
 		9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
@@ -123,6 +125,7 @@
 		6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSync.swift; sourceTree = "<group>"; };
 		72EE8B6712C41D5DFE13C192 /* ConversationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDetailView.swift; sourceTree = "<group>"; };
 		7A042721FAAFC56FB1EF66BA /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
+		7A30966828A3215EB97F9E95 /* VideoPreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPreparer.swift; sourceTree = "<group>"; };
 		810F3101A6618E68B1AC2A36 /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		8B04EE931B31F8F7BFBE70C9 /* View+Atmo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Atmo.swift"; sourceTree = "<group>"; };
 		8ECBF46F2260DDDFB90663C7 /* TranslationHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationHelper.swift; sourceTree = "<group>"; };
@@ -131,6 +134,7 @@
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
+		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 		A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretsStore.swift; sourceTree = "<group>"; };
 		A585053040099E29C26DAB2B /* VerifiedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifiedBadge.swift; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
@@ -273,6 +277,7 @@
 				B9AD2FFF59B01294EB8AFC66 /* ErrorBannerView.swift */,
 				35D8ECCAC181EE3791D987A6 /* GlassCard.swift */,
 				DCFE019FBE762F5CE1E1434B /* ImageViewerView.swift */,
+				967CF623DACB557545B3E065 /* InAppBrowser.swift */,
 				1852C1676F9B93E2152D1D2C /* LoadingView.swift */,
 				EFDAE3CD661558EEAF60A875 /* RichTextView.swift */,
 				900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */,
@@ -294,6 +299,7 @@
 			children = (
 				487A47451110A7905995A9DF /* ComposerToolbar.swift */,
 				BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */,
+				7A30966828A3215EB97F9E95 /* VideoPreparer.swift */,
 			);
 			path = Composer;
 			sourceTree = "<group>";
@@ -596,6 +602,7 @@
 				0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */,
 				5F8C12D599119CB1CF601449 /* Haptics.swift in Sources */,
 				4072269A50D8C59B0D80239E /* ImageViewerView.swift in Sources */,
+				16413942467282E362CE91CD /* InAppBrowser.swift in Sources */,
 				EDBF8BC2F06A2A30279639E1 /* KeychainSecretsStore.swift in Sources */,
 				496F933C6600B2472C27686C /* LoadingView.swift in Sources */,
 				3874E80E83F7CE3D56B75D42 /* LoginView.swift in Sources */,
@@ -622,6 +629,7 @@
 				68E35D479091FE23D6CBE6DC /* UbiquitousKeyValueStore.swift in Sources */,
 				9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */,
 				97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */,
+				85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */,
 				AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

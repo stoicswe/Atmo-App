@@ -264,6 +264,10 @@ struct AppNavigation: View {
 #endif
                 spotlightPostURI = nil   // consume — prevents re-triggering on redraw
             }
+            // Applied outermost so every subtree — sheets included — resolves
+            // web links to the in-app browser on iOS. (Sheets containing
+            // links still host their own copy; see InAppBrowserHost.)
+            .hostsInAppBrowser()
             .task {
                 // Create persistent VMs eagerly on first appearance.
                 // Crucially, kick off the initial timeline fetch here — in the

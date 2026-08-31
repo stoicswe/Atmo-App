@@ -60,6 +60,12 @@ struct FeedItemView: View {
                         post: ancestor,
                         isFirst: index == 0,
                         selfThreadPosition: livePost.selfThreadCount.map { (index + 1, $0) },
+                        // Gapped self-thread: exact numbering is impossible
+                        // from the feed payload, so the root carries an
+                        // unnumbered "Thread" marker instead.
+                        showsThreadHint: index == 0
+                            && livePost.selfThreadCount == nil
+                            && livePost.isSelfThreadSlice,
                         onTap: onTap,
                         onMentionTap: onMentionTap
                     )
@@ -96,7 +102,7 @@ struct FeedItemView: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if let count = livePost.selfThreadCount {
-                            SelfThreadPill(index: count, count: count)
+                            SelfThreadPill(index: count, count: count, glass: true)
                         }
                         Text(livePost.indexedAt.atmoFormatted())
                             .font(AtmoFonts.timestamp)
@@ -202,6 +208,9 @@ private struct AncestorPostRow: View {
     /// This row's (position, total) within an author self-thread, when the
     /// cell shows one — drives the "k/n" pill.
     var selfThreadPosition: (index: Int, count: Int)? = nil
+    /// Gapped self-thread root: show an unnumbered "Thread" marker where
+    /// the connected chain would show "1/n".
+    var showsThreadHint: Bool = false
     var onTap: (() -> Void)?
     var onMentionTap: ((String) -> Void)?
 
@@ -238,8 +247,11 @@ private struct AncestorPostRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if let position = selfThreadPosition {
-                        SelfThreadPill(index: position.index, count: position.count)
+                    // Later chain members wear their position by the
+                    // timestamp; the root's pill sits at the end of its
+                    // text (below) like the thread screen.
+                    if let position = selfThreadPosition, !isFirst {
+                        SelfThreadPill(index: position.index, count: position.count, glass: true)
                     }
                     Text(post.indexedAt.atmoFormatted())
                         .font(AtmoFonts.timestamp)
@@ -255,6 +267,20 @@ private struct AncestorPostRow: View {
                         onMentionTap: { handle in onMentionTap?(handle) },
                         onHashtagTap: { tag in hashtagSearch(tag) }
                     )
+                }
+
+                // Chain root: glass pill trailing the text — "1/n" when the
+                // whole chain is visible, "Thread" when generations are
+                // missing (tapping through shows exact numbers).
+                if isFirst, selfThreadPosition != nil || showsThreadHint {
+                    HStack {
+                        Spacer(minLength: 0)
+                        if let position = selfThreadPosition {
+                            SelfThreadPill(index: position.index, count: position.count, glass: true)
+                        } else {
+                            ThreadHintPill()
+                        }
+                    }
                 }
 
                 if let embed = post.embed {
@@ -310,15 +336,38 @@ private struct ThreadGapRow: View {
 struct SelfThreadPill: View {
     let index: Int
     let count: Int
+    /// Liquid Glass backing (thread screen) instead of the accent tint fill
+    /// used in feed cells.
+    var glass: Bool = false
 
     var body: some View {
-        Text("\(index)/\(count)")
+        let label = Text("\(index)/\(count)")
             .font(.caption2.weight(.semibold))
             .monospacedDigit()
             .foregroundStyle(AtmoColors.accent)
             .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(AtmoColors.accent.opacity(0.14), in: Capsule())
-            .accessibilityLabel("Post \(index) of \(count) in thread")
+            .padding(.vertical, glass ? 3 : 2)
+        Group {
+            if glass {
+                label.glassEffect(.regular, in: Capsule())
+            } else {
+                label.background(AtmoColors.accent.opacity(0.14), in: Capsule())
+            }
+        }
+        .accessibilityLabel("Post \(index) of \(count) in thread")
+    }
+}
+
+/// Unnumbered variant of the self-thread marker, for feed cells where the
+/// chain has missing generations and exact numbering would be a guess.
+struct ThreadHintPill: View {
+    var body: some View {
+        Text("Thread")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(AtmoColors.accent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .glassEffect(.regular, in: Capsule())
+            .accessibilityLabel("Part of a thread by this author")
     }
 }

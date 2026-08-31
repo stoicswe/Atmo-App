@@ -390,6 +390,9 @@ private struct SlotComposerRow: View {
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var selectedVideoItem: PhotosPickerItem? = nil
     @State private var isLoadingVideo = false
+    /// Why the last picked video couldn't be attached (limit or transcode
+    /// failure) — shown under the toolbar until the next attempt.
+    @State private var videoError: String? = nil
 
     // Alt-text editor state
     @State private var editingAltImageID: UUID? = nil
@@ -452,6 +455,14 @@ private struct SlotComposerRow: View {
                     // Attached video chip
                     if let video = slot.attachedVideo {
                         attachedVideoChip(video)
+                            .padding(.vertical, AtmoTheme.Spacing.xs)
+                    }
+
+                    // Why the last picked video couldn't be attached.
+                    if let videoError {
+                        Label(videoError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
@@ -561,17 +572,33 @@ private struct SlotComposerRow: View {
         selectedItems = []
     }
 
-    /// Loads movie data from the picker and attaches it to this slot.
+    /// Loads movie data from the picker, transcodes it to an H.264 MP4
+    /// (Bluesky's video service rejects raw QuickTime/HEVC picker output),
+    /// and attaches the result — or a clear reason it can't be posted.
     @MainActor
     private func loadVideo(from item: PhotosPickerItem?) async {
         guard let item else { return }
         isLoadingVideo = true
-        if let data = try? await item.loadTransferable(type: Data.self) {
-            let fileName = (item.itemIdentifier ?? "video_\(UUID().uuidString)") + ".mp4"
-            slot.attachVideo(data: data, fileName: fileName)
+        videoError = nil
+        defer {
+            selectedVideoItem = nil
+            isLoadingVideo = false
         }
-        selectedVideoItem = nil
-        isLoadingVideo = false
+        do {
+            guard let raw = try await item.loadTransferable(type: Data.self) else {
+                throw VideoPreparer.PrepareError.unreadable
+            }
+            let prepared = try await VideoPreparer.prepareForUpload(raw)
+            slot.attachVideo(
+                data: prepared.data,
+                fileName: prepared.fileName,
+                aspectRatio: prepared.aspectRatio
+            )
+        } catch let violation as VideoConstraints.Violation {
+            videoError = violation.userMessage
+        } catch {
+            videoError = "Couldn't process that video. Try a different clip."
+        }
     }
 
     // MARK: - Video chip

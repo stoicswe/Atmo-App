@@ -65,7 +65,8 @@ struct NotificationsView: View {
                         category: category,
                         isSelected: vm.selectedCategory == category
                     ) {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                        Haptics.tap()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             vm.selectedCategory = category
                         }
                     }
@@ -121,13 +122,38 @@ struct NotificationsView: View {
 }
 
 // MARK: - Activity Pill
-// Capsule filter tab, visually matched to Search's category chips.
+// iOS: Mail-style category chip — a compact icon circle that expands into
+// a tinted capsule with its label when selected (matches Settings' top
+// bar). macOS keeps the always-labeled capsule tabs.
 private struct ActivityPill: View {
     let category: ActivityCategory
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
+#if os(iOS)
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 15, weight: .medium))
+                if isSelected {
+                    Text(category.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .padding(.horizontal, isSelected ? AtmoTheme.Spacing.lg : 0)
+            .frame(height: 40)
+            .frame(minWidth: 40)
+            .background {
+                Capsule().fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.12))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+#else
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: category.icon)
@@ -144,5 +170,6 @@ private struct ActivityPill: View {
             }
         }
         .buttonStyle(.plain)
+#endif
     }
 }

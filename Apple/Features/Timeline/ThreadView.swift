@@ -209,6 +209,12 @@ struct ThreadView: View {
                         })
                         .padding()
                     } else if let root = rootPost, let vm = threadViewModel {
+                        // Author self-thread positions ("k/n" pills): the
+                        // root is 1, their consecutive self-replies follow.
+                        let chain = readerChain
+                        let chainPositions: [String: Int] = chain.count >= 2
+                            ? Dictionary(uniqueKeysWithValues: chain.enumerated().map { ($1.uri, $0 + 1) })
+                            : [:]
 
                         // ── Root post ──
                         RootPostView(
@@ -221,7 +227,8 @@ struct ThreadView: View {
                                 viewerImages = images
                                 viewerStartIndex = index
                                 showImageViewer = true
-                            }
+                            },
+                            selfThreadPosition: chain.count >= 2 ? (1, chain.count) : nil
                         )
 
                         Divider()
@@ -270,7 +277,8 @@ struct ThreadView: View {
                                     viewerImages = images
                                     viewerStartIndex = index
                                     showImageViewer = true
-                                }
+                                },
+                                selfThreadPosition: chainPositions[reply.post.uri].map { ($0, chain.count) }
                             )
                             .id(reply.post.uri)
                         }
@@ -559,6 +567,9 @@ private struct RootPostView: View {
     let viewModel: TimelineViewModel
     var onMentionTap: ((String) -> Void)? = nil
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
+    /// (position, total) within the author's self-thread, when this thread
+    /// is one — renders the glass "1/n" pill under the post text.
+    var selfThreadPosition: (index: Int, count: Int)? = nil
 
     @Environment(\.hashtagSearch) private var hashtagSearch
 
@@ -604,6 +615,14 @@ private struct RootPostView: View {
 
                 if TranslationHelper.needsTranslation(livePost.displayText) {
                     TranslateButton(text: livePost.displayText)
+                }
+            }
+
+            // Author self-thread marker: this is post 1 of n by this author.
+            if let position = selfThreadPosition {
+                HStack {
+                    Spacer(minLength: 0)
+                    SelfThreadPill(index: position.index, count: position.count, glass: true)
                 }
             }
 
@@ -655,6 +674,9 @@ private struct ReplyRowView: View {
     let onToggleCollapse: () -> Void
     var onMentionTap: ((String) -> Void)? = nil
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
+    /// (position, total) when this reply is part of the author's own
+    /// self-thread — renders the glass "k/n" pill by the timestamp.
+    var selfThreadPosition: (index: Int, count: Int)? = nil
 
     @Environment(ATProtoService.self) private var service
     @Environment(\.hashtagSearch) private var hashtagSearch
@@ -791,6 +813,9 @@ private struct ReplyRowView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
+                                if let position = selfThreadPosition {
+                                    SelfThreadPill(index: position.index, count: position.count, glass: true)
+                                }
                                 Text(livePost.indexedAt.atmoFormatted())
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
