@@ -18,12 +18,32 @@ import Observation
 /// `AppleSecureKeychain` on Apple platforms, a protected file on Linux),
 /// namespaced by a stable session UUID that `Atmo.platform.secrets`
 /// preserves across launches. The access token lives in memory only.
+/// Where the app is in its authentication lifecycle. Distinguishing
+/// `.restoring` from `.unauthenticated` lets the UI hold a neutral splash
+/// during the cold-start token refresh instead of flashing the login form
+/// — whose credential fields would summon the system password-manager
+/// AutoFill panel even though the user is about to land signed in.
+public enum AuthPhase: Sendable {
+    /// A previously stored session may exist and is being restored.
+    case restoring
+    /// A session is live; the signed-in UI should show.
+    case authenticated
+    /// No usable stored session; the login form should show.
+    case unauthenticated
+}
+
 @Observable
 @MainActor
 public final class ATProtoService {
 
     // MARK: - Authentication State
-    public private(set) var isAuthenticated: Bool = false
+    /// Starts at `.restoring`: every launch begins with a session-restore
+    /// attempt, and the login UI must not appear until it has failed.
+    public private(set) var authPhase: AuthPhase = .restoring
+    public var isAuthenticated: Bool {
+        if case .authenticated = authPhase { return true }
+        return false
+    }
     public private(set) var isLoading: Bool = false
     public private(set) var authError: Error? = nil
     public private(set) var requiresTwoFactor: Bool = false
@@ -61,6 +81,7 @@ public final class ATProtoService {
             await buildStack(config: config, fallbackHandle: handle)
         } catch {
             authError = error
+            authPhase = .unauthenticated
         }
 
         isLoading = false
@@ -74,7 +95,24 @@ public final class ATProtoService {
     /// Attempts to restore a previously authenticated session from the
     /// credential store. Called on app launch.
     public func restoreSession() async {
+        // Reentrancy guard: launch paths can overlap (auth-gate task,
+        // scene re-activation, background sync). A second concurrent
+        // refresh would race the refresh-token rotation and kill the
+        // stored session. MainActor + setting isLoading before the first
+        // await makes this check race-free.
+        guard !isLoading else { return }
         isLoading = true
+        authPhase = .restoring
+
+        // Nothing has ever been stored on this install (or the user signed
+        // out, which clears the secrets store) — go straight to the login
+        // form instead of burning a doomed refresh round-trip.
+        guard Atmo.platform.secrets.loadLastHandle() != nil else {
+            authPhase = .unauthenticated
+            isLoading = false
+            return
+        }
+
         do {
             let config = makeConfiguration()
 
@@ -94,8 +132,14 @@ public final class ATProtoService {
             let fallback = Atmo.platform.secrets.loadLastHandle() ?? ""
             await buildStack(config: config, fallbackHandle: fallback)
         } catch {
-            // Stored session is invalid or expired; user must sign in again.
-            isAuthenticated = false
+            // Stored session is invalid or expired; user must sign in
+            // again — unless the restore was cancelled with its scene
+            // (wrist-down or window close during a cold start). Then the
+            // outcome is unknown: stay in `.restoring` so the UI keeps
+            // its splash and a re-activation can run another attempt.
+            if !Task.isCancelled && !(error is CancellationError) {
+                authPhase = .unauthenticated
+            }
         }
         isLoading = false
     }
@@ -133,7 +177,7 @@ public final class ATProtoService {
         self.atProtoKit = kit
         self.atProtoBluesky = bluesky
         self.atProtoChat = chat
-        self.isAuthenticated = true
+        self.authPhase = .authenticated
 
         // Pull the authoritative handle and DID from the UserSessionRegistry.
         // After authenticate() or refreshSession() succeeds, the registry
@@ -163,7 +207,7 @@ public final class ATProtoService {
         atProtoChat = nil
         currentUserDID = nil
         currentHandle = nil
-        isAuthenticated = false
+        authPhase = .unauthenticated
         authError = nil
         requiresTwoFactor = false
     }

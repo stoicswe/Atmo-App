@@ -73,9 +73,14 @@ struct WatchRootView: View {
 
     var body: some View {
         Group {
-            if service.isAuthenticated {
+            switch service.authPhase {
+            case .restoring:
+                // Hold a spinner during the cold-start restore instead of
+                // flashing the login screen at a signed-in user.
+                ProgressView()
+            case .authenticated:
                 WatchHomeView()
-            } else {
+            case .unauthenticated:
                 WatchLoginView()
             }
         }
@@ -83,14 +88,12 @@ struct WatchRootView: View {
             await service.restoreSession()
         }
         // A wrist-down during the cold-start restore cancels it with the
-        // scene, stranding a signed-in user at the login screen. When the
-        // app comes back active and a previous session is on record, try
-        // the restore again instead.
+        // scene; the service then stays in `.restoring`. When the app
+        // comes back active with no attempt in flight, try again.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active,
-                  !service.isAuthenticated,
-                  !service.isLoading,
-                  Atmo.platform.secrets.loadLastHandle() != nil else { return }
+                  case .restoring = service.authPhase,
+                  !service.isLoading else { return }
             Task { await service.restoreSession() }
         }
     }
