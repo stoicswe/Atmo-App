@@ -101,6 +101,12 @@ struct AppNavigation: View {
     @State private var phoneConversationOpen = false
     /// iPhone: user-chosen bottom-bar items (comma-joined rawValues).
     @AppStorage(PhoneBarConfig.storageKey) private var phoneBarItemsRaw = PhoneBarConfig.defaultValue
+    /// iPhone: recipient picker for a new DM (the "+" on the Messages page).
+    @State private var showNewConversation = false
+    /// iPhone: focus for the bottom-bar search field — hoisted here so the
+    /// dismiss-keyboard circle can clear it through SwiftUI (a raw
+    /// resignFirstResponder fought the FocusState and needed two taps).
+    @FocusState private var phoneSearchFocused: Bool
     /// iPhone: shared bar-minimize state, written by scrolling views.
     private let phoneChrome = PhoneChromeState.shared
 
@@ -396,17 +402,11 @@ struct AppNavigation: View {
     private var phoneTabView: some View {
         ZStack(alignment: .leading) {
             phoneMainShell
-                // Card clip for the receded state. When CLOSED the shape is
-                // expanded well past the view's bounds — clipping at the
-                // bounds would sever the background's bleed under the status
-                // bar and home indicator, leaving black bands at both edges.
-                // RecedeCardShape animates its progress, so the crop eases
-                // in with the spring instead of popping.
-                .clipShape(RecedeCardShape(progress: phoneMenuOpen ? 1 : 0))
-                // "Slides backwards away from the viewer": scale down and
-                // nudge right so the drawer reads as a layer above it.
-                .scaleEffect(phoneMenuOpen ? 0.90 : 1)
-                .offset(x: phoneMenuOpen ? 56 : 0)
+                // Recede: scale + slide + dim only. (An animated clip here
+                // re-tessellated the live navigation hierarchy every frame —
+                // the source of the open/close glitch.)
+                .scaleEffect(phoneMenuOpen ? 0.92 : 1)
+                .offset(x: phoneMenuOpen ? 44 : 0)
 
             if phoneMenuOpen {
                 // Dimming scrim — tap anywhere outside the drawer to close.
@@ -438,6 +438,9 @@ struct AppNavigation: View {
         NavigationStack(path: $phoneTimelineNavPath) {
             phonePersistentContent
                 .toolbarTitleDisplayMode(.inline)
+                // No nav-bar glass: content passes to the very top edge.
+                // Only the status bar keeps a blur (overlay below).
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
@@ -453,15 +456,21 @@ struct AppNavigation: View {
                     ThreadView(postURI: target.uri)
                 }
                 .navigationDestination(for: String.self) { did in
-                    ProfileView(actorDID: did)
+                    // Flat mode (shared path) — a pushed profile must NOT
+                    // own a nested NavigationStack.
+                    ProfileView(actorDID: did, splitNavPath: $phoneTimelineNavPath)
                 }
                 .navigationDestination(for: ConversationItem.self) { convo in
                     ConversationDetailView(conversation: convo)
                         // The conversation's own input bar owns the bottom
                         // edge while it's on top — hide the app bar with it.
-                        .onAppear { phoneConversationOpen = true }
-                        .onDisappear { phoneConversationOpen = false }
+                        // (Preference-based: reliable across push/pop, unlike
+                        // onAppear/onDisappear pairs during transitions.)
+                        .preference(key: HidesPhoneBarPreferenceKey.self, value: true)
                 }
+        }
+        .onPreferenceChange(HidesPhoneBarPreferenceKey.self) { hidden in
+            phoneConversationOpen = hidden
         }
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
@@ -472,6 +481,25 @@ struct AppNavigation: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: phoneConversationOpen)
+        // Status-bar blur: with the toolbar glass hidden, this thin strip is
+        // the only chrome above the content — exactly the status-bar region.
+        .overlay(alignment: .top) {
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .frame(height: geo.safeAreaInsets.top)
+                    .offset(y: -geo.safeAreaInsets.top)
+            }
+            .allowsHitTesting(false)
+        }
+        // Recipient picker for a new DM; opening a person pushes their
+        // conversation onto the stack.
+        .sheet(isPresented: $showNewConversation) {
+            NewConversationView { convo in
+                selectedItem = .messages
+                phoneTimelineNavPath.append(convo)
+            }
+        }
     }
 
     /// The three pill tabs stay alive (opacity toggle) so their scroll
@@ -541,7 +569,7 @@ struct AppNavigation: View {
     private var phoneBottomBar: some View {
         HStack(spacing: AtmoTheme.Spacing.md) {
             if selectedItem == .search, let searchVm = searchViewModel {
-                PhoneSearchField(viewModel: searchVm)
+                PhoneSearchField(viewModel: searchVm, focused: $phoneSearchFocused)
                     .transition(.blurReplace)
             } else if phoneChrome.barCollapsed {
                 // Minimized (scroll-down): a single corner button showing
@@ -574,11 +602,14 @@ struct AppNavigation: View {
                 Spacer(minLength: 0)
             }
 
-            // Search page: the right circle dismisses the keyboard instead
-            // of composing — the field lives in this bar, so this is its
-            // natural "done" affordance. Compose is on every other page.
+            // The right circle adapts to the page: Search gets a
+            // dismiss-keyboard control (the field lives in this bar),
+            // Messages gets "+" to start a new DM, everywhere else composes.
             if selectedItem == .search {
-                DismissKeyboardFAB()
+                DismissKeyboardFAB { phoneSearchFocused = false }
+                    .transition(.blurReplace)
+            } else if selectedItem == .messages {
+                NewDMFAB { showNewConversation = true }
                     .transition(.blurReplace)
             } else {
                 ComposeFAB { showComposer = true }
@@ -588,7 +619,7 @@ struct AppNavigation: View {
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.top, AtmoTheme.Spacing.xs)
         .padding(.bottom, AtmoTheme.Spacing.sm)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedItem == .search)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedItem)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phoneChrome.barCollapsed)
     }
 
@@ -668,30 +699,13 @@ struct AppNavigation: View {
 
 // MARK: - Liquid Glass Compose FAB
 #if os(iOS)
-// MARK: - Recede Card Shape
-// The crop applied to the main shell as the drawer opens. progress 0 =
-// expanded 200pt past the bounds (nothing visibly clipped, edge-to-edge
-// bleed intact), progress 1 = a tight 40pt rounded card. A single
-// animatable value drives both the inset and the corner radius — a plain
-// `RoundedRectangle().inset(by:)` doesn't interpolate inside clipShape,
-// which made the crop appear as a sudden glitch instead of easing in.
-private struct RecedeCardShape: Shape {
-    var progress: CGFloat
-
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let expansion = (1 - progress) * 200
-        let radius = progress * 40
-        let cardRect = rect.insetBy(dx: -expansion, dy: -expansion)
-        return Path(
-            roundedRect: cardRect,
-            cornerRadius: radius,
-            style: .continuous
-        )
+// MARK: - Phone Bar Hiding
+/// Set by pushed screens that own the bottom edge themselves (DM
+/// conversations) so the app's bottom bar steps aside while they're up.
+struct HidesPhoneBarPreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 
@@ -712,6 +726,13 @@ private struct PhoneSideMenu: View {
                 .padding(.horizontal, AtmoTheme.Spacing.xl)
                 .padding(.top, AtmoTheme.Spacing.xl)
                 .padding(.bottom, AtmoTheme.Spacing.lg)
+
+            // Pinned: always a way back to the home timeline.
+            menuRow(.timeline)
+
+            Divider()
+                .padding(.horizontal, AtmoTheme.Spacing.xl)
+                .padding(.vertical, AtmoTheme.Spacing.sm)
 
             ForEach(items) { item in
                 menuRow(item)
@@ -761,7 +782,8 @@ private struct PhoneSideMenu: View {
 // SearchViewModel as SearchView, so typing here drives the page directly.
 private struct PhoneSearchField: View {
     @Bindable var viewModel: SearchViewModel
-    @FocusState private var focused: Bool
+    /// Hoisted to AppNavigation so the dismiss-keyboard circle can clear it.
+    @FocusState.Binding var focused: Bool
 
     var body: some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
@@ -807,13 +829,10 @@ private struct PhoneSearchField: View {
 // Takes compose's slot on the Search page only — the search field lives in
 // the bottom bar there, so the circle acts as its "done" control.
 private struct DismissKeyboardFAB: View {
+    let action: () -> Void
+
     var body: some View {
-        Button {
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil, from: nil, for: nil
-            )
-        } label: {
+        Button(action: action) {
             Image(systemName: "keyboard.chevron.compact.down")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
@@ -822,6 +841,24 @@ private struct DismissKeyboardFAB: View {
         }
         .buttonStyle(FABButtonStyle())
         .accessibilityLabel("Dismiss Keyboard")
+    }
+}
+
+// MARK: - New DM FAB
+// Takes compose's slot on the Messages page: opens the recipient picker.
+private struct NewDMFAB: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(AtmoColors.accent)
+                .frame(width: 56, height: 56)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(FABButtonStyle())
+        .accessibilityLabel("New Message")
     }
 }
 #endif

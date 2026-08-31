@@ -1,48 +1,31 @@
 import SwiftUI
 import AtmoCore
-import ATProtoKit
 
+// MARK: - NewConversationView
+// Recipient picker for a new DM: the user's mutual follows first, then
+// everyone else they follow, plus a network search — all filtered by
+// AtmoCore to accounts whose chat settings accept a message from this
+// user. Tapping a person opens (or creates) the 1:1 conversation.
 struct NewConversationView: View {
+    /// Fired with the opened conversation; the presenter navigates to it.
+    var onOpenConversation: ((ConversationItem) -> Void)? = nil
+
     @Environment(ATProtoService.self) private var service
     @Environment(\.dismiss) private var dismiss
+    @State private var viewModel: NewConversationViewModel?
     @State private var searchText: String = ""
-    @State private var searchResults: [AppBskyLexicon.Actor.ProfileViewDefinition] = []
-    @State private var isSearching: Bool = false
-    @State private var selectedDID: String? = nil
+    /// The candidate currently being opened (shows a row spinner).
+    @State private var openingDID: String? = nil
 
     var body: some View {
         NavigationStack {
-            List {
-                if isSearching {
-                    ProgressView()
-                        .listRowBackground(Color.clear)
+            Group {
+                if let vm = viewModel {
+                    candidateList(vm: vm)
                 } else {
-                    ForEach(searchResults, id: \.actorDID) { profile in
-                        Button {
-                            selectedDID = profile.actorDID
-                        } label: {
-                            HStack {
-                                AvatarView(url: profile.avatarImageURL, size: AtmoTheme.AvatarSize.small)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if let name = profile.displayName {
-                                        Text(name).font(.subheadline.weight(.semibold))
-                                    }
-                                    Text("@\(profile.actorHandle)").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .listRowBackground(Color.clear)
-                    }
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-            .listStyle(.plain)
-            .searchable(text: $searchText, prompt: "Search people…")
-            .onChange(of: searchText) { _, query in
-                guard !query.isEmpty else {
-                    searchResults = []
-                    return
-                }
-                Task { await search(query: query) }
             }
             .navigationTitle("New Message")
 #if os(iOS)
@@ -54,15 +37,95 @@ struct NewConversationView: View {
                 }
             }
         }
+        .task {
+            if viewModel == nil {
+                viewModel = NewConversationViewModel(service: service)
+            }
+            await viewModel?.loadSuggestions()
+        }
     }
 
-    private func search(query: String) async {
-        guard let kit = service.atProtoKit else { return }
-        isSearching = true
-        do {
-            let output = try await kit.searchActors(matching: query, limit: 20)
-            searchResults = output.actors
-        } catch {}
-        isSearching = false
+    @ViewBuilder
+    private func candidateList(vm: NewConversationViewModel) -> some View {
+        List {
+            if searchText.isEmpty {
+                let mutuals = vm.suggestions.filter(\.isMutual)
+                let others = vm.suggestions.filter { !$0.isMutual }
+
+                if vm.isLoading && vm.suggestions.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                }
+                if !mutuals.isEmpty {
+                    Section("Mutuals") {
+                        ForEach(mutuals) { candidateRow($0, vm: vm) }
+                    }
+                }
+                if !others.isEmpty {
+                    Section("Following") {
+                        ForEach(others) { candidateRow($0, vm: vm) }
+                    }
+                }
+            } else {
+                ForEach(vm.searchResults) { candidateRow($0, vm: vm) }
+            }
+        }
+        .listStyle(.plain)
+        .searchable(text: $searchText, prompt: "Search people…")
+        .onChange(of: searchText) { _, newValue in
+            vm.onQueryChanged(newValue)
+        }
+        .overlay {
+            if !searchText.isEmpty && vm.searchResults.isEmpty {
+                ContentUnavailableView(
+                    "No one found",
+                    systemImage: "person.slash",
+                    description: Text("Only people whose message settings allow you to reach them are shown.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func candidateRow(
+        _ candidate: NewConversationViewModel.Candidate,
+        vm: NewConversationViewModel
+    ) -> some View {
+        Button {
+            guard openingDID == nil else { return }
+            openingDID = candidate.did
+            Task {
+                if let convo = await vm.openConversation(with: candidate.did) {
+                    onOpenConversation?(convo)
+                    dismiss()
+                }
+                openingDID = nil
+            }
+        } label: {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                AvatarView(url: candidate.avatarURL, size: AtmoTheme.AvatarSize.small)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let name = candidate.displayName {
+                        Text(name)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Text("@\(candidate.handle)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if openingDID == candidate.did {
+                    ProgressView()
+                } else if candidate.isMutual {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
     }
 }

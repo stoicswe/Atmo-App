@@ -564,9 +564,10 @@ private struct RootPostView: View {
             PostActionsView(post: livePost, viewModel: viewModel, showBookmark: true)
         }
         .padding(AtmoTheme.Feed.horizontalPadding)
-        .navigationDestination(for: String.self) { did in
-            ProfileView(actorDID: did)
-        }
+        // NOTE: no .navigationDestination here — the owning stack (phone
+        // shell / split view) registers the String → ProfileView route.
+        // Re-declaring it from pushed content is unsupported (duplicate
+        // destination) and broke avatar/mention navigation from threads.
     }
 
     private func statLabel(count: Int, label: String) -> some View {

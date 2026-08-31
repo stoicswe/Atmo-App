@@ -107,8 +107,17 @@ struct TimelineView: View {
 
     @ViewBuilder
     private func feedContent(vm: TimelineViewModel) -> some View {
+        ScrollViewReader { proxy in
         ZStack(alignment: .top) {
             ScrollView {
+                // Top anchor for programmatic scroll-to-top. proxy.scrollTo
+                // is used for jumps because writes to the scrollPosition
+                // binding are unreliable as a scroll trigger (they race the
+                // binding's own continuous updates).
+                Color.clear
+                    .frame(height: 0)
+                    .id("__top__")
+
                 // Spring refresh indicator — always in the view hierarchy so its
                 // insertion/removal never causes a content-height change that would
                 // snap the scroll position. Height is 0 when inactive (invisible),
@@ -227,7 +236,7 @@ struct TimelineView: View {
                         authors: vm.newPostAuthors,
                         overflowAuthorCount: vm.newPostsOverflowAuthorCount
                     ) {
-                        jumpToTop(vm: vm)
+                        jumpToTop(vm: vm, proxy: proxy)
                     }
                     .padding(.top, AtmoTheme.Spacing.sm)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -244,7 +253,7 @@ struct TimelineView: View {
             // iPad/macOS just over the floating compose FAB.
             if !isAtTop {
                 ScrollToTopButton {
-                    jumpToTop(vm: vm)
+                    jumpToTop(vm: vm, proxy: proxy)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(.trailing, scrollToTopTrailingPadding)
@@ -274,6 +283,7 @@ struct TimelineView: View {
                 guard !Task.isCancelled else { return }
                 positionStore.save(topPostURI: uri)
             }
+        }
         }
     }
 
@@ -309,17 +319,15 @@ struct TimelineView: View {
     /// animating across dozens of lazy rows forces every one of them to lay
     /// out mid-flight, which is exactly the stutter it would be trying to
     /// look smooth through.
-    private func jumpToTop(vm: TimelineViewModel) {
+    private func jumpToTop(vm: TimelineViewModel, proxy: ScrollViewProxy) {
         vm.clearNewPostsCount()
         let currentIndex = scrolledID
             .flatMap { id in vm.posts.firstIndex(where: { $0.uri == id }) } ?? 0
         if reduceMotion || currentIndex > 25 {
-            var tx = Transaction()
-            tx.disablesAnimations = true
-            withTransaction(tx) { scrolledID = vm.posts.first?.uri }
+            proxy.scrollTo("__top__", anchor: .top)
         } else {
             withAnimation(.smooth(duration: 0.35)) {
-                scrolledID = vm.posts.first?.uri
+                proxy.scrollTo("__top__", anchor: .top)
             }
         }
         if let first = vm.posts.first {
