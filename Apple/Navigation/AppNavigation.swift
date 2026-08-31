@@ -80,6 +80,37 @@ final class PhoneChromeState {
     static let shared = PhoneChromeState()
     /// True while the tab pill is minimized to a single corner button.
     var barCollapsed = false
+    /// Whether the home timeline is resting at its top — drives the
+    /// bar's scroll-to-top circle.
+    var timelineAtTop = true
+    /// Incremented by the bar's scroll-to-top circle; the timeline
+    /// observes it and jumps.
+    var scrollToTopRequest = 0
+    /// DM composer draft while a conversation owns the bottom bar.
+    var dmDraft: String = ""
+    /// Non-nil while a conversation is on top: the bar renders the message
+    /// field + send arrow and calls this to send `dmDraft`. Registered by
+    /// ConversationDetailView on appear, cleared on disappear.
+    var dmSend: (@MainActor () -> Void)? = nil
+
+    /// Non-nil while a thread screen is on top: the bar shows [Home] +
+    /// [compose-as-reply], and the compose circle calls this.
+    private(set) var threadReply: (@MainActor () -> Void)? = nil
+    private var threadReplyOwner: UUID? = nil
+
+    /// Owner-token registration: on a push, the NEW thread registers before
+    /// the covered one's onDisappear fires — the token keeps that stale
+    /// unregister from clobbering the fresh registration.
+    func registerThread(owner: UUID, reply: @escaping @MainActor () -> Void) {
+        threadReplyOwner = owner
+        threadReply = reply
+    }
+
+    func unregisterThread(owner: UUID) {
+        guard threadReplyOwner == owner else { return }
+        threadReplyOwner = nil
+        threadReply = nil
+    }
 }
 #endif
 
@@ -96,9 +127,6 @@ struct AppNavigation: View {
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
-    /// iPhone: a DM conversation is on top of the stack — its own message
-    /// input takes over the bottom edge, so the app bar steps aside.
-    @State private var phoneConversationOpen = false
     /// iPhone: user-chosen bottom-bar items (comma-joined rawValues).
     @AppStorage(PhoneBarConfig.storageKey) private var phoneBarItemsRaw = PhoneBarConfig.defaultValue
     /// iPhone: recipient picker for a new DM (the "+" on the Messages page).
@@ -401,12 +429,10 @@ struct AppNavigation: View {
     //    the content scales back and dims while it's open
     private var phoneTabView: some View {
         ZStack(alignment: .leading) {
+            // The app stays put; the drawer slides OVER it with a dimming
+            // scrim (no scale/push-back — transforms on the live navigation
+            // hierarchy were a recurring source of glitches).
             phoneMainShell
-                // Recede: scale + slide + dim only. (An animated clip here
-                // re-tessellated the live navigation hierarchy every frame —
-                // the source of the open/close glitch.)
-                .scaleEffect(phoneMenuOpen ? 0.92 : 1)
-                .offset(x: phoneMenuOpen ? 44 : 0)
 
             if phoneMenuOpen {
                 // Dimming scrim — tap anywhere outside the drawer to close.
@@ -416,6 +442,12 @@ struct AppNavigation: View {
                     .transition(.opacity)
 
                 PhoneSideMenu(active: selectedItem, items: phoneDrawerItems) { item in
+                    // "Home" from the drawer means the top of the feed —
+                    // jumping there also retires the scroll-to-top circle,
+                    // so the bar arrives uncrowded.
+                    if item == .timeline, !phoneChrome.timelineAtTop {
+                        phoneChrome.scrollToTopRequest += 1
+                    }
                     selectedItem = item
                     phoneMenuOpen = false
                 }
@@ -430,8 +462,24 @@ struct AppNavigation: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: phoneMenuOpen)
+        // Subtle pulse landing mid-slide as the drawer comes in.
+        .onChange(of: phoneMenuOpen) { _, open in
+            guard open else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(120))
+                Haptics.soft()
+            }
+        }
+        // Recipient picker for a new DM; opening a person pushes their
+        // conversation onto the stack. Attached at the shell root, away
+        // from the safe-area-inset chrome.
+        .sheet(isPresented: $showNewConversation) {
+            NewConversationView { convo in
+                selectedItem = .messages
+                phoneTimelineNavPath.append(convo)
+            }
+        }
     }
 
     private var phoneMainShell: some View {
@@ -444,6 +492,7 @@ struct AppNavigation: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
+                            Haptics.tap()
                             phoneMenuOpen = true
                         } label: {
                             Image(systemName: "line.3.horizontal")
@@ -462,43 +511,36 @@ struct AppNavigation: View {
                 }
                 .navigationDestination(for: ConversationItem.self) { convo in
                     ConversationDetailView(conversation: convo)
-                        // The conversation's own input bar owns the bottom
-                        // edge while it's on top — hide the app bar with it.
-                        // (Preference-based: reliable across push/pop, unlike
-                        // onAppear/onDisappear pairs during transitions.)
-                        .preference(key: HidesPhoneBarPreferenceKey.self, value: true)
                 }
-        }
-        .onPreferenceChange(HidesPhoneBarPreferenceKey.self) { hidden in
-            phoneConversationOpen = hidden
         }
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !phoneConversationOpen {
-                phoneBottomBar
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: phoneConversationOpen)
-        // Status-bar blur: with the toolbar glass hidden, this thin strip is
-        // the only chrome above the content — exactly the status-bar region.
+        // Always present — inside a conversation it MORPHS into the message
+        // composer rather than layering with a second input bar.
+        .safeAreaInset(edge: .bottom, spacing: 0) { phoneBottomBar }
+        // Status-bar blur: with the toolbar glass hidden, this is the only
+        // chrome above the content. The material runs a little past the
+        // status bar and fades out through a gradient mask — a hard-edged
+        // strip read as a gray band with a seam under it.
         .overlay(alignment: .top) {
             GeometryReader { geo in
                 Rectangle()
                     .fill(.ultraThinMaterial)
-                    .frame(height: geo.safeAreaInsets.top)
+                    .frame(height: geo.safeAreaInsets.top + 14)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.6),
+                                .init(color: .clear, location: 1),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .offset(y: -geo.safeAreaInsets.top)
             }
             .allowsHitTesting(false)
-        }
-        // Recipient picker for a new DM; opening a person pushes their
-        // conversation onto the stack.
-        .sheet(isPresented: $showNewConversation) {
-            NewConversationView { convo in
-                selectedItem = .messages
-                phoneTimelineNavPath.append(convo)
-            }
         }
     }
 
@@ -562,71 +604,120 @@ struct AppNavigation: View {
     }
 
     // MARK: - iPhone Bottom Bar
-    // [three-tab glass pill] ......... [compose circle]
-    // On the Search tab the pill morphs into a search field (Notes-style),
-    // with compose staying put on the right.
+    // Page-aware chrome:
+    //  • Tab pages: [pill] + [right circle] — Search morphs the pill into
+    //    its field; the timeline adds a scroll-to-top circle while scrolled.
+    //  • Messages: ONLY the "+" recipient button.
+    //  • Drawer-only pages (Settings, Drafts, Bookmarks, …): no bar at all —
+    //    the drawer and its pinned Home row are the way around.
     @ViewBuilder
     private var phoneBottomBar: some View {
-        HStack(spacing: AtmoTheme.Spacing.md) {
-            if selectedItem == .search, let searchVm = searchViewModel {
-                PhoneSearchField(viewModel: searchVm, focused: $phoneSearchFocused)
-                    .transition(.blurReplace)
-            } else if phoneChrome.barCollapsed {
-                // Minimized (scroll-down): a single corner button showing
-                // the current tab. Tap expands the pill; long-press offers
-                // the tabs directly via the native menu.
-                Menu {
-                    ForEach(phoneTabItems) { item in
-                        Button {
-                            selectedItem = item
-                            phoneChrome.barCollapsed = false
-                        } label: {
-                            Label(item.rawValue, systemImage: item.icon)
-                        }
-                    }
-                } label: {
-                    Image(systemName: (selectedItem ?? .timeline).filledIcon)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(AtmoColors.accent)
-                        .frame(width: 48, height: 48)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                } primaryAction: {
-                    phoneChrome.barCollapsed = false
+        let active = selectedItem ?? .timeline
+        if phoneChrome.dmSend != nil {
+            // Inside a conversation: the bar IS the message composer —
+            // field where the pill sits, send arrow where compose sits.
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                PhoneDMField(chrome: phoneChrome)
+                SendDMFAB(chrome: phoneChrome)
+            }
+            .padding(.horizontal, AtmoTheme.Spacing.lg)
+            .padding(.top, AtmoTheme.Spacing.xs)
+            .padding(.bottom, AtmoTheme.Spacing.sm)
+        } else if phoneChrome.threadReply != nil {
+            // Inside a thread: [Home — pops back to the timeline] on the
+            // left, and the compose circle acts as "reply to this thread".
+            // No scroll-to-top here; leaving restores the full pill.
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                ThreadHomeButton {
+                    selectedItem = .timeline
+                    phoneTimelineNavPath = NavigationPath()
                 }
-                .buttonStyle(.plain)
-                .transition(.blurReplace)
                 Spacer(minLength: 0)
-            } else {
-                phoneTabPill
-                    .transition(.blurReplace)
-                Spacer(minLength: 0)
+                ComposeFAB { phoneChrome.threadReply?() }
             }
-
-            // The right circle adapts to the page: Search gets a
-            // dismiss-keyboard control (the field lives in this bar),
-            // Messages gets "+" to start a new DM, everywhere else composes.
-            if selectedItem == .search {
-                DismissKeyboardFAB { phoneSearchFocused = false }
-                    .transition(.blurReplace)
-            } else if selectedItem == .messages {
+            .padding(.horizontal, AtmoTheme.Spacing.lg)
+            .padding(.top, AtmoTheme.Spacing.xs)
+            .padding(.bottom, AtmoTheme.Spacing.sm)
+        } else if active == .messages {
+            HStack {
+                Spacer(minLength: 0)
                 NewDMFAB { showNewConversation = true }
-                    .transition(.blurReplace)
-            } else {
-                ComposeFAB { showComposer = true }
-                    .transition(.blurReplace)
             }
+            .padding(.horizontal, AtmoTheme.Spacing.lg)
+            .padding(.top, AtmoTheme.Spacing.xs)
+            .padding(.bottom, AtmoTheme.Spacing.sm)
+        } else if phoneTabItems.contains(active) {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                if active == .search, let searchVm = searchViewModel {
+                    PhoneSearchField(viewModel: searchVm, focused: $phoneSearchFocused)
+                        .transition(.blurReplace)
+                } else if phoneChrome.barCollapsed {
+                    // Minimized (scroll-down): a single corner button showing
+                    // the current tab. Tap expands the pill; long-press offers
+                    // the tabs directly via the native menu.
+                    Menu {
+                        ForEach(phoneTabItems) { item in
+                            Button {
+                                Haptics.tap()
+                                selectedItem = item
+                                phoneChrome.barCollapsed = false
+                            } label: {
+                                Label(item.rawValue, systemImage: item.icon)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: active.filledIcon)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(AtmoColors.accent)
+                            .frame(width: 48, height: 48)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                    } primaryAction: {
+                        Haptics.tap()
+                        phoneChrome.barCollapsed = false
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.blurReplace)
+                    Spacer(minLength: 0)
+                } else {
+                    phoneTabPill
+                        .transition(.blurReplace)
+                    Spacer(minLength: 0)
+                }
+
+                // Timeline, scrolled down: the way back up lives IN the bar
+                // so its tap target is unambiguous — the floating overlay
+                // version kept losing touches to the feed rows beneath it.
+                if active == .timeline, !phoneChrome.timelineAtTop {
+                    ScrollToTopBarButton {
+                        phoneChrome.scrollToTopRequest += 1
+                    }
+                    .transition(.blurReplace)
+                }
+
+                // Right circle: Search gets a dismiss-keyboard control (the
+                // field lives in this bar); everywhere else composes.
+                if active == .search {
+                    DismissKeyboardFAB { phoneSearchFocused = false }
+                        .transition(.blurReplace)
+                } else {
+                    ComposeFAB { showComposer = true }
+                        .transition(.blurReplace)
+                }
+            }
+            .padding(.horizontal, AtmoTheme.Spacing.lg)
+            .padding(.top, AtmoTheme.Spacing.xs)
+            .padding(.bottom, AtmoTheme.Spacing.sm)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: active)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phoneChrome.barCollapsed)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phoneChrome.timelineAtTop)
         }
-        .padding(.horizontal, AtmoTheme.Spacing.lg)
-        .padding(.top, AtmoTheme.Spacing.xs)
-        .padding(.bottom, AtmoTheme.Spacing.sm)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedItem)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phoneChrome.barCollapsed)
     }
 
     private var phoneTabPill: some View {
         HStack(spacing: 2) {
             ForEach(phoneTabItems) { item in
                 Button {
+                    Haptics.tap()
                     selectedItem = item
                     phoneChrome.barCollapsed = false
                 } label: {
@@ -699,16 +790,6 @@ struct AppNavigation: View {
 
 // MARK: - Liquid Glass Compose FAB
 #if os(iOS)
-// MARK: - Phone Bar Hiding
-/// Set by pushed screens that own the bottom edge themselves (DM
-/// conversations) so the app's bottom bar steps aside while they're up.
-struct HidesPhoneBarPreferenceKey: PreferenceKey {
-    static var defaultValue: Bool = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
-    }
-}
-
 // MARK: - Phone Side Menu
 // The left drawer holding everything that isn't one of the three pill tabs.
 private struct PhoneSideMenu: View {
@@ -750,6 +831,7 @@ private struct PhoneSideMenu: View {
     private func menuRow(_ item: SidebarItem) -> some View {
         let draftCount = DraftStore.shared.drafts.count
         Button {
+            Haptics.tap()
             onSelect(item)
         } label: {
             HStack(spacing: AtmoTheme.Spacing.md) {
@@ -832,7 +914,10 @@ private struct DismissKeyboardFAB: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
             Image(systemName: "keyboard.chevron.compact.down")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
@@ -844,13 +929,113 @@ private struct DismissKeyboardFAB: View {
     }
 }
 
+// MARK: - Thread Home Button
+// The bar's left side while a thread is open: a single Home pill that pops
+// straight back to the timeline (the full menu returns with it).
+private struct ThreadHomeButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 17, weight: .medium))
+                Text("Home")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(AtmoColors.accent)
+            .frame(width: 58, height: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: Capsule())
+        .accessibilityLabel("Back to Home")
+    }
+}
+
+// MARK: - Phone DM Composer (in-bar)
+// The message field the bottom bar morphs into inside a conversation.
+private struct PhoneDMField: View {
+    @Bindable var chrome: PhoneChromeState
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Message…", text: $chrome.dmDraft, axis: .vertical)
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .lineLimit(1...4)
+            .padding(.horizontal, AtmoTheme.Spacing.lg)
+            .padding(.vertical, AtmoTheme.Spacing.sm)
+            .frame(minHeight: 48)
+            .frame(maxWidth: .infinity)
+            .glassEffect(.regular, in: RoundedRectangle(
+                cornerRadius: AtmoTheme.CornerRadius.pill, style: .continuous))
+            .onAppear { focused = true }
+    }
+}
+
+/// Send arrow beside the DM field — up arrow, accent when there's content.
+private struct SendDMFAB: View {
+    @Bindable var chrome: PhoneChromeState
+
+    private var canSend: Bool {
+        !chrome.dmDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            chrome.dmSend?()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(canSend ? AtmoColors.accent : Color.secondary)
+                .frame(width: 48, height: 48)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(FABButtonStyle())
+        .disabled(!canSend)
+        .accessibilityLabel("Send")
+    }
+}
+
+// MARK: - Scroll To Top Bar Button
+// Lives in the bottom bar next to compose while the timeline is scrolled —
+// a floating overlay version kept losing touches to the feed rows.
+private struct ScrollToTopBarButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AtmoColors.accent)
+                .frame(width: 48, height: 48)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(FABButtonStyle())
+        .accessibilityLabel("Scroll to Top")
+    }
+}
+
 // MARK: - New DM FAB
 // Takes compose's slot on the Messages page: opens the recipient picker.
 private struct NewDMFAB: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
@@ -867,7 +1052,10 @@ private struct ComposeFAB: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
             Image(systemName: "square.and.pencil")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)

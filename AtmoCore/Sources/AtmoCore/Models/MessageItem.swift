@@ -18,4 +18,13 @@ public struct MessageItem: Identifiable, Hashable, Sendable {
 
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
     public static func == (lhs: MessageItem, rhs: MessageItem) -> Bool { lhs.id == rhs.id }
+
+    /// Internal test fixture initializer.
+    init(testID: String, senderDID: String, text: String = "", sentAt: Date) {
+        self.messageID = testID
+        self.id = testID
+        self.senderDID = senderDID
+        self.text = text
+        self.sentAt = sentAt
+    }
 }

@@ -16,6 +16,7 @@ struct ComposerToolbar: View {
     var showTranslationDisclosureOption: Bool = false
 
     @State private var showPostOptions = false
+    @State private var showInteractionSettings = false
 
     // Derived from the active slot so SwiftUI re-renders when it changes.
     private var activeSlot: PostSlot { viewModel.activeSlot }
@@ -39,6 +40,23 @@ struct ComposerToolbar: View {
             .buttonStyle(.glass)
             .popover(isPresented: $showPostOptions, arrowEdge: .bottom) {
                 postOptionsContent
+            }
+
+            // ── Interaction settings (who can reply / quoting) ──
+            // Tinted accent once customized, so a gated post is visible
+            // at a glance before hitting Post.
+            Button {
+                showInteractionSettings = true
+            } label: {
+                Image(systemName: "person.2")
+                    .font(.subheadline)
+                    .foregroundStyle(viewModel.interactionSettings.isDefault
+                                     ? Color.secondary : AtmoColors.accent)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Post interaction settings")
+            .sheet(isPresented: $showInteractionSettings) {
+                PostInteractionSettingsSheet(viewModel: viewModel)
             }
 
             Spacer()
@@ -136,5 +154,131 @@ struct ComposerToolbar: View {
         .padding(AtmoTheme.Spacing.lg)
         .frame(minWidth: 280, maxWidth: 340)
         .presentationCompactAdaptation(.popover)
+    }
+}
+
+// MARK: - Post Interaction Settings Sheet
+// Bluesky-style controls: "Anyone" / "Nobody" as radio states, three
+// combinable audience rules, and the quote-post toggle. For replies only
+// the quote toggle applies — reply audience belongs to the thread's author.
+struct PostInteractionSettingsSheet: View {
+    let viewModel: ComposerViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var isReply: Bool { viewModel.replyTo != nil }
+    private var settings: PostInteractionSettings { viewModel.interactionSettings }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !isReply {
+                    Section {
+                        radioRow("Anyone", selected: settings.anyoneCanReply) {
+                            update { s in
+                                s.anyoneCanReply = true
+                                s.mentionedCanReply = false
+                                s.followingCanReply = false
+                                s.followersCanReply = false
+                            }
+                        }
+                        radioRow("Nobody", selected: settings.nobodyCanReply) {
+                            update { s in
+                                s.anyoneCanReply = false
+                                s.mentionedCanReply = false
+                                s.followingCanReply = false
+                                s.followersCanReply = false
+                            }
+                        }
+                        ruleRow("People you mention", isOn: settings.mentionedCanReply) {
+                            update { s in
+                                s.anyoneCanReply = false
+                                s.mentionedCanReply.toggle()
+                            }
+                        }
+                        ruleRow("People you follow", isOn: settings.followingCanReply) {
+                            update { s in
+                                s.anyoneCanReply = false
+                                s.followingCanReply.toggle()
+                            }
+                        }
+                        ruleRow("Your followers", isOn: settings.followersCanReply) {
+                            update { s in
+                                s.anyoneCanReply = false
+                                s.followersCanReply.toggle()
+                            }
+                        }
+                    } header: {
+                        Text("Who can reply")
+                    } footer: {
+                        Text("Combine the checkboxes to allow several groups. Applies to threads you start.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { settings.allowQuotePosts },
+                        set: { on in update { $0.allowQuotePosts = on } }
+                    )) {
+                        Label("Allow quote posts", systemImage: "quote.opening")
+                    }
+                    .tint(AtmoColors.accent)
+                } footer: {
+                    Text(isReply
+                         ? "Who can reply is controlled by the thread's author; quoting applies to your reply."
+                         : "Applied when the post is published.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Post Interactions")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { dismiss() }
+                }
+            }
+        }
+#if os(iOS)
+        .presentationDetents([.medium, .large])
+#endif
+    }
+
+    private func update(_ mutate: (inout PostInteractionSettings) -> Void) {
+        var s = viewModel.interactionSettings
+        mutate(&s)
+        viewModel.interactionSettings = s
+    }
+
+    @ViewBuilder
+    private func radioRow(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? AtmoColors.accent : Color.secondary)
+                Text(title)
+                    .foregroundStyle(.primary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func ruleRow(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isOn ? AtmoColors.accent : Color.secondary)
+                Text(title)
+                    .foregroundStyle(.primary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

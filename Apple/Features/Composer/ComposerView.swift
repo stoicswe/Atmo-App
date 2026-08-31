@@ -195,6 +195,8 @@ struct ComposerView: View {
             }
             .onChange(of: viewModel?.didSubmitSuccessfully) { _, success in
                 if success == true {
+                    // Celebratory triple-tap: the post made it out.
+                    Haptics.celebrate()
                     dismissedExplicitly = true
                     onSuccess?()
                     dismiss()
@@ -386,6 +388,8 @@ private struct SlotComposerRow: View {
 
     // Photo picking is per-slot (each Threads slot owns its media).
     @State private var selectedItems: [PhotosPickerItem] = []
+    @State private var selectedVideoItem: PhotosPickerItem? = nil
+    @State private var isLoadingVideo = false
 
     // Alt-text editor state
     @State private var editingAltImageID: UUID? = nil
@@ -445,6 +449,12 @@ private struct SlotComposerRow: View {
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
+                    // Attached video chip
+                    if let video = slot.attachedVideo {
+                        attachedVideoChip(video)
+                            .padding(.vertical, AtmoTheme.Spacing.xs)
+                    }
+
                     // Media icon row — the Bluesky-supported subset of
                     // Threads' attachment icons.
                     mediaIconRow
@@ -489,6 +499,7 @@ private struct SlotComposerRow: View {
 
     private var mediaIconRow: some View {
         let imageCount = slot.attachedImages.count
+        let hasVideo = slot.attachedVideo != nil
         return HStack(spacing: AtmoTheme.Spacing.lg) {
             PhotosPicker(
                 selection: $selectedItems,
@@ -497,13 +508,36 @@ private struct SlotComposerRow: View {
             ) {
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.body)
-                    .foregroundStyle(imageCount >= 4 ? Color.secondary.opacity(0.4) : Color.secondary)
+                    .foregroundStyle(imageCount >= 4 || hasVideo
+                                     ? Color.secondary.opacity(0.4) : Color.secondary)
             }
-            .disabled(imageCount >= 4)
+            .disabled(imageCount >= 4 || hasVideo)
             .onChange(of: selectedItems) { _, newItems in
                 Task { @MainActor in
                     await loadImages(from: newItems)
                 }
+            }
+
+            // Video — one per post, mutually exclusive with images
+            // (Bluesky's rule; PostSlot enforces it).
+            PhotosPicker(
+                selection: $selectedVideoItem,
+                matching: .videos
+            ) {
+                Image(systemName: "video.badge.plus")
+                    .font(.body)
+                    .foregroundStyle(hasVideo ? Color.secondary.opacity(0.4) : Color.secondary)
+            }
+            .disabled(hasVideo || isLoadingVideo)
+            .onChange(of: selectedVideoItem) { _, newItem in
+                Task { @MainActor in
+                    await loadVideo(from: newItem)
+                }
+            }
+
+            if isLoadingVideo {
+                ProgressView()
+                    .controlSize(.small)
             }
 
             if imageCount > 0 {
@@ -525,6 +559,46 @@ private struct SlotComposerRow: View {
             slot.addImage(data: data, fileName: "\(fileName).jpg")
         }
         selectedItems = []
+    }
+
+    /// Loads movie data from the picker and attaches it to this slot.
+    @MainActor
+    private func loadVideo(from item: PhotosPickerItem?) async {
+        guard let item else { return }
+        isLoadingVideo = true
+        if let data = try? await item.loadTransferable(type: Data.self) {
+            let fileName = (item.itemIdentifier ?? "video_\(UUID().uuidString)") + ".mp4"
+            slot.attachVideo(data: data, fileName: fileName)
+        }
+        selectedVideoItem = nil
+        isLoadingVideo = false
+    }
+
+    // MARK: - Video chip
+
+    private func attachedVideoChip(_ video: PostSlot.VideoAttachment) -> some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Image(systemName: "video.fill")
+                .foregroundStyle(AtmoColors.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Video attached")
+                    .font(.caption.weight(.medium))
+                Text(ByteCountFormatter.string(
+                    fromByteCount: Int64(video.data.count), countStyle: .file))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button {
+                slot.removeVideo()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(AtmoTheme.Spacing.md)
+        .neumorphicGlassCard()
     }
 
     // MARK: - Image strip

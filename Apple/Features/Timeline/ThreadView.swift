@@ -51,6 +51,8 @@ struct ThreadView: View {
     @State private var error: Error? = nil
     @State private var threadViewModel: TimelineViewModel?
     @State private var showRootReplyComposer = false
+    /// Registration token for the phone bottom bar (see PhoneChromeState).
+    @State private var chromeOwner = UUID()
     /// Handle of a mentioned user — used to programmatically push a ProfileView
     @State private var mentionedHandle: String? = nil
     /// Current sort order for top-level replies
@@ -61,6 +63,16 @@ struct ThreadView: View {
 
     /// The URI of the post the user actually tapped — highlighted in the list
     @State private var focusedPostURI: String? = nil
+    /// iPhone hosts this screen's controls in the app's bottom bar instead
+    /// of floating FABs (whose taps fell through to content).
+    private var usesAppBarControls: Bool {
+#if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+#else
+        false
+#endif
+    }
+
     /// Tracks whether the root post is visible — used to show/hide the scroll-to-top FAB.
     @State private var isAtTop: Bool = true
 
@@ -145,8 +157,11 @@ struct ThreadView: View {
         for (i, row) in rows.enumerated() {
             var info = ReplyRailInfo()
             // Ancestor levels not yet resolved (open until a row at the
-            // same-or-shallower depth closes them).
-            var open = Set(0..<row.depth)
+            // same-or-shallower depth closes them). Level -1 is the ROOT's
+            // branch: it stays open as long as another top-level reply
+            // appears further down, so a late top-level response stays
+            // visibly connected to the root across the subtrees between.
+            var open = Set(-1..<row.depth)
             var j = i + 1
             while j < rows.count, !open.isEmpty {
                 let dj = rows[j].depth
@@ -274,7 +289,9 @@ struct ThreadView: View {
             }
 
             // ── FAB column (inside ScrollViewReader so proxy is in scope) ──
-            if rootPost != nil, !isLoading {
+            // iPad/macOS only — on the phone the bottom bar hosts the reply
+            // control instead, and scroll-to-top is deliberately absent.
+            if rootPost != nil, !isLoading, !usesAppBarControls {
                 VStack(spacing: AtmoTheme.Spacing.md) {
                     // Scroll-to-top — only visible once the user has scrolled past the root post
                     if !isAtTop {
@@ -299,11 +316,24 @@ struct ThreadView: View {
         .navigationTitle("Thread")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-#endif
-        // Allow tapping a quoted/embedded post inside a thread to push another ThreadView.
-        .navigationDestination(for: PostNavTarget.self) { target in
-            ThreadView(postURI: target.uri)
+        // Phone: the bottom bar's compose circle becomes "reply to this
+        // thread" while this screen is up. Owner-token registration keeps
+        // push/pop appear ordering from clobbering a newer thread's claim.
+        .onAppear {
+            guard usesAppBarControls else { return }
+            let binding = $showRootReplyComposer
+            PhoneChromeState.shared.registerThread(owner: chromeOwner) {
+                binding.wrappedValue = true
+            }
         }
+        .onDisappear {
+            guard usesAppBarControls else { return }
+            PhoneChromeState.shared.unregisterThread(owner: chromeOwner)
+        }
+#endif
+        // NOTE: no .navigationDestination(for: PostNavTarget.self) here —
+        // the owning stack registers it; re-declaring from pushed content
+        // is an unsupported duplicate that breaks navigation.
         // Programmatic push when a @mention is tapped anywhere in the thread.
         .overlay {
             if let handle = mentionedHandle {
@@ -623,13 +653,27 @@ private struct ReplyRowView: View {
             // Unbroken vertical lines spanning the row's full height, one per
             // ancestor branch that has more children further down. These are
             // what keep sibling replies visually connected across the rows
-            // between them (Reddit-style comment rails).
-            ForEach(railLevels.sorted(), id: \.self) { level in
+            // between them (Reddit-style comment rails). The root's branch
+            // (level -1) renders in the top-level avatar column — the line
+            // passes behind those avatars, threading them to the root.
+            ForEach(Set(railLevels.map { max($0, 0) }).sorted(), id: \.self) { level in
                 Rectangle()
                     .fill(Color.secondary.opacity(0.3))
                     .frame(width: lineWidth)
                     .padding(.leading, railX(level) - lineWidth / 2)
                     .frame(maxHeight: .infinity, alignment: .top)
+            }
+
+            // ── Top-level upward stem ──
+            // Ties a depth-0 reply's avatar to the root rail arriving from
+            // above, so the line lands INTO the avatar instead of stopping
+            // at the row boundary (matters for the last top-level reply,
+            // which carries no pass-through rail of its own).
+            if reply.depth == 0 {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: lineWidth, height: replyAvatarSize / 2)
+                    .padding(.leading, avatarCenterX - lineWidth / 2)
             }
 
             // ── Curved elbow from the parent's rail into this avatar ──

@@ -4,6 +4,9 @@ import AtmoCore
 struct MessageBubbleView: View {
     let message: MessageItem
     let isFromMe: Bool
+    /// Burst grouping: consecutive messages from one sender within a minute
+    /// share a single timestamp on the last of them.
+    var showsTimestamp: Bool = true
 
     var body: some View {
         HStack {
@@ -24,10 +27,12 @@ struct MessageBubbleView: View {
                         )
                     )
 
-                Text(message.sentAt.atmoFormatted())
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, AtmoTheme.Spacing.xs)
+                if showsTimestamp {
+                    Text(message.sentAt.atmoFormatted())
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, AtmoTheme.Spacing.xs)
+                }
             }
 
             if !isFromMe { Spacer(minLength: 60) }

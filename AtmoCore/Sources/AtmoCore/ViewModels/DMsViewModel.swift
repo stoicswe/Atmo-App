@@ -67,6 +67,23 @@ public final class ConversationDetailViewModel {
         }
     }
 
+    /// Burst grouping for timestamps: messages from the same sender within
+    /// a minute of each other share one timestamp, shown under the burst's
+    /// last message. A sender change or a gap over a minute ends the burst.
+    public func showsTimestamp(at index: Int) -> Bool {
+        Self.showsTimestamp(at: index, in: messages)
+    }
+
+    /// Pure decision core, exposed for the unit tests.
+    nonisolated static func showsTimestamp(at index: Int, in messages: [MessageItem]) -> Bool {
+        guard index >= 0, index < messages.count else { return true }
+        guard index < messages.count - 1 else { return true }
+        let current = messages[index]
+        let next = messages[index + 1]
+        if next.senderDID != current.senderDID { return true }
+        return next.sentAt.timeIntervalSince(current.sentAt) > 60
+    }
+
     public func sendMessage(text: String) async {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let chat = service.atProtoChat else { return }

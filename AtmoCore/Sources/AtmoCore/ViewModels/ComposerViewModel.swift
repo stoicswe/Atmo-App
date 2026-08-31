@@ -14,6 +14,8 @@ public final class PostSlot: Identifiable {
         didSet { onTextChanged?() }
     }
     public var attachedImages: [ImageAttachment] = []
+    /// One video per post, mutually exclusive with images (Bluesky's rule).
+    public var attachedVideo: VideoAttachment? = nil
 
     /// Fired whenever text changes — wired by ComposerViewModel for draft auto-save.
     public var onTextChanged: (() -> Void)? = nil
@@ -31,12 +33,27 @@ public final class PostSlot: Identifiable {
         }
     }
 
+    public struct VideoAttachment: Identifiable {
+        public let id = UUID()
+        public let data: Data
+        public let fileName: String
+        public var altText: String = ""
+
+        public init(data: Data, fileName: String, altText: String = "") {
+            self.data = data
+            self.fileName = fileName
+            self.altText = altText
+        }
+    }
+
     public var characterCount: Int { text.count }
     public var isOverLimit: Bool { characterCount > 300 }
     public var remainingCharacters: Int { 300 - characterCount }
 
     public var isEmpty: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachedImages.isEmpty
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && attachedImages.isEmpty
+            && attachedVideo == nil
     }
 
     public var canSubmit: Bool {
@@ -49,12 +66,48 @@ public final class PostSlot: Identifiable {
     }
 
     public func addImage(data: Data, fileName: String) {
-        guard attachedImages.count < 4 else { return }
+        guard attachedImages.count < 4, attachedVideo == nil else { return }
         attachedImages.append(ImageAttachment(data: data, fileName: fileName))
     }
 
     public func removeImage(id: UUID) {
         attachedImages.removeAll { $0.id == id }
+    }
+
+    /// Attaches a video, displacing any images (a post carries one or the
+    /// other, never both).
+    public func attachVideo(data: Data, fileName: String) {
+        attachedImages.removeAll()
+        attachedVideo = VideoAttachment(data: data, fileName: fileName)
+    }
+
+    public func removeVideo() {
+        attachedVideo = nil
+    }
+}
+
+// MARK: - Post Interaction Settings
+/// Bluesky-style controls for who can reply to a new post (threadgate) and
+/// whether it may be quoted (postgate). Mirrors the official app's sheet:
+/// "Anyone" and "Nobody" are radio states; the three rule toggles combine.
+public struct PostInteractionSettings: Equatable, Sendable {
+    public var anyoneCanReply: Bool = true
+    public var mentionedCanReply: Bool = false
+    public var followingCanReply: Bool = false
+    public var followersCanReply: Bool = false
+    public var allowQuotePosts: Bool = true
+
+    public init() {}
+
+    /// Untouched settings need no gate records at all.
+    public var isDefault: Bool { anyoneCanReply && allowQuotePosts }
+
+    /// A threadgate record must accompany the post.
+    public var needsThreadgate: Bool { !anyoneCanReply }
+
+    /// The gate closes replies entirely (no rule selected).
+    public var nobodyCanReply: Bool {
+        !anyoneCanReply && !mentionedCanReply && !followingCanReply && !followersCanReply
     }
 }
 
@@ -75,6 +128,11 @@ public final class ComposerViewModel {
     public var isSubmitting: Bool = false
     public var submissionError: Error? = nil
     public var didSubmitSuccessfully: Bool = false
+
+    // MARK: Interaction settings
+    /// Who can reply / whether quoting is allowed — applied as threadgate
+    /// and postgate records alongside the post at submit time.
+    public var interactionSettings = PostInteractionSettings()
 
     // MARK: Translation (applies to the first post only)
     public var includeTranslationDisclosure: Bool = false
@@ -287,7 +345,8 @@ public final class ComposerViewModel {
                     )
                 }
 
-                // Embed: quote only on first post; images on any post
+                // Embed: quote only on first post; a video or images on any
+                // post (mutually exclusive — PostSlot enforces it).
                 let embed: ATProtoBluesky.EmbedIdentifier?
                 if index == 0, let quoted = quotedPost {
                     let quoteRef = ComAtprotoLexicon.Repository.StrongReference(
@@ -295,6 +354,13 @@ public final class ComposerViewModel {
                         cidHash: quoted.cid
                     )
                     embed = .record(strongReference: quoteRef)
+                } else if let video = slot.attachedVideo {
+                    embed = .video(
+                        video: video.data,
+                        captions: nil,
+                        altText: video.altText.isEmpty ? nil : video.altText,
+                        aspectoRatio: nil
+                    )
                 } else if !imageQueries.isEmpty {
                     embed = .images(images: imageQueries)
                 } else {
@@ -338,6 +404,33 @@ public final class ComposerViewModel {
                 //   • this very first post (if starting a new thread)
                 if index == 0 {
                     threadRootRef = firstReplyRef?.root ?? thisRef
+
+                    // ── Interaction gates ──
+                    // Applied best-effort (try?): the post already exists at
+                    // this point, and failing a gate must not surface an
+                    // error that would tempt a duplicate resubmission.
+                    //
+                    // Threadgate (who can reply) — only meaningful on a NEW
+                    // thread's root; a reply can't gate someone else's thread.
+                    if replyTo == nil, interactionSettings.needsThreadgate {
+                        var rules: [ATProtoBluesky.ThreadgateAllowRule] = []
+                        if interactionSettings.mentionedCanReply { rules.append(.allowMentions) }
+                        if interactionSettings.followingCanReply { rules.append(.allowFollowing) }
+                        if interactionSettings.followersCanReply { rules.append(.allowFollowers) }
+                        // Empty rules == nobody can reply.
+                        _ = try? await bluesky.createThreadgateRecord(
+                            postURI: thisRef.recordURI,
+                            replyControls: rules
+                        )
+                    }
+
+                    // Postgate (quote control) — applies to any post.
+                    if !interactionSettings.allowQuotePosts {
+                        _ = try? await bluesky.createPostgateRecord(
+                            postURI: thisRef.recordURI,
+                            embeddingRules: [.disable]
+                        )
+                    }
                 }
             }
 

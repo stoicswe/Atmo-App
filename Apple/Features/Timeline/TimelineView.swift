@@ -246,12 +246,11 @@ struct TimelineView: View {
             .zIndex(10)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.newPostsCount > 0)
 
-            // ── Scroll-to-top FAB ──
-            // Appears once the user has scrolled away from the top, stacked
-            // directly ABOVE the compose control (never behind it): on the
-            // iPhone that's just over the bottom bar's compose circle, on
-            // iPad/macOS just over the floating compose FAB.
-            if !isAtTop {
+            // ── Scroll-to-top FAB (iPad/macOS only) ──
+            // On the iPhone this control lives in the bottom bar instead —
+            // as a floating overlay its taps kept falling through to the
+            // feed rows and opening threads.
+            if !isAtTop, showsFloatingScrollToTop {
                 ScrollToTopButton {
                     jumpToTop(vm: vm, proxy: proxy)
                 }
@@ -272,6 +271,13 @@ struct TimelineView: View {
         .onChange(of: vm.posts.isEmpty) { _, empty in
             if !empty { attemptPositionRestore(vm: vm) }
         }
+#if os(iOS)
+        // The bottom bar's scroll-to-top circle signals through the shared
+        // chrome state; each bump is one jump request.
+        .onChange(of: PhoneChromeState.shared.scrollToTopRequest) { _, _ in
+            jumpToTop(vm: vm, proxy: proxy)
+        }
+#endif
         // ── iCloud read-position save ──
         // The anchored row IS the read position. Debounced so a fling
         // doesn't hit the KV store for every row it passes.
@@ -287,28 +293,25 @@ struct TimelineView: View {
         }
     }
 
-    /// Horizontal position: center the 44pt button over the compose circle
-    /// (56pt wide — at the bottom bar's lg inset on iPhone, at the floating
-    /// FAB's xxl inset on iPad/macOS).
-    private var scrollToTopTrailingPadding: CGFloat {
+    /// The floating overlay button renders on iPad/macOS only — the iPhone
+    /// hosts this control in its bottom bar instead.
+    private var showsFloatingScrollToTop: Bool {
 #if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            return AtmoTheme.Spacing.lg + 6
-        }
+        UIDevice.current.userInterfaceIdiom != .phone
+#else
+        true
 #endif
-        return AtmoTheme.Spacing.xxl + 6
     }
 
-    /// Vertical position: clear the compose control below.
+    /// Horizontal position: center the 44pt button over the floating
+    /// compose FAB (56pt wide at its xxl inset).
+    private var scrollToTopTrailingPadding: CGFloat {
+        AtmoTheme.Spacing.xxl + 6
+    }
+
+    /// Vertical position: clear the compose FAB below (56pt + its inset).
     private var scrollToTopBottomPadding: CGFloat {
-#if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            // Above the floating bottom bar (pill + compose circle).
-            return 88
-        }
-#endif
-        // Above the floating compose FAB (56pt circle + its xxl inset).
-        return AtmoTheme.Spacing.xxl + 56 + AtmoTheme.Spacing.md
+        AtmoTheme.Spacing.xxl + 56 + AtmoTheme.Spacing.md
     }
 
     /// Scrolls to the newest post and retires the pill. Shared by the pill
@@ -361,6 +364,9 @@ struct TimelineView: View {
         // don't churn the observable.
         if UIDevice.current.userInterfaceIdiom == .phone {
             let chrome = PhoneChromeState.shared
+            if chrome.timelineAtTop != nowAtTop {
+                chrome.timelineAtTop = nowAtTop
+            }
             let delta = offset - previous
             if nowAtTop || delta > 8 {
                 if chrome.barCollapsed { chrome.barCollapsed = false }
@@ -384,7 +390,14 @@ struct TimelineView: View {
                     : refreshThreshold + (offset - refreshThreshold) * 0.3
                 // Direct assignment — no animation — keeps the indicator glued to the finger
                 pullDistance = damped
+                // Rough-surface ratchet: a faint tick every ~9pt of travel,
+                // growing firmer as the pull approaches the trigger point.
+                if abs(offset - scrollMetrics.lastPullTickOffset) >= 9 {
+                    scrollMetrics.lastPullTickOffset = offset
+                    Haptics.pullTick(progress: min(1, offset / refreshThreshold))
+                }
             } else if pullDistance > 0 {
+                scrollMetrics.lastPullTickOffset = 0
                 // Finger released back to natural position: animate the snap closed.
                 // This branch only fires ONCE per pull-release (when pullDistance transitions
                 // from > 0 back to 0), not on every normal scroll tick.
@@ -397,6 +410,8 @@ struct TimelineView: View {
         // Detect pull-and-release: offset was above threshold then snapped to ≤ 0
         if !isRefreshTriggered && !viewModel.isRefreshing && previous > refreshThreshold && offset <= 0 {
             isRefreshTriggered = true
+            // Confirming tap: the release engaged the refresh.
+            Haptics.confirm()
             Task {
                 // Hold the indicator open at ~75% threshold height while fetching
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
@@ -451,6 +466,10 @@ final class ScrollMetrics {
     /// "don't bother animating during a fling" gate.
     private(set) var velocity: CGFloat = 0
 
+    /// Offset at which the last pull-to-refresh haptic tick fired — the
+    /// ratchet emits one tick per step of travel, not per frame.
+    var lastPullTickOffset: CGFloat = 0
+
     func sample(offset: CGFloat) {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = now - lastSampleTime
@@ -493,8 +512,11 @@ private struct RowFadeIn: ViewModifier {
 }
 
 // MARK: - Refresh Indicator
-// A spring-animated spinner that appears when the user pulls down.
-// Grows from nothing as pull distance increases, spins when refreshing.
+// The pull dial: ratchet detents appear one by one around the ring as the
+// pull deepens — the visual counterpart of the rough-surface haptic — while
+// a gradient arc fills toward the trigger point. Crossing the threshold
+// flips the arrow and pops the dial ("release to refresh"); releasing swaps
+// it for the spinner with a scale pop.
 private struct RefreshIndicatorView: View {
     let pullDistance: CGFloat
     let threshold: CGFloat
@@ -505,6 +527,9 @@ private struct RefreshIndicatorView: View {
         min(1, pullDistance / threshold)
     }
 
+    /// Releasing now would refresh.
+    private var ready: Bool { progress >= 1 }
+
     var body: some View {
         VStack {
             Spacer()
@@ -514,36 +539,50 @@ private struct RefreshIndicatorView: View {
                     ProgressView()
                         .tint(AtmoColors.accent)
                         .scaleEffect(0.9)
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
-                    // Circular progress arc tracking pull distance
+                    // Ratchet detents — one per haptic step of the pull.
+                    ForEach(0..<8, id: \.self) { index in
+                        Capsule()
+                            .fill(AtmoColors.accent)
+                            .frame(width: 2, height: 5)
+                            .offset(y: -14)
+                            .rotationEffect(.degrees(Double(index) * 45))
+                            .opacity(min(1, max(0, progress * 9 - CGFloat(index))) * 0.5)
+                    }
+
+                    // Gradient arc filling toward the trigger point, with a
+                    // slight wind-up rotation for liveliness.
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(
-                            AtmoColors.accent.opacity(0.25 + 0.75 * progress),
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                            AngularGradient(
+                                colors: [AtmoColors.accent.opacity(0.25), AtmoColors.accent],
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360 * progress)
+                            ),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                         )
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .rotationEffect(.degrees(-90))
-                        // Rotate the arc as you pull — adds liveliness
-                        .rotationEffect(.degrees(progress * 180))
-                        .scaleEffect(0.5 + 0.5 * progress)
+                        .rotationEffect(.degrees(progress * 120))
 
-                    // Checkmark-like arrow that appears near threshold
-                    if progress > 0.7 {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(AtmoColors.accent)
-                            .opacity((progress - 0.7) / 0.3)
-                            .rotationEffect(.degrees(progress >= 1 ? 180 : 0))
-                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: progress >= 1)
-                    }
+                    // Arrow flips upward the moment releasing would refresh.
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(AtmoColors.accent)
+                        .opacity(min(1, progress * 1.8))
+                        .rotationEffect(.degrees(ready ? 180 : 0))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: ready)
                 }
             }
-            .frame(width: 32, height: 32)
+            .frame(width: 36, height: 36)
             .glassEffect(.regular, in: Circle())
+            // Grows with the pull; pops slightly at the ready point.
+            .scaleEffect((0.6 + 0.4 * progress) * (ready ? 1.12 : 1.0))
+            .animation(.spring(response: 0.28, dampingFraction: 0.55), value: ready)
             .opacity(progress)
-            .scaleEffect(0.7 + 0.3 * progress)
             Spacer()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRefreshing)
