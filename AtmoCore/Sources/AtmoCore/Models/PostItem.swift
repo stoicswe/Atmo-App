@@ -24,6 +24,9 @@ public struct PostItem: Identifiable, Hashable, Sendable {
     public let facets: [AppBskyLexicon.RichText.Facet]
     public let createdAt: Date
     public let indexedAt: Date
+    /// Moderation label values applied to this post (labeler + self-labels),
+    /// e.g. "porn", "sexual", "nudity", "graphic-media".
+    public let contentLabels: [String]
 
     // Engagement (mutable for optimistic updates)
     public var likeCount: Int
@@ -89,6 +92,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorVerification = VerificationBadge(state: post.author.verificationState)
 
         self.indexedAt = post.indexedAt
+        self.contentLabels = post.labels?.map { $0.name } ?? []
 
         // Extract text and facets from the record. The record is an UnknownType wrapping a PostRecord.
         if let postRecord = post.record.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self) {
@@ -173,6 +177,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorVerification = VerificationBadge(state: post.author.verificationState)
 
         self.indexedAt = post.indexedAt
+        self.contentLabels = post.labels?.map { $0.name } ?? []
 
         if let postRecord = post.record.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self) {
             self.text = postRecord.text
@@ -221,6 +226,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         let now = Date()
         self.createdAt = now
         self.indexedAt = now
+        self.contentLabels = []
         self.likeCount = 0
         self.repostCount = 0
         self.replyCount = 0
@@ -256,7 +262,8 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         replyParentURI: String? = nil,
         replyRootURI: String? = nil,
         indexedAt: Date = Date(),
-        isRepost: Bool = false
+        isRepost: Bool = false,
+        contentLabels: [String] = []
     ) {
         self.uri = testURI
         self.id = testURI
@@ -269,6 +276,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.facets = []
         self.createdAt = indexedAt
         self.indexedAt = indexedAt
+        self.contentLabels = contentLabels
         self.likeCount = 0
         self.repostCount = 0
         self.replyCount = 0

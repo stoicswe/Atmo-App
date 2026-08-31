@@ -11,5 +11,14 @@
 	     without this entitlement those writes silently stay local-only. -->
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+	<!-- Sensitive Content Analysis (the iMessage nudity-detection
+	     framework). Analysis only runs when the user enables Sensitive
+	     Content Warning in system Settings; without this entitlement the
+	     analyzer reports itself disabled and the app falls back to
+	     Bluesky's moderation labels alone. If automatic signing rejects
+	     this, enable the "Sensitive Content Analysis" capability on the
+	     stoicswe.com-atmin-app App ID in the developer portal. -->
+	<key>com.apple.developer.sensitivecontentanalysis.client</key>
+	<true/>
 </dict>
 </plist>

@@ -13,12 +13,15 @@ struct PostEmbedView: View {
     /// Called with the full image array and the tapped index so the parent can
     /// present ImageViewerView. Pass nil to keep images non-interactive (timeline).
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
+    /// Whether the owning post's media is labeled explicit — drives the
+    /// Show/Blur/Hide shield on images and video.
+    var sensitiveMedia: Bool = false
 
     var body: some View {
         Group {
             switch embed {
             case .embedImagesView(let images):
-                ImageGridView(images: images.images, onImageTap: onImageTap)
+                ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
 
             case .embedExternalView(let external):
                 ExternalLinkCardView(external: external.external)
@@ -31,7 +34,7 @@ struct PostEmbedView: View {
             case .embedRecordWithMediaView(let rwm):
                 VStack(spacing: AtmoTheme.Spacing.sm) {
                     if case .embedImagesView(let images) = rwm.media {
-                        ImageGridView(images: images.images, onImageTap: onImageTap)
+                        ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
                     }
                     if case .viewRecord(let viewRecord) = rwm.record.record {
                         QuotePostView(record: viewRecord)
@@ -39,7 +42,7 @@ struct PostEmbedView: View {
                 }
 
             case .embedVideoView(let video):
-                VideoEmbedView(video: video)
+                VideoEmbedView(video: video, sensitiveMedia: sensitiveMedia)
 
             default:
                 EmptyView()
@@ -59,6 +62,12 @@ struct ImageGridView: View {
     /// When non-nil, tapping an image calls this with (allImages, tappedIndex).
     /// When nil, this view presents its own ImageViewerView.
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
+    /// Labeled explicit by Bluesky (author self-label or labeler).
+    var sensitiveMedia: Bool = false
+
+    /// Flagged by on-device analysis (Apple's Sensitive Content Warning)
+    /// when the post carried no label.
+    @State private var screenerFlagged = false
 
     /// Carousel page currently snapped into view (drives the dots).
     @State private var carouselPage: Int? = 0
@@ -96,9 +105,26 @@ struct ImageGridView: View {
                 carousel(count: count)
             }
         }
+        .sensitiveMediaShield(sensitiveMedia || screenerFlagged)
         .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
         .sheet(isPresented: $showViewer) {
             ImageViewerView(images: images, selectedIndex: $viewerIndex)
+        }
+        // Unlabeled images get the same on-device screening iMessage uses,
+        // when the person has Sensitive Content Warning enabled.
+        .task(id: images.first?.thumbnailImageURL) {
+            guard !sensitiveMedia,
+                  SensitiveMediaPolicy.stored(
+                    rawValue: UserDefaults.standard.string(forKey: SensitiveMediaPolicy.storageKey)
+                  ) != .show,
+                  SensitiveImageScreener.isAvailable
+            else { return }
+            for image in images {
+                if await SensitiveImageScreener.isSensitive(imageAt: image.thumbnailImageURL) {
+                    screenerFlagged = true
+                    break
+                }
+            }
         }
     }
 
@@ -286,6 +312,7 @@ private struct QuotePostView: View {
 // MARK: - Video Embed Placeholder
 private struct VideoEmbedView: View {
     let video: AppBskyLexicon.Embed.VideoDefinition.View
+    var sensitiveMedia: Bool = false
 
     var body: some View {
         // Same pre-reserved sizing as images: the box height comes from the
@@ -314,6 +341,7 @@ private struct VideoEmbedView: View {
             }
             .frame(maxHeight: 480)
             .clipped()
+            .sensitiveMediaShield(sensitiveMedia)
             .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
     }
 }

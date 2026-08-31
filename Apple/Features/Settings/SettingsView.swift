@@ -119,6 +119,7 @@ private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+    @AppStorage(SensitiveMediaPolicy.storageKey) private var sensitivePolicyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
 #if os(iOS)
     @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
 #endif
@@ -131,6 +132,21 @@ private struct AppearanceTab: View {
                 Text("Feed")
             } footer: {
                 Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Explicit images", selection: $sensitivePolicyRaw) {
+                    ForEach(SensitiveMediaPolicy.allCases) { policy in
+                        Text(policy.displayName).tag(policy.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Sensitive Content")
+            } footer: {
+                Text("Applies to media labeled adult or graphic on Bluesky. Blur covers it until you tap Show; Hide removes it entirely. When your device's Sensitive Content Warning (Settings → Privacy & Security) is on, unlabeled nudity is also detected on-device — the same protection iMessage uses; nothing leaves your device.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

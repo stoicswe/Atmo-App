@@ -29,6 +29,7 @@
 		44E6166DCA6D97001FEF5F1F /* ThreadReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CC35E00C3AF01396EEA33F0 /* ThreadReaderView.swift */; };
 		496F933C6600B2472C27686C /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1852C1676F9B93E2152D1D2C /* LoadingView.swift */; };
 		4C4B14C8E18179FDD53D0A24 /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A042721FAAFC56FB1EF66BA /* ThreadView.swift */; };
+		51A0257E15391064E3797F9B /* SensitiveMediaShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */; };
 		52309379F3B2F77238279E09 /* ATProtoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1E32899101AB10F64A175CE4 /* ATProtoKit */; };
 		525C3745C23625E7227952AF /* GIFPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */; };
 		52A7076A1EC50C6BFBE8049A /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC62D50695E20DD950DBCC06 /* MessageBubbleView.swift */; };
@@ -167,6 +168,7 @@
 		E35E4112FA41B1233D574B12 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E7364AB0C403D888FADBF61D /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
 		E76232602161DBBA414A3F3F /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveMediaShield.swift; sourceTree = "<group>"; };
 		EFDAE3CD661558EEAF60A875 /* RichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextView.swift; sourceTree = "<group>"; };
 		EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwoFactorView.swift; sourceTree = "<group>"; };
 		F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -288,6 +290,7 @@
 				967CF623DACB557545B3E065 /* InAppBrowser.swift */,
 				1852C1676F9B93E2152D1D2C /* LoadingView.swift */,
 				EFDAE3CD661558EEAF60A875 /* RichTextView.swift */,
+				ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */,
 				900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */,
 				A585053040099E29C26DAB2B /* VerifiedBadge.swift */,
 			);
@@ -631,6 +634,7 @@
 				5F3DC0D73743F0A9DC942566 /* ProfileView.swift in Sources */,
 				BD407337803ED8DE0E6C85CB /* RichTextView.swift in Sources */,
 				CCD3FF9032F6926429B85AB8 /* SearchView.swift in Sources */,
+				51A0257E15391064E3797F9B /* SensitiveMediaShield.swift in Sources */,
 				B449D5D49FCF4C84E2842261 /* SettingsView.swift in Sources */,
 				269CDC34B769809348CDC5A4 /* SpotlightPostIndexer.swift in Sources */,
 				1843786BDF6D8A2D2A15ED7D /* ThemeSettings.swift in Sources */,

@@ -627,7 +627,7 @@ private struct RootPostView: View {
             }
 
             if let embed = livePost.embed {
-                PostEmbedView(embed: embed, onImageTap: onImageTap)
+                PostEmbedView(embed: embed, onImageTap: onImageTap, sensitiveMedia: livePost.hasSensitiveMediaLabel)
             }
 
             HStack(spacing: AtmoTheme.Spacing.xl) {
@@ -868,7 +868,7 @@ private struct ReplyRowView: View {
                             }
 
                             if let embed = livePost.embed {
-                                PostEmbedView(embed: embed, onImageTap: onImageTap)
+                                PostEmbedView(embed: embed, onImageTap: onImageTap, sensitiveMedia: livePost.hasSensitiveMediaLabel)
                             }
 
                             // Actions row

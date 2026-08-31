@@ -101,6 +101,7 @@ struct ThreadReaderView: View {
                     viewerIndex = index
                     showViewer = true
                 }
+                .sensitiveMediaShield(post.hasSensitiveMediaLabel)
             }
 
             if let external {
