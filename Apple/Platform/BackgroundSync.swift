@@ -47,7 +47,13 @@ enum BackgroundSync {
 #elseif os(macOS)
         startActivityScheduler()
 #elseif os(watchOS)
-        scheduleNextRefresh()
+        // Deliberately NO initial schedule here: configure runs during
+        // App.init(), BEFORE the WKApplicationDelegateAdaptor installs the
+        // delegate — and watchOS hard-aborts a schedule call while the
+        // delegate is null ("requires that your WKApplicationDelegate
+        // implement handleBackgroundTasks:"), killing the app at launch.
+        // The scenePhase → .background hook arms the first request once
+        // the app is fully up; each delivered task re-arms the next.
 #endif
     }
 
