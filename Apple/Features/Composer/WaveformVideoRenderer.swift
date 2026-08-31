@@ -9,7 +9,11 @@ import AtmoCore
 /// audio track re-encoded to AAC under an animated waveform (played bars
 /// tint in accent blue as a playhead sweeps). Output is an H.264 MP4 that
 /// goes straight through the existing video-embed pipeline.
-enum WaveformVideoRenderer {
+///
+/// `nonisolated`: rendering must run off the main actor (the app target
+/// defaults to MainActor isolation) — the decode/encode work here froze
+/// the composer sheet when it inherited the default.
+nonisolated enum WaveformVideoRenderer {
 
     struct Rendered {
         let data: Data
@@ -25,8 +29,9 @@ enum WaveformVideoRenderer {
 
     private static let width = 1080
     private static let height = 540
-    private static let fps: Int32 = 12
     private static let barCount = 64
+    /// Timescale for video presentation timestamps.
+    private static let timescale: CMTimeScale = 600
 
     static func render(audioURL: URL) async throws -> Rendered {
         let asset = AVURLAsset(url: audioURL)
@@ -79,21 +84,7 @@ enum WaveformVideoRenderer {
         guard writer.startWriting() else { throw RenderError.writerFailed }
         writer.startSession(atSourceTime: .zero)
 
-        // ── Video frames ──
-        let frameCount = max(1, Int(duration * Double(fps)))
-        for frame in 0..<frameCount {
-            while !videoInput.isReadyForMoreMediaData {
-                try await Task.sleep(for: .milliseconds(4))
-            }
-            let progress = Double(frame) / Double(max(1, frameCount - 1))
-            guard let buffer = makeFrame(progress: progress, buckets: buckets, pool: adaptor.pixelBufferPool) else {
-                throw RenderError.writerFailed
-            }
-            adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(frame), timescale: fps))
-        }
-        videoInput.markAsFinished()
-
-        // ── Audio (decoded to PCM, re-encoded by the writer) ──
+        // Audio source: decoded to PCM, re-encoded by the writer.
         let reader = try AVAssetReader(asset: asset)
         let pcmOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -105,14 +96,28 @@ enum WaveformVideoRenderer {
         ])
         reader.add(pcmOutput)
         reader.startReading()
-        while let sample = pcmOutput.copyNextSampleBuffer() {
-            while !audioInput.isReadyForMoreMediaData {
-                try await Task.sleep(for: .milliseconds(4))
-            }
-            audioInput.append(sample)
-        }
-        audioInput.markAsFinished()
 
+        // Both tracks MUST feed concurrently: AVAssetWriter interleaves
+        // multi-track output, so an input starved of the other track's
+        // samples stops reporting ready — feeding all video before any
+        // audio (the previous approach) deadlocked right there.
+        async let videoDone: Void = writeVideoTrack(
+            input: videoInput,
+            adaptor: adaptor,
+            buckets: buckets,
+            duration: duration
+        )
+        async let audioDone: Void = writeAudioTrack(input: audioInput, output: pcmOutput)
+        _ = try await (videoDone, audioDone)
+
+        guard reader.status == .completed else {
+            reader.cancelReading()
+            throw RenderError.unreadableAudio
+        }
+
+        // Pin the session end to the audio length so the final waveform
+        // frame holds through the end of the clip.
+        writer.endSession(atSourceTime: CMTime(seconds: duration, preferredTimescale: timescale))
         await writer.finishWriting()
         guard writer.status == .completed else { throw RenderError.writerFailed }
 
@@ -123,6 +128,96 @@ enum WaveformVideoRenderer {
             aspectRatio: (width, height),
             duration: duration
         )
+    }
+
+    // MARK: Track feeding
+
+    /// Feeds the waveform frames via the writer's pull model
+    /// (`requestMediaDataWhenReady`), which cooperates with interleaving.
+    ///
+    /// The playhead tints whole bars, so the picture only changes when it
+    /// crosses a bar boundary — one frame per boundary (barCount + 1 in
+    /// total) with explicit timestamps, instead of duration × fps identical
+    /// frames. That alone cuts a 3-minute memo from ~2160 encoded frames
+    /// to 65.
+    private static func writeVideoTrack(
+        input: AVAssetWriterInput,
+        adaptor: AVAssetWriterInputPixelBufferAdaptor,
+        buckets: [Float],
+        duration: TimeInterval
+    ) async throws {
+        // Frame k shows k played bars, displayed from the moment the
+        // playhead crosses into bar k (the sweep is linear in time).
+        var frames: [(time: CMTime, playedBars: Int)] = [(.zero, 0)]
+        for bar in 0..<buckets.count {
+            let seconds = duration * (Double(bar) + 0.5) / Double(buckets.count)
+            frames.append((CMTime(seconds: seconds, preferredTimescale: timescale), bar + 1))
+        }
+
+        final class FeedState {
+            var index = 0
+            var finished = false
+        }
+        let state = FeedState()
+        let queue = DispatchQueue(label: "com.atmo.waveform.video")
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            input.requestMediaDataWhenReady(on: queue) {
+                guard !state.finished else { return }
+                while input.isReadyForMoreMediaData {
+                    guard state.index < frames.count else {
+                        state.finished = true
+                        input.markAsFinished()
+                        continuation.resume()
+                        return
+                    }
+                    let frame = frames[state.index]
+                    guard let buffer = makeFrame(
+                        playedBars: frame.playedBars,
+                        buckets: buckets,
+                        pool: adaptor.pixelBufferPool
+                    ), adaptor.append(buffer, withPresentationTime: frame.time) else {
+                        state.finished = true
+                        input.markAsFinished()
+                        continuation.resume(throwing: RenderError.writerFailed)
+                        return
+                    }
+                    state.index += 1
+                }
+            }
+        }
+    }
+
+    /// Streams decoded PCM into the writer's AAC encoder, same pull model.
+    private static func writeAudioTrack(
+        input: AVAssetWriterInput,
+        output: AVAssetReaderTrackOutput
+    ) async throws {
+        final class FeedState {
+            var finished = false
+        }
+        let state = FeedState()
+        let queue = DispatchQueue(label: "com.atmo.waveform.audio")
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            input.requestMediaDataWhenReady(on: queue) {
+                guard !state.finished else { return }
+                while input.isReadyForMoreMediaData {
+                    guard let sample = output.copyNextSampleBuffer() else {
+                        state.finished = true
+                        input.markAsFinished()
+                        continuation.resume()
+                        return
+                    }
+                    guard input.append(sample) else {
+                        state.finished = true
+                        input.markAsFinished()
+                        continuation.resume(throwing: RenderError.writerFailed)
+                        return
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Waveform extraction
@@ -165,7 +260,7 @@ enum WaveformVideoRenderer {
     // MARK: Frame drawing
 
     private static func makeFrame(
-        progress: Double,
+        playedBars: Int,
         buckets: [Float],
         pool: CVPixelBufferPool?
     ) -> CVPixelBuffer? {
@@ -205,8 +300,7 @@ enum WaveformVideoRenderer {
         let idle = CGColor(gray: 1.0, alpha: 0.32)
 
         for (index, bucket) in buckets.enumerated() {
-            let fraction = (Double(index) + 0.5) / Double(buckets.count)
-            context.setFillColor(fraction <= progress ? played : idle)
+            context.setFillColor(index < playedBars ? played : idle)
             let barHeight = max(6, CGFloat(bucket) * maxBarHeight)
             let rect = CGRect(
                 x: sideMargin + CGFloat(index) * slot + (slot - barWidth) / 2,

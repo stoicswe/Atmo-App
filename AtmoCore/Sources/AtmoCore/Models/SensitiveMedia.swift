@@ -31,8 +31,10 @@ public enum SensitiveMediaPolicy: String, CaseIterable, Identifiable, Sendable {
 
 extension PostItem {
     /// Label values (Bluesky's global moderation labels + self-labels)
-    /// that mark a post's media as adult or graphic content.
-    static let sensitiveMediaLabelValues: Set<String> = [
+    /// that mark a post's media as adult or graphic content. Public so UI
+    /// layers can apply the same check to labels on embedded records
+    /// (quoted posts) that never become a PostItem.
+    public static let sensitiveMediaLabelValues: Set<String> = [
         "porn", "sexual", "nudity", "graphic-media", "gore",
     ]
 

@@ -20,6 +20,7 @@
 		237A8B3C295991985EF383B8 /* FeedItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314CED221A493CBD1616999A /* FeedItemView.swift */; };
 		269CDC34B769809348CDC5A4 /* SpotlightPostIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */; };
 		3137ACFB0D8B6B24FB93BB88 /* ErrorBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD2FFF59B01294EB8AFC66 /* ErrorBannerView.swift */; };
+		320A238A978F8AB733A1F625 /* ComposerMediaPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E333B9A5EC43F657C9DD89 /* ComposerMediaPreview.swift */; };
 		34B3130D9C48719711C61581 /* ConversationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EE8B6712C41D5DFE13C192 /* ConversationDetailView.swift */; };
 		3874E80E83F7CE3D56B75D42 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F5CC67B73F5649C235A041 /* LoginView.swift */; };
 		3D9CBFC5BCDE3483749C5151 /* ProfilePostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B733C0076171F15536FD45 /* ProfilePostsView.swift */; };
@@ -57,6 +58,7 @@
 		9C3AADAD4AEF37DC322745D7 /* VoiceMemoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */; };
 		9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */; };
 		9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
+		9E65C40F684CE143356DAAF2 /* EmbeddedVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E8DFAAE13D068BB6E88F6C /* EmbeddedVideoPlayer.swift */; };
 		9F5252CF24C5091CEBD26A34 /* WatchSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBACCE37292793A5CC6E3831 /* WatchSettingsView.swift */; };
 		A96680C4D87175D11D055E72 /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
 		AA7AEB11D4F63900E31D774F /* SpotlightPostIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */; };
@@ -145,6 +147,7 @@
 		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
+		A2E333B9A5EC43F657C9DD89 /* ComposerMediaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMediaPreview.swift; sourceTree = "<group>"; };
 		A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretsStore.swift; sourceTree = "<group>"; };
 		A585053040099E29C26DAB2B /* VerifiedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifiedBadge.swift; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
@@ -171,12 +174,13 @@
 		DCFE019FBE762F5CE1E1434B /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
 		E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightPostIndexer.swift; sourceTree = "<group>"; };
 		E35E4112FA41B1233D574B12 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E3E8DFAAE13D068BB6E88F6C /* EmbeddedVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedVideoPlayer.swift; sourceTree = "<group>"; };
 		E7364AB0C403D888FADBF61D /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
 		E76232602161DBBA414A3F3F /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveMediaShield.swift; sourceTree = "<group>"; };
 		EFDAE3CD661558EEAF60A875 /* RichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextView.swift; sourceTree = "<group>"; };
 		EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwoFactorView.swift; sourceTree = "<group>"; };
-		F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UbiquitousKeyValueStore.swift; sourceTree = "<group>"; };
 		FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -289,6 +293,7 @@
 			children = (
 				90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */,
 				810F3101A6618E68B1AC2A36 /* AvatarView.swift */,
+				E3E8DFAAE13D068BB6E88F6C /* EmbeddedVideoPlayer.swift */,
 				B9AD2FFF59B01294EB8AFC66 /* ErrorBannerView.swift */,
 				35D8ECCAC181EE3791D987A6 /* GlassCard.swift */,
 				DCFE019FBE762F5CE1E1434B /* ImageViewerView.swift */,
@@ -313,6 +318,7 @@
 		85DC620D6044B4E67FDA35DA /* Composer */ = {
 			isa = PBXGroup;
 			children = (
+				A2E333B9A5EC43F657C9DD89 /* ComposerMediaPreview.swift */,
 				487A47451110A7905995A9DF /* ComposerToolbar.swift */,
 				BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */,
 				A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */,
@@ -523,7 +529,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					7BB85D42C6D2AF642B86C38F = {
 						DevelopmentTeam = P22P7U46RW;
@@ -613,12 +619,14 @@
 				E92762AD164A88086C21B0A8 /* AvatarView.swift in Sources */,
 				0BEE367ACF73BAA1DEB8E681 /* BackgroundSync.swift in Sources */,
 				DAEA684A5B95EDDD12466274 /* BookmarksView.swift in Sources */,
+				320A238A978F8AB733A1F625 /* ComposerMediaPreview.swift in Sources */,
 				5937998BA3B19976F6A6D359 /* ComposerToolbar.swift in Sources */,
 				D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */,
 				34B3130D9C48719711C61581 /* ConversationDetailView.swift in Sources */,
 				69F413184BA7CB154C3B6D07 /* ConversationListView.swift in Sources */,
 				22BC73F208891F3B99FDD44C /* DraftsView.swift in Sources */,
 				6DA828B883E3B1912E20D3F5 /* EditProfileView.swift in Sources */,
+				9E65C40F684CE143356DAAF2 /* EmbeddedVideoPlayer.swift in Sources */,
 				3137ACFB0D8B6B24FB93BB88 /* ErrorBannerView.swift in Sources */,
 				53F5849D7A7E79458EF3CABC /* FamilyControlsIntegration.swift in Sources */,
 				237A8B3C295991985EF383B8 /* FeedItemView.swift in Sources */,
@@ -724,6 +732,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Resources/Atmo.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -770,6 +779,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Resources/Atmo.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -844,6 +854,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -919,6 +930,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_NS_ASSERTIONS = NO;

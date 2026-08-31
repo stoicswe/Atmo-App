@@ -33,8 +33,15 @@ struct PostEmbedView: View {
 
             case .embedRecordWithMediaView(let rwm):
                 VStack(spacing: AtmoTheme.Spacing.sm) {
-                    if case .embedImagesView(let images) = rwm.media {
+                    switch rwm.media {
+                    case .embedImagesView(let images):
                         ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
+                    case .embedVideoView(let video):
+                        VideoEmbedView(video: video, sensitiveMedia: sensitiveMedia)
+                    case .embedExternalView(let external):
+                        ExternalLinkCardView(external: external.external)
+                    default:
+                        EmptyView()
                     }
                     if case .viewRecord(let viewRecord) = rwm.record.record {
                         QuotePostView(record: viewRecord)
@@ -219,6 +226,11 @@ struct ImageGridView: View {
 
 // MARK: - External Link Card
 // Internal (not private): ThreadReaderView renders link previews inline.
+//
+// Bluesky-style layout on the app's glass surface: a full-width thumbnail
+// (1.91:1, the Open Graph card ratio) over title, description, and a
+// divided footer carrying the site icon + domain. Cards without a
+// thumbnail collapse to the text block alone, like the official client.
 struct ExternalLinkCardView: View {
     let external: AppBskyLexicon.Embed.ExternalDefinition.ViewExternal
 
@@ -226,78 +238,149 @@ struct ExternalLinkCardView: View {
 
     private var linkURL: URL? { URL(string: external.uri) }
 
+    /// Footer domain, "www."-stripped the way Bluesky displays it.
+    private var displayHost: String {
+        guard let host = linkURL?.host else { return external.uri }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
     var body: some View {
         Button {
             if let url = linkURL { openURL(url) }
         } label: {
-            HStack(spacing: AtmoTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: 0) {
                 if let thumbURL = external.thumbnailImageURL {
-                    AsyncCachedImage(url: thumbURL) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Color.secondary.opacity(0.15)
+                    // Height reserved from the fixed card ratio before the
+                    // image loads — same no-reflow rule as feed media.
+                    Color.clear
+                        .aspectRatio(1.91, contentMode: .fit)
+                        .overlay {
+                            AsyncCachedImage(url: thumbURL) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    Color.secondary.opacity(0.15)
+                                }
+                            }
                         }
-                    }
-                    .frame(width: 64, height: 64)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
+                        .clipped()
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AtmoTheme.Spacing.xs) {
                     if !external.title.isEmpty {
                         Text(external.title)
-                            .font(.callout.weight(.medium))
+                            .font(.subheadline.weight(.semibold))
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                             .foregroundStyle(.primary)
                     }
-                    Text(linkURL?.host ?? external.uri)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
+                    if !external.description.isEmpty {
+                        Text(external.description)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
 
-                Image(systemName: "arrow.up.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    Divider()
+                        .overlay(AtmoColors.glassDivider)
+                        .padding(.vertical, 2)
+
+                    HStack(spacing: 5) {
+                        sourceIcon
+                        Text(displayHost)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(AtmoTheme.Spacing.md)
             }
-            .padding(AtmoTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .neumorphicGlassCard()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(external.title.isEmpty
+            ? "Link to \(displayHost)"
+            : "\(external.title), link to \(displayHost)")
+    }
+
+    /// The site's favicon when the record carries one, else a globe.
+    @ViewBuilder
+    private var sourceIcon: some View {
+        if let icon = external.source?.icon {
+            AsyncCachedImage(url: icon) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFit()
+                } else {
+                    Image(systemName: "globe")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 14, height: 14)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        } else {
+            Image(systemName: "globe")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 }
 
 // MARK: - Quote Post
+// Bluesky-style embedded post on the app's glass surface: author header
+// with timestamp, the text, and the quoted post's own media (images, a
+// video still, or a compact link row) rendered inside the card.
 private struct QuotePostView: View {
     let record: AppBskyLexicon.Embed.RecordDefinition.ViewRecord
+
+    /// The quoted post's media, labeled explicit by the author or a labeler.
+    private var quoteSensitiveMedia: Bool {
+        record.labels?.contains {
+            PostItem.sensitiveMediaLabelValues.contains($0.name)
+        } ?? false
+    }
 
     var body: some View {
         NavigationLink(value: PostNavTarget(uri: record.uri)) {
             VStack(alignment: .leading, spacing: AtmoTheme.Spacing.sm) {
-                HStack(spacing: AtmoTheme.Spacing.sm) {
+                HStack(spacing: AtmoTheme.Spacing.xs) {
                     AvatarView(url: record.author.avatarImageURL, size: 20)
-                    if let name = record.author.displayName {
-                        Text(name).font(.caption.weight(.semibold))
+                    if let name = record.author.displayName, !name.isEmpty {
+                        Text(name)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
                     }
                     Text("@\(record.author.actorHandle)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
+                    Text(record.indexedAt.atmoFormatted())
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
 
-                if let postRecord = record.value.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self) {
+                if let postRecord = record.value.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self),
+                   !postRecord.text.isEmpty {
                     Text(postRecord.text)
                         .font(.callout)
-                        .lineLimit(4)
+                        .lineLimit(6)
+                        .multilineTextAlignment(.leading)
                         .foregroundStyle(.primary)
+                }
+
+                // The quoted post's own media. Hit testing is off so every
+                // tap on the card — media included — opens the quoted post,
+                // exactly like the official client.
+                if let media = record.embeds?.first {
+                    QuotedMediaView(embed: media, sensitiveMedia: quoteSensitiveMedia)
+                        .allowsHitTesting(false)
                 }
             }
             .padding(AtmoTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .neumorphicGlassCard()
         }
         .buttonStyle(.plain)
@@ -307,7 +390,98 @@ private struct QuotePostView: View {
     }
 }
 
-// MARK: - Video Embed Placeholder
+// MARK: - Quoted Media
+// Media inside a quote card. Videos render as a still with a play badge —
+// the inline auto-player belongs to top-level embeds only, so a busy feed
+// never runs two streams in one cell. External links use a compact row
+// rather than the full card to keep the quote visually subordinate.
+private struct QuotedMediaView: View {
+    let embed: AppBskyLexicon.Embed.RecordDefinition.ViewRecord.EmbedsUnion
+    var sensitiveMedia: Bool = false
+
+    var body: some View {
+        switch embed {
+        case .embedImagesView(let images):
+            ImageGridView(images: images.images, sensitiveMedia: sensitiveMedia)
+
+        case .embedVideoView(let video):
+            StaticVideoThumbnail(video: video)
+                .sensitiveMediaShield(sensitiveMedia)
+                .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+
+        case .embedExternalView(let external):
+            CompactExternalLinkRow(external: external.external)
+
+        case .embedRecordWithMediaView(let rwm):
+            switch rwm.media {
+            case .embedImagesView(let images):
+                ImageGridView(images: images.images, sensitiveMedia: sensitiveMedia)
+            case .embedVideoView(let video):
+                StaticVideoThumbnail(video: video)
+                    .sensitiveMediaShield(sensitiveMedia)
+                    .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+            default:
+                EmptyView()
+            }
+
+        default:
+            EmptyView()
+        }
+    }
+}
+
+// MARK: - Compact External Link Row
+// The pre-redesign small link treatment, kept for quote cards where the
+// full Bluesky-style card would out-weigh the quote itself.
+private struct CompactExternalLinkRow: View {
+    let external: AppBskyLexicon.Embed.ExternalDefinition.ViewExternal
+
+    private var host: String {
+        guard let host = URL(string: external.uri)?.host else { return external.uri }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    var body: some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            if let thumbURL = external.thumbnailImageURL {
+                AsyncCachedImage(url: thumbURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Color.secondary.opacity(0.15)
+                    }
+                }
+                .frame(width: 48, height: 48)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                if !external.title.isEmpty {
+                    Text(external.title)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(2)
+                        .foregroundStyle(.primary)
+                }
+                Text(host)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(AtmoTheme.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+}
+
+// MARK: - Video Embed
+// Streams the post's HLS video inline: muted by default, auto-playing
+// once the user rests the scroll for about a second, looping, with a
+// glass sound toggle (see EmbeddedVideoPlayer). Sensitive media keeps the
+// static thumbnail + shield — nothing should auto-play behind a blur.
 private struct VideoEmbedView: View {
     let video: AppBskyLexicon.Embed.VideoDefinition.View
     var sensitiveMedia: Bool = false
@@ -315,6 +489,33 @@ private struct VideoEmbedView: View {
     var body: some View {
         // Same pre-reserved sizing as images: the box height comes from the
         // record's aspect ratio, not from whether the thumbnail has loaded.
+        Color.clear
+            .aspectRatio(ImageGridView.displayAspectRatio(video.aspectRatio), contentMode: .fit)
+            .overlay {
+                if !sensitiveMedia, let playlistURL = URL(string: video.playlistURI) {
+                    EmbeddedVideoPlayer(
+                        playlistURL: playlistURL,
+                        thumbnailURL: video.thumbnailImageURL.flatMap(URL.init(string:))
+                    )
+                } else {
+                    StaticVideoThumbnail(video: video)
+                }
+            }
+            .frame(maxHeight: 480)
+            .clipped()
+            .sensitiveMediaShield(sensitiveMedia)
+            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+            .accessibilityLabel(video.altText?.isEmpty == false ? "Video: \(video.altText!)" : "Video")
+    }
+}
+
+// MARK: - Static Video Thumbnail
+// Poster frame + play badge, used where the inline player doesn't run:
+// sensitive media (shielded) and videos inside quote cards.
+struct StaticVideoThumbnail: View {
+    let video: AppBskyLexicon.Embed.VideoDefinition.View
+
+    var body: some View {
         Color.clear
             .aspectRatio(ImageGridView.displayAspectRatio(video.aspectRatio), contentMode: .fit)
             .overlay {
@@ -337,9 +538,6 @@ private struct VideoEmbedView: View {
                     .foregroundStyle(.white)
                     .atmoShadow(AtmoTheme.Shadow.floating)
             }
-            .frame(maxHeight: 480)
             .clipped()
-            .sensitiveMediaShield(sensitiveMedia)
-            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
     }
 }

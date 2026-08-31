@@ -474,10 +474,12 @@ private struct SlotComposerRow: View {
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
-                    // Attached video chip
+                    // Attached video / voice memo preview tile
                     if let video = slot.attachedVideo {
-                        attachedVideoChip(video)
-                            .padding(.vertical, AtmoTheme.Spacing.xs)
+                        AttachedVideoPreview(attachment: video) {
+                            slot.removeVideo()
+                        }
+                        .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
                     // Attached GIF chip
@@ -691,33 +693,6 @@ private struct SlotComposerRow: View {
         } catch {
             videoError = "Couldn't process that video. Try a different clip."
         }
-    }
-
-    // MARK: - Video chip
-
-    private func attachedVideoChip(_ video: PostSlot.VideoAttachment) -> some View {
-        HStack(spacing: AtmoTheme.Spacing.sm) {
-            Image(systemName: "video.fill")
-                .foregroundStyle(AtmoColors.accent)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Video attached")
-                    .font(.caption.weight(.medium))
-                Text(ByteCountFormatter.string(
-                    fromByteCount: Int64(video.data.count), countStyle: .file))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            Button {
-                slot.removeVideo()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(AtmoTheme.Spacing.md)
-        .neumorphicGlassCard()
     }
 
     // MARK: - GIF chip
