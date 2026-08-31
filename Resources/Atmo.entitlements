@@ -18,8 +18,13 @@
 	     Bluesky's moderation labels alone. If automatic signing rejects
 	     this, enable the "Sensitive Content Analysis" capability on the
 	     stoicswe.com-atmin-app App ID in the developer portal. -->
+	<!-- NOTE: this entitlement's value is an ARRAY of capability strings,
+	     not a boolean — Build 21's export failed on exactly that mismatch
+	     against the Xcode Cloud managed profile, which carries ("analysis"). -->
 	<key>com.apple.developer.sensitivecontentanalysis.client</key>
-	<true/>
+	<array>
+		<string>analysis</string>
+	</array>
 	<!-- Declared Age Range (Apple family controls): lets a parent share
 	     the child's age bracket with the app, activating the managed
 	     controls. Same portal note as above: if automatic signing rejects
