@@ -149,14 +149,37 @@ struct FeedItemView: View {
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
         .task(id: livePost.id) {
-            // Detect language at utility priority; runs on the cooperative thread pool
-            // but stays within the view's @MainActor isolation so @State writes are safe.
-            // Use displayText so the stripped URL doesn't skew the language detector.
+            // Use displayText so the stripped URL doesn't skew the detector.
             let text = livePost.displayText
-            needsTranslation = await Task(priority: .utility) {
+            let uri = livePost.uri
+            // Cells recycle constantly while scrolling — reuse this post's
+            // earlier result instead of re-running language detection.
+            if let cached = TranslationCheckCache.value(for: uri) {
+                needsTranslation = cached
+                return
+            }
+            // Detached: a plain Task {} inherits this view's MainActor,
+            // which was running NLLanguageRecognizer on the main thread.
+            let result = await Task.detached(priority: .utility) {
                 TranslationHelper.needsTranslation(text)
             }.value
+            TranslationCheckCache.store(result, for: uri)
+            needsTranslation = result
         }
+    }
+}
+
+// MARK: - Translation Check Cache
+/// Session cache of per-post language-detection results.
+@MainActor
+private enum TranslationCheckCache {
+    private static var values: [String: Bool] = [:]
+
+    static func value(for uri: String) -> Bool? { values[uri] }
+
+    static func store(_ value: Bool, for uri: String) {
+        if values.count > 2000 { values.removeAll(keepingCapacity: true) }
+        values[uri] = value
     }
 }
 

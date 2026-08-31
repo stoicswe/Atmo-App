@@ -126,6 +126,45 @@ struct TimelineDedupTests {
         #expect(result.count == 2)
     }
 
+    @Test func neverEmitsDuplicateURIs() {
+        // A repost carries the ORIGINAL post's URI. When someone reposts a
+        // reply AND that same reply is its thread's newest member, the
+        // repost row and the thread representative used to share one
+        // identity — which crashes SwiftUI's lazy ForEach.
+        let rootURI = "at://did:a/app.bsky.feed.post/root"
+        let replyURI = "at://did:b/app.bsky.feed.post/reply"
+        let repostOfReply = PostItem(
+            testURI: replyURI,
+            replyParentURI: rootURI,
+            replyRootURI: rootURI,
+            indexedAt: t0.addingTimeInterval(120),
+            isRepost: true
+        )
+        let between = PostItem(
+            testURI: "at://did:c/app.bsky.feed.post/other",
+            indexedAt: t0.addingTimeInterval(60)
+        )
+        let organicReply = PostItem(
+            testURI: replyURI,
+            replyParentURI: rootURI,
+            replyRootURI: rootURI,
+            indexedAt: t0
+        )
+        let result = TimelineViewModel.collapseThreadSlices(
+            [repostOfReply, between, organicReply]
+        )
+        let uris = result.map(\.uri)
+        #expect(Set(uris).count == uris.count)
+    }
+
+    @Test func duplicateRepostsCollapseToOne() {
+        let uri = "at://did:a/app.bsky.feed.post/1"
+        let repostA = PostItem(testURI: uri, indexedAt: t0, isRepost: true)
+        let repostB = PostItem(testURI: uri, indexedAt: t0.addingTimeInterval(30), isRepost: true)
+        let result = TimelineViewModel.collapseThreadSlices([repostA, repostB])
+        #expect(result.count == 1)
+    }
+
     @Test func emptyAndSingleInputsPassThrough() {
         #expect(TimelineViewModel.collapseThreadSlices([]).isEmpty)
         let single = PostItem(testURI: "at://did:a/app.bsky.feed.post/1")

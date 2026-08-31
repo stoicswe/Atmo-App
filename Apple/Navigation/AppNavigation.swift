@@ -301,7 +301,7 @@ struct AppNavigation: View {
             .listStyle(.sidebar)
             // Wide enough that "Notifications" and "Messages" don't truncate.
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
-            .navigationTitle("Atmo")
+            .navigationTitle("@omic")
         } detail: {
             // One NavigationStack owns the entire detail column.
             // All navigationDestination registrations live here so there is
@@ -802,7 +802,7 @@ private struct PhoneSideMenu: View {
         // A floating Liquid Glass panel: inset from the top and bottom
         // edges with rounded corners, rather than an edge-to-edge sheet.
         VStack(alignment: .leading, spacing: 0) {
-            Text("Atmo")
+            Text("@omic")
                 .font(.largeTitle.bold())
                 .padding(.horizontal, AtmoTheme.Spacing.xl)
                 .padding(.top, AtmoTheme.Spacing.xl)

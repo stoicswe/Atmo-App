@@ -69,6 +69,18 @@ struct AsyncCachedImage<Content: View>: View {
         // Don't clobber a successfully-loaded image with a redundant re-fire.
         if case .success = phase { return }
 
+        // Fast path: decoded earlier this session — no fetch, no decode.
+        // Without this, every LazyVStack cell realization re-decoded the
+        // image bytes on the main thread (URLCache only stores raw data).
+        if let cached = DecodedImageCache.shared.image(for: url) {
+            #if canImport(UIKit)
+            phase = .success(Image(uiImage: cached))
+            #elseif canImport(AppKit)
+            phase = .success(Image(nsImage: cached))
+            #endif
+            return
+        }
+
         phase = .empty
 
         do {
@@ -80,13 +92,23 @@ struct AsyncCachedImage<Content: View>: View {
             guard !Task.isCancelled else { return }
 
             #if canImport(UIKit)
-            if let uiImage = UIImage(data: data) {
-                phase = .success(Image(uiImage: uiImage))
+            // Decode AND decompress off the main actor; preparingForDisplay
+            // forces the (expensive, lazy) decompression now instead of at
+            // first render on main.
+            let decoded = await Task.detached(priority: .userInitiated) {
+                let image = UIImage(data: data)
+                return image?.preparingForDisplay() ?? image
+            }.value
+            guard !Task.isCancelled else { return }
+            if let decoded {
+                DecodedImageCache.shared.store(decoded, for: url)
+                phase = .success(Image(uiImage: decoded))
             } else {
                 phase = .failure(URLError(.cannotDecodeContentData))
             }
             #elseif canImport(AppKit)
             if let nsImage = NSImage(data: data) {
+                DecodedImageCache.shared.store(nsImage, for: url)
                 phase = .success(Image(nsImage: nsImage))
             } else {
                 phase = .failure(URLError(.cannotDecodeContentData))
@@ -96,6 +118,39 @@ struct AsyncCachedImage<Content: View>: View {
             guard !Task.isCancelled else { return }
             phase = .failure(error)
         }
+    }
+}
+
+// MARK: - Decoded image cache
+// NSCache of decoded platform images (thread-safe, memory-pressure aware).
+// URLCache below it holds raw bytes; this layer skips the repeated
+// decode/decompress work as cells recycle during scrolling.
+#if canImport(UIKit)
+private typealias PlatformDecodedImage = UIImage
+#elseif canImport(AppKit)
+private typealias PlatformDecodedImage = NSImage
+#endif
+
+private final class DecodedImageCache: @unchecked Sendable {
+    static let shared = DecodedImageCache()
+
+    private let cache: NSCache<NSURL, PlatformDecodedImage> = {
+        let cache = NSCache<NSURL, PlatformDecodedImage>()
+        cache.totalCostLimit = 64 * 1024 * 1024   // ~64 MB of decoded pixels
+        return cache
+    }()
+
+    func image(for url: URL) -> PlatformDecodedImage? {
+        cache.object(forKey: url as NSURL)
+    }
+
+    func store(_ image: PlatformDecodedImage, for url: URL) {
+        #if canImport(UIKit)
+        let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+        #else
+        let cost = Int(image.size.width * image.size.height * 4)
+        #endif
+        cache.setObject(image, forKey: url as NSURL, cost: cost)
     }
 }
 

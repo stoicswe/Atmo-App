@@ -222,9 +222,9 @@ private struct QuotePostView: View {
             .neumorphicGlassCard()
         }
         .buttonStyle(.plain)
-        .navigationDestination(for: PostNavTarget.self) { target in
-            ThreadView(postURI: target.uri)
-        }
+        // NOTE: no .navigationDestination here — the owning stack registers
+        // the PostNavTarget route once. Re-declaring it from every quote
+        // card is an unsupported duplicate (and a per-row cost).
     }
 }
 

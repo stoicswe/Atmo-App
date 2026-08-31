@@ -224,27 +224,14 @@ struct TimelineView: View {
             }
 
             // ── New Posts Pill ──
-            // Anchored top-center over the feed whenever unseen prepended
-            // posts exist; drains live as the user scrolls up past them
-            // (see markNewPostSeen). The container VStack scopes the
-            // show/hide animation to the pill so the feed itself never
-            // animates when the pill appears.
-            VStack {
-                if vm.newPostsCount > 0 {
-                    NewPostsPill(
-                        count: vm.newPostsCount,
-                        authors: vm.newPostAuthors,
-                        overflowAuthorCount: vm.newPostsOverflowAuthorCount
-                    ) {
-                        jumpToTop(vm: vm, proxy: proxy)
-                    }
-                    .padding(.top, AtmoTheme.Spacing.sm)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.newPostsCount)
-                }
+            // A separate child view so ONLY it re-evaluates as the unseen
+            // set drains (markNewPostSeen fires for every row scrolled
+            // past) — reading newPostsCount here made the entire feed body
+            // re-diff per row during the drain.
+            NewPostsPillOverlay(vm: vm) {
+                jumpToTop(vm: vm, proxy: proxy)
             }
             .zIndex(10)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.newPostsCount > 0)
 
             // ── Scroll-to-top FAB (iPad/macOS only) ──
             // On the iPhone this control lives in the bottom bar instead —
@@ -586,6 +573,33 @@ private struct RefreshIndicatorView: View {
             Spacer()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRefreshing)
+    }
+}
+
+// MARK: - New Posts Pill Overlay
+// Isolation boundary for the pill's observable reads: the unseen-post set
+// mutates on every row the user scrolls past while draining, and only this
+// small view should pay for those invalidations — not the feed body.
+private struct NewPostsPillOverlay: View {
+    let vm: TimelineViewModel
+    let onJump: () -> Void
+
+    var body: some View {
+        VStack {
+            if vm.newPostsCount > 0 {
+                NewPostsPill(
+                    count: vm.newPostsCount,
+                    authors: vm.newPostAuthors,
+                    overflowAuthorCount: vm.newPostsOverflowAuthorCount
+                ) {
+                    onJump()
+                }
+                .padding(.top, AtmoTheme.Spacing.sm)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.newPostsCount)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.newPostsCount > 0)
     }
 }
 

@@ -9,7 +9,7 @@ extension MainView {
     @ViewBuilder var loginPage: Body {
         ScrollView {
             VStack(spacing: 12) {
-                Text("Atmo")
+                Text("@omic")
                     .style("title-1")
                 Text("A Bluesky client")
                     .style("dim-label")

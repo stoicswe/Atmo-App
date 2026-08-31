@@ -10,7 +10,7 @@ struct AtmoLinux: App {
         Window(id: "main") { window in
             MainView(app: app, window: window)
         }
-        .title("Atmo")
+        .title("@omic")
         .defaultSize(width: 480, height: 780)
         .quitShortcut()
     }

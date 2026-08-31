@@ -353,17 +353,28 @@ public final class TimelineViewModel {
             }
         }
 
+        // URI uniqueness is an invariant of the output: a repost carries the
+        // ORIGINAL post's URI, so a repost of a reply plus that same reply
+        // emitted as its thread's representative used to produce two rows
+        // with one identity — which crashes SwiftUI's lazy ForEach. (The
+        // initial-load path had a dedup filter after this; the silent
+        // prepend path did not, and crashed at launch on feeds containing
+        // such a repost.)
         var emittedThreads = Set<String>()
+        var seenURIs = Set<String>()
         var result: [PostItem] = []
         result.reserveCapacity(slices.count)
         for post in slices {
             if post.reason != nil {
+                guard seenURIs.insert(post.uri).inserted else { continue }
                 result.append(post)
                 continue
             }
             let key = threadKey(post)
             guard emittedThreads.insert(key).inserted else { continue }
-            result.append(newestInThread[key] ?? post)
+            let representative = newestInThread[key] ?? post
+            guard seenURIs.insert(representative.uri).inserted else { continue }
+            result.append(representative)
         }
         return result
     }

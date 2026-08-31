@@ -32,7 +32,7 @@ settings:
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 1.0
+    MARKETING_VERSION: "1.0.0"
 
 packages:
   # Platform-neutral model/service layer (models, ATProtoService, stores,
@@ -87,7 +87,7 @@ targets:
         # (background modes for the future push/fetch work).
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Resources/Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: Atmo
+        INFOPLIST_KEY_CFBundleDisplayName: "@omic"
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
         # Export compliance, answered at build time: the app uses only
         # standard HTTPS/TLS (exempt), so TestFlight skips the "Missing
@@ -147,7 +147,7 @@ targets:
         # ($(TeamIdentifierPrefix)stoicswe.com-atmin-app) rather than
         # inheriting $(CFBundleIdentifier).
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Atmo
+        INFOPLIST_KEY_CFBundleDisplayName: "@omic"
         # Same export-compliance declaration as the iOS/macOS target —
         # the embedded watch app must answer it too or it re-triggers the
         # TestFlight compliance hold.
