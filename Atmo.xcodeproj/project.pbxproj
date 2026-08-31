@@ -83,6 +83,7 @@
 		EDDDF319E4EAB088ECDDAD6B /* AtmoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 00BA650A642C01670434726A /* AtmoCore */; };
 		EE1432A2731D07E549451814 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
 		F1E7A2C138947A1556C26B77 /* ATProtoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5DFD0103A658C3BEAD99D4A2 /* ATProtoKit */; };
+		F235A2E06CE342C9401095D2 /* TopicSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CD6821579000DFC2010C06 /* TopicSummaryCard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -132,6 +133,7 @@
 		67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTimelineView.swift; sourceTree = "<group>"; };
 		6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSync.swift; sourceTree = "<group>"; };
 		72EE8B6712C41D5DFE13C192 /* ConversationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDetailView.swift; sourceTree = "<group>"; };
+		76CD6821579000DFC2010C06 /* TopicSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicSummaryCard.swift; sourceTree = "<group>"; };
 		7A042721FAAFC56FB1EF66BA /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
 		7A30966828A3215EB97F9E95 /* VideoPreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPreparer.swift; sourceTree = "<group>"; };
 		810F3101A6618E68B1AC2A36 /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
@@ -414,6 +416,7 @@
 			isa = PBXGroup;
 			children = (
 				60BFCDD1F37B662C607BF339 /* SearchView.swift */,
+				76CD6821579000DFC2010C06 /* TopicSummaryCard.swift */,
 			);
 			path = Search;
 			sourceTree = "<group>";
@@ -647,6 +650,7 @@
 				44E6166DCA6D97001FEF5F1F /* ThreadReaderView.swift in Sources */,
 				4C4B14C8E18179FDD53D0A24 /* ThreadView.swift in Sources */,
 				D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */,
+				F235A2E06CE342C9401095D2 /* TopicSummaryCard.swift in Sources */,
 				C0C560B337FACFEC4A5AE2BE /* TranslateButton.swift in Sources */,
 				17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */,
 				CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */,

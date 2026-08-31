@@ -81,30 +81,85 @@ struct SearchView: View {
 
     @ViewBuilder
     private func categoryPicker(vm: SearchViewModel) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            categoryPickerRow(vm: vm)
+        }
+    }
+
+    @ViewBuilder
+    private func categoryPickerRow(vm: SearchViewModel) -> some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
             ForEach(SearchCategory.allCases) { category in
                 CategoryChip(
                     category: category,
                     isSelected: vm.selectedCategory == category,
-                    count: resultCount(for: category, vm: vm)
+                    countText: countText(for: category, vm: vm)
                 ) {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                    // Same tap-and-slide as the Settings/Activity chips.
+                    if vm.selectedCategory != category { Haptics.slideSelect() }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         vm.selectedCategory = category
                     }
                 }
             }
             Spacer(minLength: 0)
+
+            // ── Top / Latest ranking for post results ──
+            if vm.selectedCategory == .posts {
+                Menu {
+                    ForEach(SearchViewModel.SearchSort.allCases) { option in
+                        Button {
+                            Haptics.tap()
+                            vm.setSort(option)
+                        } label: {
+                            if vm.sort == option {
+                                Label(option.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayName)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.caption2.weight(.semibold))
+                        Text(vm.sort.displayName)
+                            .font(.caption.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, AtmoTheme.Spacing.md)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.secondary.opacity(0.1)))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
         }
     }
 
-    private func resultCount(for category: SearchCategory, vm: SearchViewModel) -> Int? {
+    /// "7", "25+", … — the loaded count, with "+" while more pages exist.
+    private func countText(for category: SearchCategory, vm: SearchViewModel) -> String? {
         guard !vm.postResults.isEmpty || !vm.peopleResults.isEmpty || !vm.hashtagResults.isEmpty
         else { return nil }
+        let count: Int
+        let hasMore: Bool
         switch category {
-        case .posts:    return vm.postResults.count
-        case .people:   return vm.peopleResults.count
-        case .hashtags: return vm.hashtagResults.count
+        case .posts:
+            count = vm.postResults.count
+            hasMore = vm.hasMorePosts
+        case .people:
+            count = vm.peopleResults.count
+            hasMore = vm.hasMorePeople
+        case .hashtags:
+            count = vm.hashtagResults.count
+            // Tags derive from post pages — more posts can mean more tags.
+            hasMore = vm.hasMorePosts
         }
+        guard count > 0 else { return nil }
+        return "\(count)\(hasMore ? "+" : "")"
     }
 
     // MARK: - Result Body
@@ -117,7 +172,14 @@ struct SearchView: View {
         // existing (possibly stale) results while a new search is in-flight.
         ZStack {
             if vm.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                emptyPrompt
+                // Explore suggestions (Bluesky's algorithmic surface) when
+                // the content controls allow them; otherwise the plain
+                // prompt. Managed minors default to the plain prompt.
+                if ParentalControlsStore.shared.active.allowsExploreSuggestions {
+                    ExploreSectionsView(searchViewModel: vm, navPath: navPath)
+                } else {
+                    emptyPrompt
+                }
             } else {
                 switch vm.selectedCategory {
                 case .posts:
@@ -160,13 +222,31 @@ struct SearchView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    // AI topic summary for tapped topics (Apple
+                    // Intelligence, on-device), streaming in as it writes.
+                    if let topic = vm.summaryTopic {
+                        TopicSummaryCard(topic: topic, posts: vm.postResults)
+                    }
                     ForEach(vm.postResults) { post in
                         SearchPostRow(post: post)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 navPath.wrappedValue = NavigationPath([PostNavTarget(uri: post.uri)])
                             }
+                            // Infinite scroll: any of the last few rows
+                            // appearing loads the next page — exact-last
+                            // triggers can be starved when a page appended
+                            // nothing new.
+                            .onAppear {
+                                if vm.postResults.suffix(3).contains(where: { $0.id == post.id }) {
+                                    Task { await vm.loadMorePosts() }
+                                }
+                            }
                         Divider().overlay(Color.secondary.opacity(0.1))
+                    }
+                    if vm.hasMorePosts {
+                        ProgressView()
+                            .padding(AtmoTheme.Spacing.lg)
                     }
                 }
             }
@@ -188,7 +268,17 @@ struct SearchView: View {
                             .onTapGesture {
                                 navPath.wrappedValue = NavigationPath([person.did])
                             }
+                            // Infinite scroll, same as the posts list.
+                            .onAppear {
+                                if vm.peopleResults.suffix(3).contains(where: { $0.did == person.did }) {
+                                    Task { await vm.loadMorePeople() }
+                                }
+                            }
                         Divider().overlay(Color.secondary.opacity(0.1))
+                    }
+                    if vm.hasMorePeople {
+                        ProgressView()
+                            .padding(AtmoTheme.Spacing.lg)
                     }
                 }
             }
@@ -219,7 +309,18 @@ struct SearchView: View {
                                 vm.onQueryChanged(newQuery)
                                 vm.selectedCategory = .posts
                             }
+                            // Tags derive from post pages — reaching the
+                            // end pulls the next page to surface more.
+                            .onAppear {
+                                if tag == vm.hashtagResults.last {
+                                    Task { await vm.loadMorePosts() }
+                                }
+                            }
                         Divider().overlay(Color.secondary.opacity(0.1))
+                    }
+                    if vm.hasMorePosts {
+                        ProgressView()
+                            .padding(AtmoTheme.Spacing.lg)
                     }
                 }
             }
@@ -293,23 +394,32 @@ private struct SearchBar: View {
 
 // MARK: - Category Chip
 
+// Mail-style category chip (matches Settings/Activity): a compact icon
+// circle that expands into a labeled accent capsule when selected. The
+// loaded-result count rides along ("25+" while more pages exist), and
+// labels never wrap thanks to fixedSize.
 private struct CategoryChip: View {
     let category: SearchCategory
     let isSelected: Bool
-    let count: Int?
+    let countText: String?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: category.icon)
-                    .font(.caption.weight(.medium))
-                Text(category.rawValue)
-                    .font(.caption.weight(.semibold))
-                if let count = count, count > 0 {
-                    Text("\(count)")
+                    .font(.system(size: 15, weight: .medium))
+                if isSelected {
+                    Text(category.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+                if let countText {
+                    Text(countText)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : AtmoColors.accent)
+                        .fixedSize()
+                        .foregroundStyle(isSelected ? .white.opacity(0.9) : AtmoColors.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background {
@@ -320,13 +430,14 @@ private struct CategoryChip: View {
                         }
                 }
             }
-            .foregroundStyle(isSelected ? .white : .secondary)
-            .padding(.horizontal, AtmoTheme.Spacing.md)
-            .padding(.vertical, AtmoTheme.Spacing.xs)
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .padding(.horizontal, isSelected ? AtmoTheme.Spacing.lg : (countText != nil ? AtmoTheme.Spacing.sm : 0))
+            .frame(height: 40)
+            .frame(minWidth: 40)
             .background {
-                Capsule()
-                    .fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.1))
+                Capsule().fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.12))
             }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -441,5 +552,231 @@ private struct HashtagRow: View {
         }
         .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
         .padding(.vertical, AtmoTheme.Spacing.sm)
+    }
+}
+
+
+// MARK: - Explore Sections
+// Bluesky's algorithmic Explore surface, shown while the query is empty:
+// trending topics, interests, discover feeds, and suggested accounts —
+// all straight from Bluesky's suggestion endpoints, labeled as such.
+private struct ExploreSectionsView: View {
+    let searchViewModel: SearchViewModel
+    let navPath: Binding<NavigationPath>
+
+    @Environment(ATProtoService.self) private var service
+    @Environment(\.openFeed) private var openFeed
+
+    var body: some View {
+        let store = ExploreStore.shared
+        ScrollView {
+            VStack(alignment: .leading, spacing: AtmoTheme.Spacing.lg) {
+                // ── Provenance disclaimer ──
+                Label("These are suggested by Bluesky", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !store.trendingTopics.isEmpty {
+                    sectionHeader("Trending")
+                    ForEach(Array(store.trendingTopics.enumerated()), id: \.element.id) { index, topic in
+                        topicRow(rank: index + 1, topic: topic)
+                    }
+                }
+
+                if !store.suggestedTopics.isEmpty {
+                    sectionHeader("Interests")
+                    FlowChips(topics: store.suggestedTopics) { topic in
+                        Haptics.tap()
+                        searchViewModel.activateTopic(topic.topic)
+                    }
+                }
+
+                if !store.suggestedFeeds.isEmpty {
+                    sectionHeader("Discover Feeds")
+                    ForEach(store.suggestedFeeds) { feed in
+                        feedRow(feed)
+                    }
+                }
+
+                if !store.suggestedAccounts.isEmpty {
+                    sectionHeader("Suggested Accounts")
+                    ForEach(store.suggestedAccounts) { account in
+                        accountRow(account)
+                    }
+                }
+
+                if !store.hasLoadedOnce {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, AtmoTheme.Spacing.xxl)
+                }
+            }
+            .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+            .padding(.vertical, AtmoTheme.Spacing.md)
+        }
+        .task {
+            await ExploreStore.shared.load(service: service)
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .padding(.top, AtmoTheme.Spacing.sm)
+    }
+
+    private func topicRow(rank: Int, topic: TrendingTopicItem) -> some View {
+        Button {
+            Haptics.tap()
+            searchViewModel.activateTopic(topic.topic)
+        } label: {
+            HStack(alignment: .top, spacing: AtmoTheme.Spacing.md) {
+                Text("\(rank)")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AtmoColors.accent)
+                    .frame(width: 22, alignment: .leading)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(topic.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        if topic.isHot {
+                            Image(systemName: "flame.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    if let description = topic.description, !description.isEmpty {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    // Facepile + post count, like the official Explore.
+                    if topic.postCount != nil || !topic.actorAvatarURLs.isEmpty {
+                        HStack(spacing: 6) {
+                            if !topic.actorAvatarURLs.isEmpty {
+                                HStack(spacing: -6) {
+                                    ForEach(Array(topic.actorAvatarURLs.enumerated()), id: \.offset) { index, url in
+                                        AvatarView(url: url, size: 18)
+                                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                                            .zIndex(Double(3 - index))
+                                    }
+                                }
+                            }
+                            if let count = topic.postCount {
+                                Text("\(count.formatted(.number.notation(.compactName))) posts")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func feedRow(_ feed: CustomFeedItem) -> some View {
+        Button {
+            Haptics.tap()
+            openFeed(feed)
+        } label: {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                AsyncCachedImage(url: feed.avatarURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(AtmoColors.accent.opacity(0.25))
+                            .overlay {
+                                Image(systemName: "square.stack")
+                                    .font(.callout)
+                                    .foregroundStyle(AtmoColors.accent)
+                            }
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(feed.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("Open this feed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func accountRow(_ account: SuggestedAccountItem) -> some View {
+        Button {
+            Haptics.tap()
+            navPath.wrappedValue.append(account.did)
+        } label: {
+            HStack(alignment: .top, spacing: AtmoTheme.Spacing.md) {
+                AvatarView(url: account.avatarURL, size: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.displayName ?? account.handle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("@\(account.handle)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let description = account.description, !description.isEmpty {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Flow Chips
+// Wrapping capsule chips for the interests list.
+private struct FlowChips: View {
+    let topics: [TrendingTopicItem]
+    let onTap: (TrendingTopicItem) -> Void
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 110), spacing: AtmoTheme.Spacing.sm)],
+            alignment: .leading,
+            spacing: AtmoTheme.Spacing.sm
+        ) {
+            ForEach(topics) { topic in
+                Button {
+                    onTap(topic)
+                } label: {
+                    Text(topic.displayName)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .padding(.horizontal, AtmoTheme.Spacing.md)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity)
+                        .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }

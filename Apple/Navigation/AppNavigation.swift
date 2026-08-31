@@ -197,10 +197,27 @@ struct AppNavigation: View {
     }
 
     var body: some View {
+        // Under-13 gate: the declared age range disables social media
+        // capabilities for children entirely (App Store age-rating
+        // posture) — the gate replaces the whole app, and the family
+        // integration stays attached so a re-probe can lift it.
+        if ParentalControlsStore.shared.isChildAccount {
+            ChildAccountGateView()
+                .integratesFamilyControls()
+        } else {
+            appContent
+        }
+    }
+
+    private var appContent: some View {
         platformView
             // Inject the hashtag search action into the environment so any descendant
             // (FeedItemView, ThreadView, etc.) can open Search pre-filled with a tag
             // without requiring explicit callback threading through intermediate views.
+            .environment(\.openFeed, OpenFeedAction { [self] feed in
+                switchTimelineFeed(feed)
+                selectedItem = .timeline
+            })
             .environment(\.hashtagSearch, HashtagSearchAction { [self] tag in
                 let vm = getOrCreateSearchViewModel()
                 vm.activateHashtag(tag)
@@ -296,6 +313,8 @@ struct AppNavigation: View {
                     // raises a notification when an incoming message lands.
                     messagesMonitor = MessagesMonitor(service: service)
                 }
+                // Saved custom feeds for the drawer's quick-switch shelf.
+                await SavedFeedsStore.shared.load(service: service)
             }
     }
 
@@ -391,7 +410,7 @@ struct AppNavigation: View {
             TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
-                .navigationTitle(active == .timeline ? "Home" : "")
+                .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
 
             SearchView(viewModel: searchVm, splitNavPath: $splitNavPath)
                 .opacity(active == .search ? 1 : 0)
@@ -497,16 +516,29 @@ struct AppNavigation: View {
             // Drawer — always mounted, positioned by offset. An offset (not
             // insertion/removal transitions) is what lets the edge swipe
             // drag it interactively without a transition fighting the finger.
-            PhoneSideMenu(active: selectedItem, items: phoneDrawerItems) { item in
-                // "Home" from the drawer means the top of the feed —
-                // jumping there also retires the scroll-to-top circle,
-                // so the bar arrives uncrowded.
-                if item == .timeline, !phoneChrome.timelineAtTop {
-                    phoneChrome.scrollToTopRequest += 1
+            PhoneSideMenu(
+                active: selectedItem,
+                items: phoneDrawerItems,
+                activeFeedURI: currentCustomFeedURI,
+                onSelect: { item in
+                    // "Home" from the drawer means the top of the FOLLOWING
+                    // feed — it also leaves any custom feed, and retires the
+                    // scroll-to-top circle so the bar arrives uncrowded.
+                    if item == .timeline {
+                        switchTimelineFeed(nil)
+                        if !phoneChrome.timelineAtTop {
+                            phoneChrome.scrollToTopRequest += 1
+                        }
+                    }
+                    selectedItem = item
+                    phoneMenuOpen = false
+                },
+                onSelectFeed: { feed in
+                    switchTimelineFeed(feed)
+                    selectedItem = .timeline
+                    phoneMenuOpen = false
                 }
-                selectedItem = item
-                phoneMenuOpen = false
-            }
+            )
             .frame(width: Self.menuWidth)
             .offset(x: (phoneMenuProgress - 1) * Self.menuWidth)
             .zIndex(2)
@@ -650,7 +682,7 @@ struct AppNavigation: View {
             TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
-                .navigationTitle(active == .timeline ? "Home" : "")
+                .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
 
             SearchView(
                 viewModel: searchVm,
@@ -878,6 +910,21 @@ struct AppNavigation: View {
         }
     }
 
+    /// URI of the custom feed the timeline currently shows (nil = Following).
+    private var currentCustomFeedURI: String? {
+        if case .custom(let uri, _) = timelineViewModel?.feedSource { return uri }
+        return nil
+    }
+
+    /// Switches the home timeline between Following (nil) and a saved feed.
+    private func switchTimelineFeed(_ feed: CustomFeedItem?) {
+        let vm = getOrCreateTimelineViewModel()
+        let source: TimelineViewModel.FeedSource = feed.map {
+            .custom(uri: $0.uri, displayName: $0.displayName)
+        } ?? .following
+        Task { await vm.setFeedSource(source) }
+    }
+
     /// Returns the persistent TimelineViewModel.
     /// If `.task` hasn't fired yet (rare edge case on macOS), creates and stores
     /// one synchronously so the same instance is always reused.
@@ -906,7 +953,11 @@ private struct PhoneSideMenu: View {
     let active: SidebarItem?
     /// Everything the user did NOT place in the bottom bar.
     let items: [SidebarItem]
+    /// URI of the custom feed the timeline currently shows (nil = Following).
+    let activeFeedURI: String?
     let onSelect: (SidebarItem) -> Void
+    /// A saved feed was chosen (nil = back to the Following timeline).
+    let onSelectFeed: (CustomFeedItem?) -> Void
 
     var body: some View {
         // A rounded Liquid Glass panel spanning the full height: the glass
@@ -932,15 +983,41 @@ private struct PhoneSideMenu: View {
                     .padding(.top, AtmoTheme.Spacing.xl)
                     .padding(.bottom, AtmoTheme.Spacing.lg)
 
-                // Pinned: always a way back to the home timeline.
-                menuRow(.timeline)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Pinned: always a way back to the home timeline.
+                        menuRow(.timeline, isActive: active == .timeline && activeFeedURI == nil)
 
-                Divider()
-                    .padding(.horizontal, AtmoTheme.Spacing.xl)
-                    .padding(.vertical, AtmoTheme.Spacing.sm)
+                        // Pinned saved feeds — the quick-switch shelf.
+                        ForEach(SavedFeedsStore.shared.pinned) { feed in
+                            feedRow(feed)
+                        }
 
-                ForEach(items) { item in
-                    menuRow(item)
+                        Divider()
+                            .padding(.horizontal, AtmoTheme.Spacing.xl)
+                            .padding(.vertical, AtmoTheme.Spacing.sm)
+
+                        ForEach(items) { item in
+                            menuRow(item)
+                        }
+
+                        // The rest of the user's saved feeds.
+                        if !SavedFeedsStore.shared.unpinned.isEmpty {
+                            Divider()
+                                .padding(.horizontal, AtmoTheme.Spacing.xl)
+                                .padding(.vertical, AtmoTheme.Spacing.sm)
+
+                            Text("Feeds")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, AtmoTheme.Spacing.xl)
+                                .padding(.bottom, AtmoTheme.Spacing.xs)
+
+                            ForEach(SavedFeedsStore.shared.unpinned) { feed in
+                                feedRow(feed)
+                            }
+                        }
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -950,18 +1027,57 @@ private struct PhoneSideMenu: View {
     }
 
     @ViewBuilder
-    private func menuRow(_ item: SidebarItem) -> some View {
+    private func feedRow(_ feed: CustomFeedItem) -> some View {
+        let isActive = active == .timeline && activeFeedURI == feed.uri
+        Button {
+            Haptics.tap()
+            onSelectFeed(feed)
+        } label: {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                AsyncCachedImage(url: feed.avatarURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(AtmoColors.accent.opacity(0.25))
+                            .overlay {
+                                Image(systemName: "square.stack")
+                                    .font(.caption)
+                                    .foregroundStyle(AtmoColors.accent)
+                            }
+                    }
+                }
+                .frame(width: 26, height: 26)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(width: 28)
+
+                Text(feed.displayName)
+                    .font(.body.weight(isActive ? .semibold : .regular))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isActive ? AtmoColors.accent : .primary)
+            .padding(.horizontal, AtmoTheme.Spacing.xl)
+            .padding(.vertical, AtmoTheme.Spacing.sm + 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func menuRow(_ item: SidebarItem, isActive: Bool? = nil) -> some View {
         let draftCount = DraftStore.shared.drafts.count
+        let rowActive = isActive ?? (active == item)
         Button {
             Haptics.tap()
             onSelect(item)
         } label: {
             HStack(spacing: AtmoTheme.Spacing.md) {
-                Image(systemName: active == item ? item.filledIcon : item.icon)
+                Image(systemName: rowActive ? item.filledIcon : item.icon)
                     .font(.system(size: 20, weight: .medium))
                     .frame(width: 28)
                 Text(item.rawValue)
-                    .font(.body.weight(active == item ? .semibold : .regular))
+                    .font(.body.weight(rowActive ? .semibold : .regular))
                 Spacer(minLength: 0)
                 if item == .drafts, draftCount > 0 {
                     Text("\(draftCount)")

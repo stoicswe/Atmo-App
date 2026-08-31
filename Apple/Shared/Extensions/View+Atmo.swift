@@ -114,3 +114,23 @@ extension String {
         hasPrefix("did:")
     }
 }
+
+// MARK: - Open Feed Environment Action
+// "Switch the home timeline to this saved/suggested feed" — injected by
+// AppNavigation; Explore's discover-feed rows call it.
+
+struct OpenFeedAction {
+    var open: (CustomFeedItem) -> Void = { _ in }
+    func callAsFunction(_ feed: CustomFeedItem) { open(feed) }
+}
+
+private struct OpenFeedActionKey: EnvironmentKey {
+    static let defaultValue = OpenFeedAction()
+}
+
+extension EnvironmentValues {
+    var openFeed: OpenFeedAction {
+        get { self[OpenFeedActionKey.self] }
+        set { self[OpenFeedActionKey.self] = newValue }
+    }
+}

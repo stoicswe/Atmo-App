@@ -126,18 +126,98 @@ struct SettingsView: View {
 // Apple Family (Declared Age Range / PermissionKit) managed controls.
 
 private struct FamilyTab: View {
-    @AppStorage(SensitiveMediaPolicy.storageKey) private var sensitivePolicyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
+    @AppStorage(ContentControlsMode.storageKey) private var contentModeRaw: String = ContentControlsMode.blur.rawValue
     @AppStorage(FamilyControlsIntegration.probedKey) private var hasProbedAgeRange: Bool = false
+
+    private var contentMode: ContentControlsMode {
+        ContentControlsMode(rawValue: contentModeRaw) ?? .blur
+    }
+
+    /// Bumped when a category policy is written so the Form re-reads the
+    /// nine UserDefaults-backed pickers.
+    @State private var matureRefresh = 0
 
     var body: some View {
         Form {
-            sensitiveContentSection
+            masterSection
+            if contentMode == .custom {
+                matureContentSection
+                    .id(matureRefresh)
+            }
             familySection
             disclaimerSection
         }
 #if os(macOS)
         .formStyle(.grouped)
 #endif
+    }
+
+    // MARK: Master control
+    // One switch for everything — sensitive media and all nine mature
+    // categories. Custom reveals the per-category pickers below. The
+    // moderation-policy link stays visible in every mode.
+
+    private var masterSection: some View {
+        let locked = ParentalControlsStore.shared.active.locksSensitiveMediaHidden
+        return Section {
+            Picker("Sensitive & mature content", selection: $contentModeRaw) {
+                ForEach(ContentControlsMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(locked)
+            Link(destination: URL(string: "https://bsky.social/about/support/community-guidelines")!) {
+                Label("Bluesky Moderation Policy", systemImage: "arrow.up.right")
+            }
+        } header: {
+            Text("Content Controls")
+        } footer: {
+            Text(locked
+                 ? "Locked to Hide by your Family settings."
+                 : "One setting for sensitive media and all mature-content categories: Blur covers matching posts until you tap Show, Hide removes them, and Custom lets you set each category individually. Detection combines Bluesky's moderation labels with on-device checks — including the same nudity detection iMessage uses when your device's Sensitive Content Warning is on; nothing leaves your device. For how Bluesky itself labels content, see their moderation policy above.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Content controls (Age Ratings categories)
+
+    private var matureContentSection: some View {
+        let locked = ParentalControlsStore.shared.active.hidesMatureContent
+        return Section {
+            ForEach(MatureContentCategory.allCases) { category in
+                Picker(selection: maturePolicyBinding(category)) {
+                    ForEach(SensitiveMediaPolicy.allCases) { policy in
+                        Text(policy.displayName).tag(policy.rawValue)
+                    }
+                } label: {
+                    Label(category.displayName, systemImage: category.iconName)
+                }
+                .disabled(locked)
+            }
+        } header: {
+            Text("Custom Categories")
+        } footer: {
+            Text(locked
+                 ? "Locked to Hide by your Family settings."
+                 : "Per-category comfort filters, applied to whole posts. Best-effort detection — Blur covers a matching post until you tap Show; Hide removes it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func maturePolicyBinding(_ category: MatureContentCategory) -> Binding<String> {
+        Binding(
+            get: {
+                MatureContentPreferences.storedPolicy(for: category).rawValue
+            },
+            set: { newValue in
+                UserDefaults.standard.set(newValue, forKey: category.storageKey)
+                matureRefresh += 1
+            }
+        )
     }
 
     // MARK: Disclaimer
@@ -153,29 +233,6 @@ private struct FamilyTab: View {
                 .foregroundStyle(.secondary)
         }
     }
-
-    // MARK: Sensitive content
-
-    private var sensitiveContentSection: some View {
-        Section {
-            Picker("Explicit images", selection: $sensitivePolicyRaw) {
-                ForEach(SensitiveMediaPolicy.allCases) { policy in
-                    Text(policy.displayName).tag(policy.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(ParentalControlsStore.shared.active.locksSensitiveMediaHidden)
-        } header: {
-            Text("Sensitive Content")
-        } footer: {
-            Text(ParentalControlsStore.shared.active.locksSensitiveMediaHidden
-                 ? "Locked to Hide by your Family settings."
-                 : "Applies to media labeled adult or graphic on Bluesky. Blur covers it until you tap Show; Hide removes it entirely. When your device's Sensitive Content Warning (Settings → Privacy & Security) is on, unlabeled nudity is also detected on-device — the same protection iMessage uses; nothing leaves your device.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: Managed controls
     // Read-only reflection of the managed state: a child can see what's in
     // force but only parent-approval flows can change it.
@@ -184,15 +241,17 @@ private struct FamilyTab: View {
         let store = ParentalControlsStore.shared
         return Section {
             LabeledContent("Account", value: familyStatusText(store.ageCategory))
-            if store.isChildAccount {
+            if store.isManagedMinor {
                 Group {
                     Toggle("Ask before new chats", isOn: .constant(store.active.requiresAskToDM))
                     Toggle("Show my posts in Discover", isOn: .constant(store.active.showsPostsInDiscover))
                     Toggle("New message alerts", isOn: .constant(store.active.allowsDMNotifications))
                     Toggle("Open links in browser", isOn: .constant(store.active.allowsLinkBrowsing))
+                    Toggle("Explore suggestions", isOn: .constant(store.active.allowsExploreSuggestions))
                 }
                 .disabled(true)
                 LabeledContent("Sensitive media", value: "Hidden")
+                LabeledContent("Mature content", value: "Hidden")
             }
             Button("Check Family Settings") {
                 // Clearing the flag re-arms the root probe, which watches
@@ -202,9 +261,9 @@ private struct FamilyTab: View {
         } header: {
             Text("Managed Controls")
         } footer: {
-            Text(store.isChildAccount
+            Text(store.isManagedMinor
                  ? "These controls are managed through Apple Family settings and parent approvals — they can't be changed here."
-                 : "When a parent shares an age range for this device's account (Settings → Family), managed controls apply automatically.")
+                 : "When a parent shares an age range for this device's account (Settings → Family), managed controls apply automatically for teens; accounts under 13 don't get social features at all.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -213,8 +272,8 @@ private struct FamilyTab: View {
     private func familyStatusText(_ category: AgeCategory) -> String {
         switch category {
         case .unknown: return "Not managed"
-        case .child: return "Child (managed)"
-        case .teen: return "Teen"
+        case .child: return "Child (app disabled)"
+        case .teen: return "Teen (managed)"
         case .adult: return "Adult"
         }
     }
@@ -226,6 +285,7 @@ private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+    @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
 #if os(iOS)
     @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
 #endif
@@ -297,6 +357,25 @@ private struct AppearanceTab: View {
                 Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            // ── Apple Intelligence (only on devices that support it) ──
+            if TopicSummarizer.isSupported {
+                Section {
+                    Toggle("Topic summaries", isOn: $topicSummariesEnabled)
+                    Link(destination: URL(string: "https://www.apple.com/apple-intelligence/")!) {
+                        Label("How Apple Intelligence works", systemImage: "arrow.up.right")
+                    }
+                } header: {
+                    Text("Intelligence")
+                } footer: {
+                    Text("Tapping a trending topic summarizes its top posts with Apple Intelligence — Apple's on-device foundation models. Everything runs locally on this device; the posts being summarized never leave it. Summaries are kept for three days and quietly re-checked for accuracy."
+                         + (TopicSummarizer.usesAdvancedModel
+                            ? " This device runs Apple's advanced on-device model."
+                            : ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

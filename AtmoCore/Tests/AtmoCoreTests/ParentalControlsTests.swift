@@ -31,16 +31,41 @@ struct ParentalControlsTests {
         #expect(store.active == .unrestricted)
     }
 
-    @Test func becomingAChildAppliesManagedDefaults() {
+    @Test func becomingAChildAppliesManagedDefaultsAndGates() {
         let (store, _) = freshStore()
         store.setAgeCategory(.child)
         #expect(store.isChildAccount)
-        #expect(store.active == .childDefaults)
+        #expect(store.isManagedMinor)
+        #expect(store.active == .managedDefaults)
+    }
+
+    @Test func teensAreManagedButNotGated() {
+        let (store, _) = freshStore()
+        store.setAgeCategory(.teen)
+        #expect(!store.isChildAccount)
+        #expect(store.isManagedMinor)
+        #expect(store.active == .managedDefaults)
         #expect(store.active.requiresAskToDM)
         #expect(!store.active.showsPostsInDiscover)
         #expect(!store.active.allowsDMNotifications)
         #expect(store.active.locksSensitiveMediaHidden)
         #expect(!store.active.allowsLinkBrowsing)
+        #expect(!store.active.allowsExploreSuggestions)
+    }
+
+    @Test func adultsGetExploreSuggestions() {
+        let (store, _) = freshStore()
+        #expect(store.active.allowsExploreSuggestions)
+    }
+
+    @Test func childToTeenKeepsParentDecisions() {
+        // Moving within the managed brackets must not wipe what a parent
+        // already granted.
+        let (store, _) = freshStore()
+        store.setAgeCategory(.child)
+        store.applyParentDecision { $0.allowsLinkBrowsing = true }
+        store.setAgeCategory(.teen)
+        #expect(store.active.allowsLinkBrowsing)
     }
 
     @Test func adultsIgnoreStoredControls() {
@@ -57,7 +82,7 @@ struct ParentalControlsTests {
         store.applyParentDecision { $0.allowsLinkBrowsing = true }
         #expect(store.active == .unrestricted)
 
-        store.setAgeCategory(.child)
+        store.setAgeCategory(.teen)
         store.applyParentDecision { $0.allowsLinkBrowsing = true }
         #expect(store.active.allowsLinkBrowsing)
         // The rest stay managed.
@@ -66,9 +91,9 @@ struct ParentalControlsTests {
 
     // MARK: Sensitive media lock
 
-    @Test func childLockForcesHideRegardlessOfStoredPolicy() {
+    @Test func minorLockForcesHideRegardlessOfStoredPolicy() {
         let (store, _) = freshStore()
-        store.setAgeCategory(.child)
+        store.setAgeCategory(.teen)
         #expect(store.effectiveSensitiveMediaPolicy(stored: .show) == .hide)
         #expect(store.effectiveSensitiveMediaPolicy(stored: .blur) == .hide)
     }
@@ -82,7 +107,7 @@ struct ParentalControlsTests {
 
     @Test func askToDMGatesUntilApproved() {
         let (store, _) = freshStore()
-        store.setAgeCategory(.child)
+        store.setAgeCategory(.teen)
         #expect(!store.canStartDM(with: "friend.bsky.social"))
         store.recordParentDMDecision(handle: "Friend.bsky.social", approved: true)
         #expect(store.canStartDM(with: "friend.bsky.social"))
@@ -90,7 +115,7 @@ struct ParentalControlsTests {
         #expect(!store.canStartDM(with: "friend.bsky.social"))
     }
 
-    @Test func nonChildrenNeverGate() {
+    @Test func unmanagedAccountsNeverGate() {
         let (store, _) = freshStore()
         #expect(store.canStartDM(with: "anyone.bsky.social"))
     }

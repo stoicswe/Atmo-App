@@ -645,6 +645,12 @@ private struct RootPostView: View {
             PostActionsView(post: livePost, viewModel: viewModel, showBookmark: true)
         }
         .padding(AtmoTheme.Feed.horizontalPadding)
+        // Age Ratings content controls (same treatment as feed cells).
+        .matureContentShield(
+            text: livePost.displayText,
+            labels: livePost.contentLabels,
+            uri: livePost.uri
+        )
         // NOTE: no .navigationDestination here — the owning stack (phone
         // shell / split view) registers the String → ProfileView route.
         // Re-declaring it from pushed content is unsupported (duplicate
@@ -904,6 +910,12 @@ private struct ReplyRowView: View {
                     .frame(width: 2)
             }
         }
+        // Age Ratings content controls (same treatment as feed cells).
+        .matureContentShield(
+            text: livePost.displayText,
+            labels: livePost.contentLabels,
+            uri: livePost.uri
+        )
     }
 }
 

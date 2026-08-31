@@ -92,6 +92,51 @@ extension View {
     }
 }
 
+// MARK: - Child Account Gate
+/// Full-screen replacement for the app when the declared age range says
+/// the account holder is under 13: social media capabilities are disabled
+/// entirely for that bracket (the App Store "Social Media Disabled for
+/// Users Under 13" posture) — no parental override, by design.
+struct ChildAccountGateView: View {
+    @AppStorage(FamilyControlsIntegration.probedKey) private var hasProbedAgeRange = false
+
+    var body: some View {
+        VStack(spacing: AtmoTheme.Spacing.lg) {
+            Spacer(minLength: 0)
+
+            Image(systemName: "figure.2.and.child.holdinghands")
+                .font(.system(size: 56))
+                .foregroundStyle(AtmoColors.accent)
+
+            Text("@omic isn't available yet")
+                .font(.title2.weight(.bold))
+                .multilineTextAlignment(.center)
+
+            Text("Bluesky is a social network, and @omic turns off social features for accounts under 13 — this screen goes away automatically once the age range shared through Family Sharing reaches 13.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+
+            Link(destination: URL(string: "https://www.apple.com/families/")!) {
+                Label("About Apple Family settings", systemImage: "arrow.up.right")
+                    .font(.subheadline)
+            }
+
+            Button("Check Family Settings Again") {
+                // Re-arms the Declared Age Range probe (see the modifier's
+                // onChange) — for a family whose settings just changed.
+                hasProbedAgeRange = false
+            }
+            .buttonStyle(.bordered)
+
+            Spacer(minLength: 0)
+        }
+        .padding(AtmoTheme.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 // MARK: - Ask-to-Message Sheet
 /// Shown when a managed child account tries to start a NEW conversation:
 /// explains the rule and offers the system ask-a-parent flow (the request

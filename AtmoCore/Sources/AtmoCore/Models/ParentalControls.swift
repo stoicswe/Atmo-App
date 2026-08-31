@@ -39,29 +39,58 @@ public struct ParentalControlSet: Equatable, Sendable, Codable {
     public var locksSensitiveMediaHidden: Bool
     /// Whether tapped links may open in the in-app browser.
     public var allowsLinkBrowsing: Bool
+    /// Every mature-content category (profanity, sexuality, violence, …)
+    /// is forced to Hide, and those settings are locked.
+    public var hidesMatureContent: Bool
+    /// Whether the Search page may show Bluesky's algorithmic Explore
+    /// suggestions (trending topics, discover feeds, suggested accounts).
+    public var allowsExploreSuggestions: Bool
 
     public init(
         requiresAskToDM: Bool,
         showsPostsInDiscover: Bool,
         allowsDMNotifications: Bool,
         locksSensitiveMediaHidden: Bool,
-        allowsLinkBrowsing: Bool
+        allowsLinkBrowsing: Bool,
+        hidesMatureContent: Bool = false,
+        allowsExploreSuggestions: Bool = true
     ) {
         self.requiresAskToDM = requiresAskToDM
         self.showsPostsInDiscover = showsPostsInDiscover
         self.allowsDMNotifications = allowsDMNotifications
         self.locksSensitiveMediaHidden = locksSensitiveMediaHidden
         self.allowsLinkBrowsing = allowsLinkBrowsing
+        self.hidesMatureContent = hidesMatureContent
+        self.allowsExploreSuggestions = allowsExploreSuggestions
     }
 
-    /// What a child account starts with (Discover off is Bluesky's own
-    /// child default).
-    public static let childDefaults = ParentalControlSet(
+    /// Backward-compatible decoding: control sets persisted before
+    /// `hidesMatureContent` existed decode with the field defaulted from
+    /// the sensitive-media lock (a managed minor stays fully covered).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        requiresAskToDM = try container.decode(Bool.self, forKey: .requiresAskToDM)
+        showsPostsInDiscover = try container.decode(Bool.self, forKey: .showsPostsInDiscover)
+        allowsDMNotifications = try container.decode(Bool.self, forKey: .allowsDMNotifications)
+        locksSensitiveMediaHidden = try container.decode(Bool.self, forKey: .locksSensitiveMediaHidden)
+        allowsLinkBrowsing = try container.decode(Bool.self, forKey: .allowsLinkBrowsing)
+        hidesMatureContent = try container.decodeIfPresent(Bool.self, forKey: .hidesMatureContent)
+            ?? locksSensitiveMediaHidden
+        // Managed sets persisted before this control existed default OFF.
+        allowsExploreSuggestions = try container.decodeIfPresent(Bool.self, forKey: .allowsExploreSuggestions)
+            ?? false
+    }
+
+    /// What a family-managed minor account starts with (Discover off is
+    /// Bluesky's own default for young accounts).
+    public static let managedDefaults = ParentalControlSet(
         requiresAskToDM: true,
         showsPostsInDiscover: false,
         allowsDMNotifications: false,
         locksSensitiveMediaHidden: true,
-        allowsLinkBrowsing: false
+        allowsLinkBrowsing: false,
+        hidesMatureContent: true,
+        allowsExploreSuggestions: false
     )
 
     /// Everything open — what non-managed accounts effectively run under.
@@ -70,7 +99,9 @@ public struct ParentalControlSet: Equatable, Sendable, Codable {
         showsPostsInDiscover: true,
         allowsDMNotifications: true,
         locksSensitiveMediaHidden: false,
-        allowsLinkBrowsing: true
+        allowsLinkBrowsing: true,
+        hidesMatureContent: false,
+        allowsExploreSuggestions: true
     )
 }
 
@@ -104,33 +135,45 @@ public final class ParentalControlsStore {
            let decoded = try? JSONDecoder().decode(ParentalControlSet.self, from: data) {
             self.controls = decoded
         } else {
-            self.controls = storedAge == .child ? .childDefaults : .unrestricted
+            self.controls = (storedAge == .child || storedAge == .teen)
+                ? .managedDefaults
+                : .unrestricted
         }
         self.approvedDMHandles = Set(defaults.stringArray(forKey: Self.approvedDMsKey) ?? [])
     }
 
+    /// Under 13: the app's social surfaces are disabled entirely (the
+    /// App Store "Social Media Disabled for Users Under 13" posture) —
+    /// UIs show the child gate instead of the app.
     public var isChildAccount: Bool { ageCategory == .child }
 
-    /// The controls actually in force: managed for a child, open otherwise.
-    public var active: ParentalControlSet {
-        isChildAccount ? controls : .unrestricted
+    /// A family-managed minor (child or teen). Teens get the app with the
+    /// managed controls in force; children are gated before this matters.
+    public var isManagedMinor: Bool {
+        ageCategory == .child || ageCategory == .teen
     }
 
-    /// Records the declared age category. Becoming a child account resets
-    /// the controls to the managed defaults.
+    /// The controls actually in force: managed for a minor, open otherwise.
+    public var active: ParentalControlSet {
+        isManagedMinor ? controls : .unrestricted
+    }
+
+    /// Records the declared age category. Entering a managed bracket
+    /// (child or teen) from an unmanaged one resets the controls to the
+    /// managed defaults.
     public func setAgeCategory(_ category: AgeCategory) {
-        let becameChild = category == .child && ageCategory != .child
+        let wasManaged = isManagedMinor
         ageCategory = category
-        if becameChild {
-            controls = .childDefaults
+        if isManagedMinor && !wasManaged {
+            controls = .managedDefaults
         }
         persist()
     }
 
     /// The only mutation surface for the managed controls — reserved for
-    /// parent-approval flows. No-op for non-child accounts.
+    /// parent-approval flows. No-op for unmanaged accounts.
     public func applyParentDecision(_ mutate: (inout ParentalControlSet) -> Void) {
-        guard isChildAccount else { return }
+        guard isManagedMinor else { return }
         mutate(&controls)
         persist()
     }
@@ -152,7 +195,7 @@ public final class ParentalControlsStore {
 
     /// Records a parent's answer to an ask-to-message request.
     public func recordParentDMDecision(handle: String, approved: Bool) {
-        guard isChildAccount else { return }
+        guard isManagedMinor else { return }
         if approved {
             approvedDMHandles.insert(handle.lowercased())
         } else {

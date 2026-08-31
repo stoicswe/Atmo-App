@@ -212,6 +212,15 @@ struct TimelineDedupTests {
         #expect(result.map(\.uri) == [fresh.uri, replyCell.uri])
     }
 
+    @Test func customFeedsKeepTheirRankedOrder() {
+        // A generator's ranking IS the content — with chronology
+        // enforcement off, out-of-time-order input passes through.
+        let older = PostItem(testURI: "at://did:a/app.bsky.feed.post/old", indexedAt: t0.addingTimeInterval(-3600))
+        let newer = PostItem(testURI: "at://did:b/app.bsky.feed.post/new", indexedAt: t0)
+        let result = TimelineViewModel.collapseThreadSlices([older, newer], enforceChronology: false)
+        #expect(result.map(\.uri) == [older.uri, newer.uri])
+    }
+
     @Test func repostsSortByRepostTimeNotOriginalPostTime() {
         let repost = PostItem(
             testURI: "at://did:a/app.bsky.feed.post/old",

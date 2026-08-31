@@ -114,9 +114,7 @@ struct ImageGridView: View {
         // when the person has Sensitive Content Warning enabled.
         .task(id: images.first?.thumbnailImageURL) {
             guard !sensitiveMedia,
-                  SensitiveMediaPolicy.stored(
-                    rawValue: UserDefaults.standard.string(forKey: SensitiveMediaPolicy.storageKey)
-                  ) != .show,
+                  SensitiveMediaPolicy.currentEffectiveStored() != .show,
                   SensitiveImageScreener.isAvailable
             else { return }
             for image in images {

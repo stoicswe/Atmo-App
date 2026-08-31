@@ -179,6 +179,13 @@ struct FeedItemView: View {
             TranslationCheckCache.store(result, for: uri)
             needsTranslation = result
         }
+        // Age Ratings content controls: the whole cell hides or blurs when
+        // the post touches a category the user (or a parent) restricted.
+        .matureContentShield(
+            text: livePost.displayText,
+            labels: livePost.contentLabels,
+            uri: livePost.uri
+        )
     }
 }
 

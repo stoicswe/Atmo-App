@@ -81,7 +81,13 @@ struct ImageViewerView: View {
             }
 #endif
 
-            // ── Dismiss button ──
+#if os(iOS)
+            // ── Top bar: gradient scrim, grabber, and a dismiss hint that
+            // fades in and out occasionally. The sheet itself handles the
+            // actual slide-down-to-dismiss.
+            DismissHintBar()
+#else
+            // ── macOS: keep an explicit close button (no slide gesture). ──
             Button {
                 dismiss()
             } label: {
@@ -94,6 +100,7 @@ struct ImageViewerView: View {
             .buttonStyle(.plain)
             .padding(.top, 56)
             .padding(.trailing, 20)
+#endif
 
             // ── Image counter pill (e.g. "2 / 4") ──
             // Reads currentIndex (a @State copy) — not the Binding — to avoid
@@ -235,6 +242,51 @@ private struct ZoomableImageView: View {
             lastScale = minScale
             offset = .zero
             lastOffset = .zero
+        }
+    }
+}
+
+// MARK: - Dismiss Hint Bar
+// A soft gradient along the viewer's top edge with a grabber pill, plus
+// "Slide down to dismiss" pulsing in and out on a gentle cycle — enough
+// to teach the gesture without permanent chrome over the photo.
+private struct DismissHintBar: View {
+    @State private var hintVisible = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            LinearGradient(
+                colors: [.black.opacity(0.55), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 110)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+
+            VStack(spacing: 10) {
+                Capsule()
+                    .fill(.white.opacity(0.4))
+                    .frame(width: 38, height: 5)
+                Text("Slide down to dismiss")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .opacity(hintVisible ? 1 : 0)
+            }
+            .padding(.top, 12)
+            .allowsHitTesting(false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task {
+            // Fade in, hold, fade out, rest — repeating while the viewer
+            // is open, so the hint reads as ambient rather than nagging.
+            try? await Task.sleep(for: .milliseconds(600))
+            while !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.6)) { hintVisible = true }
+                try? await Task.sleep(for: .seconds(2.4))
+                withAnimation(.easeInOut(duration: 0.8)) { hintVisible = false }
+                try? await Task.sleep(for: .seconds(5))
+            }
         }
     }
 }

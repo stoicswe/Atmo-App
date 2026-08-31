@@ -165,6 +165,52 @@ public final class TimelineViewModel {
         }
     }
 
+    // MARK: - Feed Source
+
+    /// What this timeline shows: the reverse-chronological following feed,
+    /// or one of the user's saved custom feed generators.
+    public enum FeedSource: Hashable, Sendable {
+        case following
+        case custom(uri: String, displayName: String)
+
+        public var displayName: String {
+            switch self {
+            case .following: return "Home"
+            case .custom(_, let name): return name
+            }
+        }
+
+        public var isFollowing: Bool {
+            if case .following = self { return true }
+            return false
+        }
+    }
+
+    public private(set) var feedSource: FeedSource = .following
+
+    /// Switches the timeline to another feed and reloads from its head.
+    public func setFeedSource(_ source: FeedSource) async {
+        guard source != feedSource else { return }
+        feedSource = source
+        clearNewPostsCount()
+        await loadInitial()
+    }
+
+    /// One page from the current source, from `cursor` (nil = head).
+    private func fetchPage(
+        _ kit: ATProtoKit,
+        cursor: String?
+    ) async throws -> (feed: [AppBskyLexicon.Feed.FeedViewPostDefinition], cursor: String?) {
+        switch feedSource {
+        case .following:
+            let output = try await kit.getTimeline(limit: 50, cursor: cursor)
+            return (output.feed, output.cursor)
+        case .custom(let uri, _):
+            let output = try await kit.getFeed(by: uri, limit: 50, cursor: cursor)
+            return (output.feed, output.cursor)
+        }
+    }
+
     // MARK: - Loading
 
     public func loadInitial() async {
@@ -208,7 +254,7 @@ public final class TimelineViewModel {
 
         do {
             // Fetch one page from the start (no cursor = freshest posts)
-            let output = try await kit.getTimeline(limit: 50, cursor: nil)
+            let output = try await fetchPage(kit, cursor: nil)
             let fetched = output.feed.map { PostItem(feedPost: $0) }
 
             // Find which items are genuinely new. "Already in the list"
@@ -231,7 +277,10 @@ public final class TimelineViewModel {
             // Collapse thread slices within the new batch, then again across
             // the seam between the new and existing posts, so a fresh reply
             // absorbs the cell its conversation already had further down.
-            let deduped = Self.collapseThreadSlices(newItems + posts)
+            let deduped = Self.collapseThreadSlices(
+                newItems + posts,
+                enforceChronology: feedSource.isFollowing
+            )
             posts = deduped
 
             // Track the new posts as "unseen" — but only ones that survived
@@ -302,9 +351,12 @@ public final class TimelineViewModel {
     private func fetch(replacing: Bool = false) async {
         guard let kit = service.atProtoKit else { return }
         do {
-            let output = try await kit.getTimeline(limit: 50, cursor: cursor)
+            let output = try await fetchPage(kit, cursor: cursor)
             let newItems = output.feed.map { PostItem(feedPost: $0) }
-            let dedupedItems = Self.collapseThreadSlices(newItems)
+            let dedupedItems = Self.collapseThreadSlices(
+                newItems,
+                enforceChronology: feedSource.isFollowing
+            )
             if replacing || cursor == nil {
                 // Full replace — deduplicate within the fresh batch itself
                 // in case the API returns the same post twice (e.g. a repost
@@ -347,7 +399,10 @@ public final class TimelineViewModel {
     /// Reposts are exempt from both passes — "X reposted" is its own story
     /// — and exact-URI duplicates are handled by the fetch/prepend merges.
     /// Internal (not private) so the unit tests can exercise it directly.
-    static func collapseThreadSlices(_ items: [PostItem]) -> [PostItem] {
+    static func collapseThreadSlices(
+        _ items: [PostItem],
+        enforceChronology: Bool = true
+    ) -> [PostItem] {
         guard items.count > 1 else { return items }
 
         // Pass 1: parent cell sitting directly above its own reply.
@@ -407,11 +462,11 @@ public final class TimelineViewModel {
             result.append(representative)
         }
 
-        // The home feed is chronological — enforce it on the way out. Cells
-        // can end up out of order when slices merge across a seam (e.g. a
-        // stale slice of a known conversation re-delivered at the head used
-        // to hoist its whole cell above genuinely newer posts). Stable sort
-        // by each cell's story time, input order breaking ties.
+        // The FOLLOWING feed is chronological — enforce it on the way out
+        // (cells can end up out of order when slices merge across a seam).
+        // Custom feeds are ranked by their generator: their order is the
+        // content, so it must pass through untouched.
+        guard enforceChronology else { return result }
         return result
             .enumerated()
             .sorted { a, b in

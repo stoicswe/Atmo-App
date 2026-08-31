@@ -17,12 +17,17 @@ struct SensitiveMediaShield: ViewModifier {
 
     @AppStorage(SensitiveMediaPolicy.storageKey)
     private var policyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
+    @AppStorage(ContentControlsMode.storageKey)
+    private var modeRaw: String = ContentControlsMode.blur.rawValue
     @State private var revealed = false
 
-    /// The stored preference, overridden to Hide for managed child
-    /// accounts (Family controls lock).
+    /// The stored preference — the master content-controls mode wins when
+    /// uniform, Custom falls back to the media-specific setting — then
+    /// overridden to Hide for managed minors (Family controls lock).
     private var policy: SensitiveMediaPolicy {
-        ParentalControlsStore.shared.effectiveSensitiveMediaPolicy(stored: .stored(rawValue: policyRaw))
+        let mode = ContentControlsMode(rawValue: modeRaw) ?? .blur
+        let stored = mode.uniformPolicy ?? .stored(rawValue: policyRaw)
+        return ParentalControlsStore.shared.effectiveSensitiveMediaPolicy(stored: stored)
     }
 
     func body(content: Content) -> some View {
@@ -157,5 +162,117 @@ enum SensitiveImageScreener {
 #else
         return nil
 #endif
+    }
+}
+
+// MARK: - Mature Content Shield
+/// Whole-post treatment for the Age Ratings content categories: Hide
+/// replaces the post with a compact notice; Blur veils it behind a
+/// category-named reveal. Detection (text wordlists + Bluesky labels) is
+/// cached per post URI; policy resolution stays live so Settings changes
+/// apply immediately.
+@MainActor
+enum MatureCheckCache {
+    private static var cache: [String: Set<MatureContentCategory>] = [:]
+
+    static func categories(text: String, labels: [String], uri: String) -> Set<MatureContentCategory> {
+        if let cached = cache[uri] { return cached }
+        let matched = MatureContentScreener.categories(text: text, labels: labels)
+        if cache.count > 4000 { cache.removeAll() }
+        cache[uri] = matched
+        return matched
+    }
+}
+
+struct MatureContentShield: ViewModifier {
+    let text: String
+    let labels: [String]
+    let uri: String
+
+    @State private var revealed = false
+
+    func body(content: Content) -> some View {
+        let treatment = ParentalControlsStore.shared.matureTreatment(
+            categories: MatureCheckCache.categories(text: text, labels: labels, uri: uri)
+        )
+        if treatment.policy == .show || treatment.category == nil {
+            content
+        } else if revealed {
+            content
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        Haptics.tap()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            revealed = false
+                        }
+                    } label: {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(7)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .accessibilityLabel("Cover this post again")
+                }
+        } else if treatment.policy == .hide {
+            HStack(spacing: AtmoTheme.Spacing.sm) {
+                Image(systemName: treatment.category?.iconName ?? "eye.slash")
+                    .foregroundStyle(.secondary)
+                Text("Hidden — \(treatment.category?.displayName ?? "mature content")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(AtmoTheme.Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
+                    .fill(Color.secondary.opacity(0.08))
+            )
+            .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+            .padding(.vertical, AtmoTheme.Spacing.xs)
+        } else {
+            content
+                .blur(radius: 22)
+                .clipped()
+                .overlay {
+                    ZStack {
+                        Color.black.opacity(0.2)
+                        VStack(spacing: AtmoTheme.Spacing.sm) {
+                            Image(systemName: treatment.category?.iconName ?? "eye.slash")
+                                .font(.title3)
+                                .foregroundStyle(.white)
+                            Text(treatment.category?.displayName ?? "Mature content")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                            Button {
+                                Haptics.tap()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    revealed = true
+                                }
+                            } label: {
+                                Text("Show")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(.white.opacity(0.22), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {}
+                .accessibilityLabel("\(treatment.category?.displayName ?? "Mature content"), covered. Double-tap Show to reveal.")
+        }
+    }
+}
+
+extension View {
+    /// Applies the per-category mature-content treatment to a whole post.
+    func matureContentShield(text: String, labels: [String], uri: String) -> some View {
+        modifier(MatureContentShield(text: text, labels: labels, uri: uri))
     }
 }
