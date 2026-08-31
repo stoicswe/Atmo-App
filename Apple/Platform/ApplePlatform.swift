@@ -64,11 +64,17 @@ extension AtmoPlatform {
     // While the app is away from the foreground, in-app poll timers stop
     // (battery); freshness is handed to BackgroundSync's system-coalesced
     // schedulers instead.
+    //
+    // macOS: "resigned active" is NOT away — it fires the moment the user
+    // clicks any other app's window while Atmo stays fully visible, which
+    // silently killed the timeline auto-refresh for whole desktop
+    // sessions. Only an actually-hidden app (⌘H) pauses the poll; the
+    // didBecomeActive resume brings it back on the next click into Atmo.
     private static var backgroundNotification: Notification.Name {
 #if os(iOS)
         UIApplication.didEnterBackgroundNotification
 #elseif os(macOS)
-        NSApplication.didResignActiveNotification
+        NSApplication.didHideNotification
 #else
         WKApplication.didEnterBackgroundNotification
 #endif

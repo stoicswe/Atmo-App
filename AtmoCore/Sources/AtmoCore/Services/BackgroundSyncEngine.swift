@@ -1,4 +1,5 @@
 import Foundation
+import ATProtoKit
 
 // MARK: - BackgroundSyncEngine
 // One battery-friendly "sync pass" that the platforms schedule through
@@ -60,21 +61,52 @@ public final class BackgroundSyncEngine {
             // First pass: only establish the high-water mark.
             guard let mark else { return [] }
 
-            return items
+            var fresh = items
                 .filter { $0.indexedAt > mark }
-                .filter { settings.enabledReasons.contains($0.reason.rawValue) }
-                .map { item in
-                    FeedAlert(
-                        id: item.uri,
-                        title: item.authorDisplayName ?? "@\(item.authorHandle)",
-                        body: item.reason.displayText.prefix(1).capitalized + item.reason.displayText.dropFirst(),
-                        kind: .interaction(item.reason)
-                    )
+                .filter { settings.enabledReasons.contains($0.reason.settingsKind.rawValue) }
+
+            // Give like/repost alerts the text of the post that was liked
+            // or reposted (replies/mentions/quotes already carry theirs).
+            // One batched lookup; a fresh batch never exceeds one page.
+            let subjectURIs = NotificationItem.unresolvedSubjectURIs(in: fresh)
+            if !subjectURIs.isEmpty,
+               let posts = try? await kit.getPosts(Array(subjectURIs.prefix(25))) {
+                var texts: [String: String] = [:]
+                for post in posts.posts {
+                    if let record = post.record.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self) {
+                        texts[post.uri] = record.text
+                    }
                 }
+                fresh = NotificationItem.injectingSnippets(into: fresh, texts: texts)
+            }
+
+            return fresh.map { item in
+                FeedAlert(
+                    id: item.uri,
+                    title: item.authorDisplayName ?? "@\(item.authorHandle)",
+                    body: Self.alertBody(for: item.reason, snippet: item.contentSnippet),
+                    kind: .interaction(item.reason)
+                )
+            }
         } catch {
             // Background pass — never surface errors; try again next time.
             return []
         }
+    }
+
+    /// "Liked your post: “snippet…”" — the action sentence, plus a short
+    /// piece of the relevant content when there is one. Internal (not
+    /// private) for unit tests.
+    nonisolated static func alertBody(
+        for reason: NotificationItem.NotificationReason,
+        snippet: String?
+    ) -> String {
+        let action = reason.displayText.prefix(1).capitalized + reason.displayText.dropFirst()
+        let trimmed = snippet?
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else { return action }
+        return "\(action): “\(String(trimmed.prefix(120)))”"
     }
 
     // MARK: - New posts from subscribed accounts

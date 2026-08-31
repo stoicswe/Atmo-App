@@ -29,16 +29,17 @@ public enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The notification reason this category shows; nil = show everything.
-    var reason: NotificationItem.NotificationReason? {
+    /// The notification reasons this category shows; nil = show everything.
+    /// Likes/Reposts fold in their via-repost variants.
+    var reasons: Set<NotificationItem.NotificationReason>? {
         switch self {
         case .notifications: return nil
-        case .follows:       return .follow
-        case .replies:       return .reply
-        case .mentions:      return .mention
-        case .quotes:        return .quote
-        case .reposts:       return .repost
-        case .likes:         return .like
+        case .follows:       return [.follow]
+        case .replies:       return [.reply]
+        case .mentions:      return [.mention]
+        case .quotes:        return [.quote]
+        case .reposts:       return [.repost, .repostViaRepost]
+        case .likes:         return [.like, .likeViaRepost]
         }
     }
 }
@@ -55,8 +56,8 @@ public final class NotificationsViewModel {
 
     /// The notifications matching the active category.
     public var filteredNotifications: [NotificationItem] {
-        guard let reason = selectedCategory.reason else { return notifications }
-        return notifications.filter { $0.reason == reason }
+        guard let reasons = selectedCategory.reasons else { return notifications }
+        return notifications.filter { reasons.contains($0.reason) }
     }
     public private(set) var isLoading: Bool = false
     public private(set) var error: Error? = nil
@@ -85,6 +86,7 @@ public final class NotificationsViewModel {
             error = nil
             // Mark as seen after loading
             await markSeen()
+            await resolveSubjectSnippets()
         } catch {
             self.error = error
         }
@@ -99,9 +101,59 @@ public final class NotificationsViewModel {
             notifications.append(contentsOf: newItems)
             self.cursor = output.cursor
             hasMore = output.cursor != nil
+            await resolveSubjectSnippets()
         } catch {
             self.error = error
         }
+    }
+
+    /// Fills in the like/repost rows' snippets — the text of the user's
+    /// own post that was liked or reposted. Runs after the list is already
+    /// on screen: rows render immediately and snippets pop in as the
+    /// batched `getPosts` lookups (25 URIs per request) come back.
+    private func resolveSubjectSnippets() async {
+        guard let kit = service.atProtoKit else { return }
+        let uris = NotificationItem.unresolvedSubjectURIs(in: notifications)
+
+        if !uris.isEmpty {
+            var texts: [String: String] = [:]
+            for start in stride(from: 0, to: uris.count, by: 25) {
+                let chunk = Array(uris[start..<min(start + 25, uris.count)])
+                guard let output = try? await kit.getPosts(chunk) else { continue }
+                for post in output.posts {
+                    if let record = post.record.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self) {
+                        texts[post.uri] = record.text
+                    }
+                }
+            }
+            if !texts.isEmpty {
+                notifications = NotificationItem.injectingSnippets(into: notifications, texts: texts)
+            }
+        }
+
+        // Fallback for subscribed-post rows whose record carried no text:
+        // pull that account's latest post and use its content.
+        await resolveSubscribedLatestPosts()
+    }
+
+    /// "Shared a new post" rows normally get their text straight from the
+    /// notification record; when that came back empty, fetch the author's
+    /// latest post instead (one small page per unique account).
+    private func resolveSubscribedLatestPosts() async {
+        guard let kit = service.atProtoKit else { return }
+        let authors = NotificationItem.subscribedAuthorsNeedingLatestPost(in: notifications)
+        guard !authors.isEmpty else { return }
+
+        var textsByAuthor: [String: String] = [:]
+        for did in authors.prefix(10) {
+            guard let output = try? await kit.getAuthorFeed(by: did, limit: 1),
+                  let feedPost = output.feed.first,
+                  let record = feedPost.post.record.getRecord(ofType: AppBskyLexicon.Feed.PostRecord.self),
+                  !record.text.isEmpty else { continue }
+            textsByAuthor[did] = record.text
+        }
+        guard !textsByAuthor.isEmpty else { return }
+        notifications = NotificationItem.injectingLatestPosts(into: notifications, textsByAuthor: textsByAuthor)
     }
 
     private func markSeen() async {

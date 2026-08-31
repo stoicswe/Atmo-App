@@ -37,6 +37,18 @@ struct NotificationRowView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+
+                // A taste of the content behind the notification: the
+                // liked/reposted post's text, or the reply/quote/mention's
+                // own words.
+                if let snippet = notification.contentSnippet,
+                   !snippet.isEmpty {
+                    Text(snippet)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer()
@@ -55,10 +67,12 @@ struct NotificationRowView: View {
 
     private var iconColor: Color {
         switch notification.reason {
-        case .like:   return AtmoColors.likeRed
-        case .repost: return AtmoColors.repostGreen
-        case .follow: return AtmoColors.accent
-        default:      return .secondary
+        case .like, .likeViaRepost:     return AtmoColors.likeRed
+        case .repost, .repostViaRepost: return AtmoColors.repostGreen
+        case .follow, .subscribedPost,
+             .starterpackJoined,
+             .verified:                 return AtmoColors.accent
+        default:                        return .secondary
         }
     }
 }

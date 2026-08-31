@@ -59,11 +59,8 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
         self.verification = VerificationBadge(state: searchResult.verificationState)
     }
 
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-
-    public static func == (lhs: ProfileModel, rhs: ProfileModel) -> Bool {
-        lhs.id == rhs.id
-    }
+    // Equality is synthesized memberwise — deliberately. An identity-only
+    // `==` (just the DID) made a follow-state flip compare EQUAL to the
+    // old value, so SwiftUI skipped re-rendering the profile header and
+    // the Follow button froze even though the server calls succeeded.
 }

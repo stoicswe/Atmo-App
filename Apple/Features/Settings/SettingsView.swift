@@ -481,13 +481,22 @@ private struct NotificationsSettingsTab: View {
     /// Display metadata for one interaction kind.
     private func label(for reason: NotificationItem.NotificationReason) -> (name: String, icon: String) {
         switch reason {
-        case .like:    return ("Likes", "heart")
-        case .reply:   return ("Replies", "bubble.left")
-        case .mention: return ("Mentions", "at")
-        case .repost:  return ("Reposts", "arrow.2.squarepath")
-        case .quote:   return ("Quotes", "quote.bubble")
-        case .follow:  return ("New Followers", "person.badge.plus")
-        case .unknown: return ("Other", "bell")
+        case .like:              return ("Likes", "heart")
+        case .reply:             return ("Replies", "bubble.left")
+        case .mention:           return ("Mentions", "at")
+        case .repost:            return ("Reposts", "arrow.2.squarepath")
+        case .quote:             return ("Quotes", "quote.bubble")
+        case .follow:            return ("New Followers", "person.badge.plus")
+        // Not in notifiableReasons (via-repost variants follow their base
+        // kind's toggle; subscribed posts follow the per-account bell) —
+        // labeled anyway so the switch stays exhaustive.
+        case .subscribedPost:    return ("Subscribed Posts", "bell.badge")
+        case .likeViaRepost:     return ("Likes on Reposts", "heart")
+        case .repostViaRepost:   return ("Reposts of Reposts", "arrow.2.squarepath")
+        case .starterpackJoined: return ("Starter Pack Joins", "person.2")
+        case .verified:          return ("Verification", "checkmark.seal")
+        case .unverified:        return ("Verification", "xmark.seal")
+        case .unknown:           return ("Other", "bell")
         }
     }
 

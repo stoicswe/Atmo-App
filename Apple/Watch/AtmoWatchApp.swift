@@ -69,6 +69,7 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
 // MARK: - Auth Gate
 struct WatchRootView: View {
     @Environment(ATProtoService.self) private var service
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -80,6 +81,17 @@ struct WatchRootView: View {
         }
         .task {
             await service.restoreSession()
+        }
+        // A wrist-down during the cold-start restore cancels it with the
+        // scene, stranding a signed-in user at the login screen. When the
+        // app comes back active and a previous session is on record, try
+        // the restore again instead.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active,
+                  !service.isAuthenticated,
+                  !service.isLoading,
+                  Atmo.platform.secrets.loadLastHandle() != nil else { return }
+            Task { await service.restoreSession() }
         }
     }
 }

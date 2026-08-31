@@ -17,13 +17,20 @@ struct WatchSettingsView: View {
     /// Display metadata for one interaction kind (compact watch labels).
     private func label(for reason: NotificationItem.NotificationReason) -> (name: String, icon: String) {
         switch reason {
-        case .like:    return ("Likes", "heart")
-        case .reply:   return ("Replies", "bubble.left")
-        case .mention: return ("Mentions", "at")
-        case .repost:  return ("Reposts", "arrow.2.squarepath")
-        case .quote:   return ("Quotes", "quote.bubble")
-        case .follow:  return ("Followers", "person.badge.plus")
-        case .unknown: return ("Other", "bell")
+        case .like:              return ("Likes", "heart")
+        case .reply:             return ("Replies", "bubble.left")
+        case .mention:           return ("Mentions", "at")
+        case .repost:            return ("Reposts", "arrow.2.squarepath")
+        case .quote:             return ("Quotes", "quote.bubble")
+        case .follow:            return ("Followers", "person.badge.plus")
+        // Not in notifiableReasons — labeled for exhaustiveness only.
+        case .subscribedPost:    return ("Posts", "bell.badge")
+        case .likeViaRepost:     return ("Likes", "heart")
+        case .repostViaRepost:   return ("Reposts", "arrow.2.squarepath")
+        case .starterpackJoined: return ("Starter Pack", "person.2")
+        case .verified,
+             .unverified:        return ("Verification", "checkmark.seal")
+        case .unknown:           return ("Other", "bell")
         }
     }
 

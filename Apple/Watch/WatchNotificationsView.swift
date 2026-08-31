@@ -11,8 +11,14 @@ struct WatchNotificationsView: View {
                 if viewModel.notifications.isEmpty && viewModel.isLoading {
                     ProgressView()
                 } else if viewModel.notifications.isEmpty {
-                    Text("No activity yet")
-                        .foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        Text("No activity yet")
+                            .foregroundStyle(.secondary)
+                        Button("Reload") {
+                            Task { await viewModel.load() }
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 } else {
                     List(viewModel.notifications) { notification in
                         WatchNotificationRow(notification: notification)
@@ -22,10 +28,13 @@ struct WatchNotificationsView: View {
                 ProgressView()
             }
         }
-        .task {
+        // Same lifecycle hardening as the watch timeline: keyed on the
+        // session DID, retried on re-appearance while still empty.
+        .task(id: service.currentUserDID) {
             if viewModel == nil {
-                let vm = NotificationsViewModel(service: service)
-                viewModel = vm
+                viewModel = NotificationsViewModel(service: service)
+            }
+            if let vm = viewModel, vm.notifications.isEmpty {
                 await vm.load()
             }
         }
@@ -48,6 +57,11 @@ struct WatchNotificationRow: View {
                 Text(notification.reason.displayText)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                if let snippet = notification.contentSnippet, !snippet.isEmpty {
+                    Text(snippet)
+                        .font(.caption2)
+                        .lineLimit(2)
+                }
                 Text(notification.indexedAt.atmoFormatted())
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

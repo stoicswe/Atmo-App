@@ -244,31 +244,39 @@ public final class ProfileViewModel {
 
     // MARK: - Follow / Unfollow
 
+    /// Writes follow state by reassigning the whole `profile` struct.
+    /// Optional-chained member writes (`profile?.isFollowing = ...`) go
+    /// through the `_modify` accessor, which SwiftUI's observation does
+    /// not pick up — the state changed but the header never re-rendered.
+    /// A full property assignment is the mutation Observation sees.
+    private func setFollowState(isFollowing: Bool, followURI: String?) {
+        guard var updated = profile else { return }
+        updated.isFollowing = isFollowing
+        updated.followURI = followURI
+        profile = updated
+    }
+
     public func toggleFollow() async {
         guard let bluesky = service.atProtoBluesky,
               let profile = profile else { return }
 
         if profile.isFollowing {
             guard let followURI = profile.followURI else { return }
-            self.profile?.isFollowing = false
-            self.profile?.followURI = nil
+            setFollowState(isFollowing: false, followURI: nil)
             do {
                 try await bluesky.deleteRecord(.recordURI(atURI: followURI))
             } catch {
                 // Rollback
-                self.profile?.isFollowing = true
-                self.profile?.followURI = followURI
+                setFollowState(isFollowing: true, followURI: followURI)
                 self.error = error
             }
         } else {
-            guard let targetDID = self.profile?.did else { return }
-            self.profile?.isFollowing = true
+            setFollowState(isFollowing: true, followURI: nil)
             do {
-                let result = try await bluesky.createFollowRecord(actorDID: targetDID)
-                self.profile?.followURI = result.recordURI
+                let result = try await bluesky.createFollowRecord(actorDID: profile.did)
+                setFollowState(isFollowing: true, followURI: result.recordURI)
             } catch {
-                self.profile?.isFollowing = false
-                self.profile?.followURI = nil
+                setFollowState(isFollowing: false, followURI: nil)
                 self.error = error
             }
         }

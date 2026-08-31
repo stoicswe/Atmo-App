@@ -141,7 +141,13 @@ struct TopicSummaryCard: View {
                 .padding(.vertical, AtmoTheme.Spacing.sm)
             }
         }
-        .task(id: topic) {
+        // Keyed on topic AND posts-readiness: the card mounts the moment a
+        // topic is tapped, while the Top posts are still loading — a task
+        // keyed on the topic alone ran once with an empty list, failed the
+        // minimum-posts guard, and never retried (no summary ever
+        // appeared). The readiness flip re-runs it exactly once, when
+        // there is enough material to summarize.
+        .task(id: "\(topic)|\(posts.count >= 3)") {
             guard summariesEnabled, TopicSummarizer.isSupported else { return }
             if let cached = TopicSummaryStore.shared.summary(for: topic), cached.isFresh {
                 // Cached: display instantly, then re-analyze silently so

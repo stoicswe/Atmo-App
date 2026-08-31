@@ -10,6 +10,11 @@ struct WatchTimelineView: View {
             if let viewModel {
                 if viewModel.posts.isEmpty && viewModel.isLoading {
                     ProgressView()
+                } else if viewModel.posts.isEmpty {
+                    // Never a silently blank list: a failed first load
+                    // (very possible on the watch — wrist-down cancels the
+                    // in-flight request with the scene) gets a retry.
+                    emptyState(viewModel)
                 } else {
                     timelineList(viewModel)
                 }
@@ -17,12 +22,29 @@ struct WatchTimelineView: View {
                 ProgressView()
             }
         }
-        .task {
+        // Keyed on the session DID (runs again when the session identity
+        // lands after the first attempt) AND re-run on every
+        // re-appearance, so a load that died with a deactivated scene is
+        // retried the next time the wrist comes up.
+        .task(id: service.currentUserDID) {
             if viewModel == nil {
-                let vm = TimelineViewModel(service: service)
-                viewModel = vm
+                viewModel = TimelineViewModel(service: service)
+            }
+            if let vm = viewModel, vm.posts.isEmpty {
                 await vm.loadInitial()
             }
+        }
+    }
+
+    private func emptyState(_ viewModel: TimelineViewModel) -> some View {
+        VStack(spacing: 8) {
+            Text(viewModel.error == nil ? "No posts yet" : "Couldn't load timeline")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("Try Again") {
+                Task { await viewModel.loadInitial() }
+            }
+            .buttonStyle(.bordered)
         }
     }
 
