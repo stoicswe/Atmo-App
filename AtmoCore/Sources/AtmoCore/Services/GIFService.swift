@@ -46,12 +46,9 @@ public struct GIFItem: Identifiable, Sendable, Hashable {
 // MARK: - GIF Service
 /// GIF search through Bluesky's own proxy (gifs.bsky.app) — the same
 /// selection the official app offers, no API key needed client-side.
-///
-/// NOTE (Aug 2026): Google discontinued the Tenor API on 2026-06-30 and
-/// Bluesky is migrating the proxy to a successor provider. Until that
-/// lands the proxy returns an error, which surfaces here as
-/// `GIFServiceError.unavailable` — the picker shows a friendly notice and
-/// the feature lights up automatically once the proxy is back.
+/// After Tenor's 2026 shutdown the proxy is backed by KLIPY, and it
+/// normalizes responses to the Tenor schema so clients stay
+/// provider-agnostic (per the social-app source).
 public enum GIFService {
 
     public enum GIFServiceError: Error {
@@ -59,7 +56,7 @@ public enum GIFService {
         case badResponse
     }
 
-    static let baseURL = URL(string: "https://gifs.bsky.app/tenor/v2")!
+    static let baseURL = URL(string: "https://gifs.bsky.app/klipy/v2")!
 
     public static func featured(limit: Int = 30) async throws -> [GIFItem] {
         try await fetch(path: "featured", query: [URLQueryItem(name: "limit", value: String(limit))])
@@ -74,7 +71,14 @@ public enum GIFService {
 
     private static func fetch(path: String, query: [URLQueryItem]) async throws -> [GIFItem] {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        components.queryItems = query
+        // Same standard parameters the official clients send.
+        var items = query
+        items.append(URLQueryItem(name: "client_key", value: "atmo"))
+        items.append(URLQueryItem(name: "contentfilter", value: "low"))
+        if let region = Locale.current.region?.identifier {
+            items.append(URLQueryItem(name: "locale", value: region.lowercased()))
+        }
+        components.queryItems = items
         let (data, response) = try await URLSession.shared.data(from: components.url!)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw GIFServiceError.unavailable

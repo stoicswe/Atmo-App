@@ -2,10 +2,9 @@ import SwiftUI
 import AtmoCore
 
 // MARK: - GIF Picker
-/// Search-and-pick sheet backed by Bluesky's GIF proxy (the same selection
-/// the official app offers). While Bluesky migrates the proxy off the
-/// discontinued Tenor API, the picker shows an unavailable notice — no
-/// code changes needed once the proxy is back.
+/// Search-and-pick sheet backed by Bluesky's GIF proxy (KLIPY-powered, the
+/// same selection the official app offers). The placeholder credits KLIPY,
+/// matching the official picker's attribution.
 struct GIFPickerSheet: View {
     let onPick: (GIFItem) -> Void
 
@@ -23,7 +22,7 @@ struct GIFPickerSheet: View {
                     ContentUnavailableView(
                         "GIF Search Is Unavailable",
                         systemImage: "photo.stack",
-                        description: Text("Bluesky is switching GIF providers after Tenor's shutdown. This will start working again automatically.")
+                        description: Text("Couldn't reach the GIF service. Check your connection and try again.")
                     )
                 } else if isLoading && items.isEmpty {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,7 +34,7 @@ struct GIFPickerSheet: View {
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
-            .searchable(text: $query, prompt: "Search GIFs")
+            .searchable(text: $query, prompt: "Search KLIPY")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
