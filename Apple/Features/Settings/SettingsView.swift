@@ -120,7 +120,7 @@ private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
 #if os(iOS)
-    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = true
+    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
 #endif
 
     var body: some View {

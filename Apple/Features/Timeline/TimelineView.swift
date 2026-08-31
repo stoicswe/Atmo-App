@@ -336,8 +336,25 @@ struct TimelineView: View {
                 proxy.scrollTo("__top__", anchor: .top)
             }
         }
+        settleJumpToTop(proxy: proxy, attempt: 0)
         if let first = vm.posts.first {
             positionStore.save(topPostURI: first.uri)
+        }
+    }
+
+    /// scrollTo across many lazy rows can land short: row heights are only
+    /// estimates until realized, and a jump issued while the list is still
+    /// decelerating can be absorbed into a small shift. The live scroll
+    /// geometry knows whether we actually arrived — when it says no, finish
+    /// the job with a snap (twice at most).
+    private func settleJumpToTop(proxy: ScrollViewProxy, attempt: Int) {
+        guard attempt < 2 else { return }
+        Task { @MainActor in
+            // First check waits out the animated glide; retries poll faster.
+            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 450 : 250))
+            guard !isAtTop else { return }
+            proxy.scrollTo("__top__", anchor: .top)
+            settleJumpToTop(proxy: proxy, attempt: attempt + 1)
         }
     }
 
@@ -358,6 +375,20 @@ struct TimelineView: View {
             withAnimation(.smooth(duration: 0.35)) {
                 proxy.scrollTo(anchor, anchor: .top)
             }
+        }
+        settleJumpBack(to: anchor, proxy: proxy, attempt: 0)
+    }
+
+    /// Same short-landing insurance as `settleJumpToTop`, for the return
+    /// jump: landed means the scrollPosition binding reads the anchor row
+    /// as the top item.
+    private func settleJumpBack(to anchor: String, proxy: ScrollViewProxy, attempt: Int) {
+        guard attempt < 2 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 450 : 250))
+            guard scrolledID != anchor else { return }
+            proxy.scrollTo(anchor, anchor: .top)
+            settleJumpBack(to: anchor, proxy: proxy, attempt: attempt + 1)
         }
     }
 
@@ -419,8 +450,19 @@ struct TimelineView: View {
                     scrollMetrics.lastPullTickOffset = offset
                     Haptics.pullTick(progress: min(1, offset / refreshThreshold))
                 }
+                // Fully wound: one heavy thump the moment the pull crosses
+                // the trigger distance — release from here will refresh. The
+                // hysteresis band keeps it from fluttering at the boundary,
+                // while winding well back down re-arms it.
+                if offset >= refreshThreshold, !scrollMetrics.pullWound {
+                    scrollMetrics.pullWound = true
+                    Haptics.thump()
+                } else if offset < refreshThreshold - 16 {
+                    scrollMetrics.pullWound = false
+                }
             } else if pullDistance > 0 {
                 scrollMetrics.lastPullTickOffset = 0
+                scrollMetrics.pullWound = false
                 // Finger released back to natural position: animate the snap closed.
                 // This branch only fires ONCE per pull-release (when pullDistance transitions
                 // from > 0 back to 0), not on every normal scroll tick.
@@ -433,6 +475,7 @@ struct TimelineView: View {
         // Detect pull-and-release: offset was above threshold then snapped to ≤ 0
         if !isRefreshTriggered && !viewModel.isRefreshing && previous > refreshThreshold && offset <= 0 {
             isRefreshTriggered = true
+            scrollMetrics.pullWound = false
             // Confirming tap: the release engaged the refresh.
             Haptics.confirm()
             Task {
@@ -492,6 +535,10 @@ final class ScrollMetrics {
     /// Offset at which the last pull-to-refresh haptic tick fired — the
     /// ratchet emits one tick per step of travel, not per frame.
     var lastPullTickOffset: CGFloat = 0
+
+    /// Whether the current pull has crossed the refresh threshold — gates
+    /// the heavy "fully wound" thump to once per pull.
+    var pullWound: Bool = false
 
     func sample(offset: CGFloat) {
         let now = ProcessInfo.processInfo.systemUptime

@@ -35,6 +35,7 @@ struct PostActionsView: View {
                 count: livePost.replyCount,
                 color: .secondary
             ) {
+                Haptics.tap()
                 showReplyComposer = true
             }
 
@@ -48,6 +49,7 @@ struct PostActionsView: View {
                 color: isRepostActive ? AtmoColors.repostGreen : .secondary,
                 filled: isRepostActive
             ) {
+                Haptics.tap()
                 showRepostMenu = true
             }
 #if os(macOS)
@@ -57,10 +59,13 @@ struct PostActionsView: View {
                     onRepost: {
                         showRepostMenu = false
                         let captured = livePost
+                        // Rigid confirm for committing a repost; softer on undo.
+                        if captured.isReposted { Haptics.soft() } else { Haptics.confirm() }
                         Task { await viewModel.toggleRepost(post: captured) }
                     },
                     onQuote: {
                         showRepostMenu = false
+                        Haptics.tap()
                         showQuoteComposer = true
                     },
                     onCancel: { showRepostMenu = false }
@@ -70,9 +75,12 @@ struct PostActionsView: View {
             .confirmationDialog("Repost", isPresented: $showRepostMenu) {
                 Button(livePost.isReposted ? "Undo Repost" : "Repost") {
                     let captured = livePost
+                    // Rigid confirm for committing a repost; softer on undo.
+                    if captured.isReposted { Haptics.soft() } else { Haptics.confirm() }
                     Task { await viewModel.toggleRepost(post: captured) }
                 }
                 Button("Quote Post") {
+                    Haptics.tap()
                     showQuoteComposer = true
                 }
                 Button("Cancel", role: .cancel) {}
@@ -87,6 +95,8 @@ struct PostActionsView: View {
                 filled: livePost.isLiked
             ) {
                 let captured = livePost
+                // Liking gets the heartbeat; unliking just a soft release.
+                if captured.isLiked { Haptics.soft() } else { Haptics.heartbeat() }
                 Task { await viewModel.toggleLike(post: captured) }
             }
 
@@ -108,12 +118,15 @@ struct PostActionsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                // ShareLink owns its tap; ride alongside it for the haptic.
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             }
 
             // Bookmark — only shown on top-level timeline posts and thread root posts.
             if showBookmark {
                 let isBookmarked = BookmarkStore.shared.isBookmarked(livePost)
                 Button {
+                    Haptics.soft()
                     BookmarkStore.shared.toggle(livePost)
                 } label: {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")

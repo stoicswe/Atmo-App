@@ -70,6 +70,8 @@ public final class TimelineViewModel {
     @ObservationIgnored nonisolated(unsafe) private var sceneObservationTask: Task<Void, Never>? = nil
     /// Retained task that listens for app-backgrounded notifications.
     @ObservationIgnored nonisolated(unsafe) private var backgroundObservationTask: Task<Void, Never>? = nil
+    /// Retained task that listens for the user submitting a post.
+    @ObservationIgnored nonisolated(unsafe) private var postSubmitObservationTask: Task<Void, Never>? = nil
 
     public init(service: ATProtoService) {
         self.service = service
@@ -78,6 +80,7 @@ public final class TimelineViewModel {
         Task { @MainActor [weak self] in
             self?.startPeriodicRefresh()
             self?.startSceneObservation()
+            self?.startPostSubmitObservation()
         }
     }
 
@@ -85,6 +88,7 @@ public final class TimelineViewModel {
         refreshTimerTask?.cancel()
         sceneObservationTask?.cancel()
         backgroundObservationTask?.cancel()
+        postSubmitObservationTask?.cancel()
     }
 
     // MARK: - Periodic Background Refresh
@@ -141,6 +145,22 @@ public final class TimelineViewModel {
                     guard !Task.isCancelled else { break }
                     self?.pausePeriodicRefresh()
                 }
+            }
+        }
+    }
+
+    /// The user just submitted a post: pull the timeline's fresh head so
+    /// their own post shows up right away. checkForNewPosts prepends behind
+    /// the anchor, so the scroll position stays put.
+    private func startPostSubmitObservation() {
+        postSubmitObservationTask = Task { [weak self] in
+            let stream = NotificationCenter.default.signals(named: .atmoDidSubmitPost)
+            for await _ in stream {
+                guard !Task.isCancelled else { break }
+                // Give the AppView a beat to index the new post before
+                // fetching, or the fresh head won't contain it yet.
+                try? await Task.sleep(for: .seconds(1))
+                await self?.checkForNewPosts()
             }
         }
     }

@@ -4,9 +4,10 @@ import ATProtoKit
 
 /// Renders the embed attached to a post: images, external links, record quotes, etc.
 ///
-/// - `onImageTap`: Optional callback invoked when the user taps an image in the grid.
-///   Receives `(images, tappedIndex)` so the caller can present `ImageViewerView`.
-///   When nil, images are not interactive (timeline behaviour).
+/// - `onImageTap`: Optional callback invoked when the user taps an image.
+///   Receives `(images, tappedIndex)` so the caller can present `ImageViewerView`
+///   itself (ThreadView centralizes one viewer for all rows). When nil, images
+///   are still tappable — the media view presents its own viewer.
 struct PostEmbedView: View {
     let embed: AppBskyLexicon.Feed.PostViewDefinition.EmbedUnion
     /// Called with the full image array and the tapped index so the parent can
@@ -51,10 +52,19 @@ struct PostEmbedView: View {
 }
 
 // MARK: - Image Grid
-private struct ImageGridView: View {
+// Internal (not private): ThreadReaderView reuses `displayAspectRatio` for
+// its inline article images.
+struct ImageGridView: View {
     let images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]
     /// When non-nil, tapping an image calls this with (allImages, tappedIndex).
+    /// When nil, this view presents its own ImageViewerView.
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
+
+    /// Carousel page currently snapped into view (drives the dots).
+    @State private var carouselPage: Int? = 0
+    /// Fallback viewer state, used when no onImageTap delegate is provided.
+    @State private var showViewer = false
+    @State private var viewerIndex = 0
 
     var body: some View {
         let count = images.count
@@ -79,39 +89,83 @@ private struct ImageGridView: View {
                     .frame(maxHeight: 480)
                     .clipped()
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        onImageTap?(images, 0)
-                    }
-                    // Show a subtle "tap to expand" affordance when interactive
-                    .overlay(alignment: .bottomTrailing) {
-                        if onImageTap != nil {
-                            expandBadge
-                        }
-                    }
+                    .onTapGesture { handleTap(0) }
+                    // Subtle "tap to expand" affordance
+                    .overlay(alignment: .bottomTrailing) { expandBadge }
             } else {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: min(count, 2)),
-                    spacing: 2
-                ) {
-                    ForEach(Array(images.prefix(4).enumerated()), id: \.element.fullSizeImageURL) { index, img in
-                        AsyncCachedImage(url: img.thumbnailImageURL) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill()
-                            } else {
-                                Color.secondary.opacity(0.2)
-                            }
-                        }
-                        .frame(height: 150)
-                        .clipped()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onImageTap?(images, index)
-                        }
-                    }
-                }
+                carousel(count: count)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+        .sheet(isPresented: $showViewer) {
+            ImageViewerView(images: images, selectedIndex: $viewerIndex)
+        }
+    }
+
+    // MARK: Multi-image carousel
+    // One full-width page per image, snapping page by page (like X/Bluesky).
+    // The box height is reserved from the FIRST image's aspect ratio, so the
+    // row never resizes as pages load or change; other pages crop into it.
+    private func carousel(count: Int) -> some View {
+        Color.clear
+            .aspectRatio(Self.displayAspectRatio(images[0].aspectRatio), contentMode: .fit)
+            .frame(maxHeight: 480)
+            .overlay {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 4) {
+                        ForEach(Array(images.enumerated()), id: \.offset) { index, img in
+                            Color.clear
+                                .containerRelativeFrame(.horizontal)
+                                .overlay {
+                                    AsyncCachedImage(url: img.thumbnailImageURL) { phase in
+                                        if let image = phase.image {
+                                            image.resizable().scaledToFill()
+                                        } else {
+                                            Color.secondary.opacity(0.2)
+                                        }
+                                    }
+                                }
+                                .clipped()
+                                .contentShape(Rectangle())
+                                // A plain tap only fires when the scroll pan
+                                // doesn't claim the touch, so enlarging never
+                                // gets in the way of swiping between pages.
+                                .onTapGesture { handleTap(index) }
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.viewAligned)
+                .scrollIndicators(.hidden)
+                .scrollPosition(id: $carouselPage)
+            }
+            // Page dots, floating over the bottom of the media.
+            .overlay(alignment: .bottom) {
+                HStack(spacing: 5) {
+                    ForEach(0..<count, id: \.self) { index in
+                        Circle()
+                            .fill(.white.opacity(index == (carouselPage ?? 0) ? 1 : 0.45))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.28), in: Capsule())
+                .padding(.bottom, 8)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: carouselPage)
+                .allowsHitTesting(false)
+            }
+    }
+
+    /// Delegate to the owner's viewer when one is wired (ThreadView), else
+    /// present our own.
+    private func handleTap(_ index: Int) {
+        if let onImageTap {
+            onImageTap(images, index)
+        } else {
+            viewerIndex = index
+            showViewer = true
+        }
     }
 
     /// Width/height display ratio for reserving media space pre-load.
@@ -140,7 +194,8 @@ private struct ImageGridView: View {
 }
 
 // MARK: - External Link Card
-private struct ExternalLinkCardView: View {
+// Internal (not private): ThreadReaderView renders link previews inline.
+struct ExternalLinkCardView: View {
     let external: AppBskyLexicon.Embed.ExternalDefinition.ViewExternal
 
     @Environment(\.openURL) private var openURL

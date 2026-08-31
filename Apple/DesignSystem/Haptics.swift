@@ -35,6 +35,24 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
     }
 
+    /// Heavy thump: the pull-to-refresh is fully wound — releasing here
+    /// will trigger the refresh.
+    static func thump() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+    }
+
+    /// Heartbeat "lub-dub" for liking a post: a firm beat followed by a
+    /// lighter echo.
+    static func heartbeat() {
+        Task { @MainActor in
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.prepare()
+            generator.impactOccurred(intensity: 0.9)
+            try? await Task.sleep(for: .milliseconds(120))
+            generator.impactOccurred(intensity: 0.55)
+        }
+    }
+
     /// Celebratory triple-tap: three quick, rising light impacts.
     /// Fired when a post submits successfully.
     static func celebrate() {
@@ -56,6 +74,8 @@ enum Haptics {
     static func soft() {}
     static func pullTick(progress: Double) {}
     static func confirm() {}
+    static func thump() {}
+    static func heartbeat() {}
     static func celebrate() {}
 }
 #endif

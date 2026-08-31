@@ -81,6 +81,15 @@ struct ThreadView: View {
     @State private var viewerStartIndex: Int = 0
     @State private var showImageViewer: Bool = false
 
+    // ── Reader mode ──
+    @State private var showReader = false
+    /// The root author's unbroken self-reply chain (root included), oldest
+    /// first. 3+ links surfaces the Reader button.
+    private var readerChain: [PostItem] {
+        guard let rootPost else { return [] }
+        return SelfThread.chain(root: rootPost, replies: allReplies.filter { !$0.isPending }.map(\.post))
+    }
+
     // MARK: - Sorted + visible replies
     // Sorting reorders depth-0 nodes; their subtrees follow them in depth-first order.
     private var sortedReplies: [ThreadReply] {
@@ -314,6 +323,24 @@ struct ThreadView: View {
         } // end ZStack
         } // end ScrollViewReader
         .navigationTitle("Thread")
+        // Reader mode for long author threads (3+ posts by the root author):
+        // renders the chain as one continuous document.
+        .toolbar {
+            if readerChain.count >= 3 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Haptics.tap()
+                        showReader = true
+                    } label: {
+                        Label("Reader", systemImage: "doc.plaintext")
+                    }
+                    .accessibilityLabel("Read thread as document")
+                }
+            }
+        }
+        .sheet(isPresented: $showReader) {
+            ThreadReaderView(posts: readerChain)
+        }
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         // Phone: the bottom bar's compose circle becomes "reply to this

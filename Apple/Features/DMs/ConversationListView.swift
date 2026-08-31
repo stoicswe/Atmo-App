@@ -57,9 +57,10 @@ struct ConversationListView: View {
             }
             .listStyle(.plain)
             .refreshable { await vm.load() }
-            .navigationDestination(for: ConversationItem.self) { convo in
-                ConversationDetailView(conversation: convo)
-            }
+            // No navigationDestination here: the enclosing stack registers
+            // ConversationItem already (AppNavigation on iPhone/iPad/macOS,
+            // the local NavigationStack in standalone mode) — a second
+            // registration for the same type breaks navigation.
         }
     }
 }

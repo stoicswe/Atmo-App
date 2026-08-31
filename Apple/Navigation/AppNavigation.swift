@@ -137,10 +137,17 @@ struct AppNavigation: View {
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
+    /// Live translation of an in-flight edge swipe opening the drawer
+    /// (nil when no drag is active). Drives the drawer offset directly so
+    /// the menu tracks the finger.
+    @State private var phoneMenuDragX: CGFloat? = nil
+    /// Drawer travel at the last ratchet tick — the gritty haptic fires
+    /// every `menuTickSpacing` points of slide.
+    @State private var phoneMenuLastTickX: CGFloat = 0
     /// iPhone: user-chosen bottom-bar items (comma-joined rawValues).
     @AppStorage(PhoneBarConfig.storageKey) private var phoneBarItemsRaw = PhoneBarConfig.defaultValue
     /// iPhone: text labels under the bar icons (Settings → Appearance).
-    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels = true
+    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels = false
     /// iPhone: focus for the bottom-bar search field — hoisted here so the
     /// dismiss-keyboard circle can clear it through SwiftUI (a raw
     /// resignFirstResponder fought the FocusState and needed two taps).
@@ -445,6 +452,19 @@ struct AppNavigation: View {
     //    Notes-style search field
     //  • left drawer with Messages / Profile / Bookmarks / Drafts / Settings;
     //    the content scales back and dims while it's open
+    /// Drawer geometry: width, travel per gritty tick, and how far a swipe
+    /// must go (absent a flick) before releasing commits the open.
+    private static let menuWidth: CGFloat = 290
+    private static let menuTickSpacing: CGFloat = 24
+    private static let menuOpenThreshold: CGFloat = 110
+
+    /// 0 → fully hidden, 1 → fully open; tracks the finger mid-swipe.
+    private var phoneMenuProgress: CGFloat {
+        if phoneMenuOpen { return 1 }
+        guard let x = phoneMenuDragX else { return 0 }
+        return min(1, max(0, x / Self.menuWidth))
+    }
+
     private var phoneTabView: some View {
         ZStack(alignment: .leading) {
             // The app stays put; the drawer slides OVER it with a dimming
@@ -452,34 +472,44 @@ struct AppNavigation: View {
             // hierarchy were a recurring source of glitches).
             phoneMainShell
 
-            if phoneMenuOpen {
-                // Dimming scrim — tap anywhere outside the drawer to close.
-                Color.black.opacity(0.25)
-                    .ignoresSafeArea()
-                    .onTapGesture { phoneMenuOpen = false }
-                    .transition(.opacity)
+            // Dimming scrim — always mounted so its opacity can track an
+            // in-flight edge swipe; taps close only when actually open (a
+            // fading or dragging scrim must never intercept the bar).
+            Color.black.opacity(0.25 * phoneMenuProgress)
+                .ignoresSafeArea()
+                .onTapGesture { phoneMenuOpen = false }
+                .allowsHitTesting(phoneMenuOpen)
 
-                PhoneSideMenu(active: selectedItem, items: phoneDrawerItems) { item in
-                    // "Home" from the drawer means the top of the feed —
-                    // jumping there also retires the scroll-to-top circle,
-                    // so the bar arrives uncrowded.
-                    if item == .timeline, !phoneChrome.timelineAtTop {
-                        phoneChrome.scrollToTopRequest += 1
-                    }
-                    selectedItem = item
-                    phoneMenuOpen = false
+            // Drawer — always mounted, positioned by offset. An offset (not
+            // insertion/removal transitions) is what lets the edge swipe
+            // drag it interactively without a transition fighting the finger.
+            PhoneSideMenu(active: selectedItem, items: phoneDrawerItems) { item in
+                // "Home" from the drawer means the top of the feed —
+                // jumping there also retires the scroll-to-top circle,
+                // so the bar arrives uncrowded.
+                if item == .timeline, !phoneChrome.timelineAtTop {
+                    phoneChrome.scrollToTopRequest += 1
                 }
-                .frame(width: 290)
-                .transition(.move(edge: .leading))
-                .zIndex(2)
-                // Swipe the drawer back toward the edge to close it.
-                .gesture(
-                    DragGesture().onEnded { value in
-                        if value.translation.width < -40 { phoneMenuOpen = false }
-                    }
-                )
+                selectedItem = item
+                phoneMenuOpen = false
             }
+            .frame(width: Self.menuWidth)
+            .offset(x: (phoneMenuProgress - 1) * Self.menuWidth)
+            .zIndex(2)
+            .allowsHitTesting(phoneMenuOpen)
+            // Swipe the drawer back toward the edge to close it.
+            .gesture(
+                DragGesture().onEnded { value in
+                    if value.translation.width < -40 { phoneMenuOpen = false }
+                }
+            )
         }
+        // Edge swipe: slide the drawer in from the left screen edge, with a
+        // gritty ratchet underneath the finger. Simultaneous so feeds keep
+        // scrolling normally — the drag only captures when it starts at the
+        // edge, heads right, and no screen is pushed (the system back swipe
+        // owns that edge otherwise).
+        .simultaneousGesture(menuEdgeSwipe)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: phoneMenuOpen)
         // Subtle pulse landing mid-slide as the drawer comes in.
         .onChange(of: phoneMenuOpen) { _, open in
@@ -489,6 +519,41 @@ struct AppNavigation: View {
                 Haptics.soft()
             }
         }
+    }
+
+    private var menuEdgeSwipe: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                guard !phoneMenuOpen else { return }
+                if phoneMenuDragX == nil {
+                    // Capture once, and only for a genuine edge-open: starts
+                    // within the edge band, travels rightward and mostly
+                    // horizontally, and the nav stack is at its root.
+                    guard phoneTimelineNavPath.isEmpty,
+                          value.startLocation.x <= 32,
+                          value.translation.width > 0,
+                          abs(value.translation.width) > abs(value.translation.height)
+                    else { return }
+                    phoneMenuLastTickX = 0
+                }
+                let x = min(max(0, value.translation.width), Self.menuWidth)
+                // Gritty ratchet: a tick per band of travel, growing firmer
+                // as the drawer comes further in (either direction).
+                if abs(x - phoneMenuLastTickX) >= Self.menuTickSpacing {
+                    phoneMenuLastTickX = x
+                    Haptics.pullTick(progress: x / Self.menuWidth)
+                }
+                phoneMenuDragX = x
+            }
+            .onEnded { value in
+                guard phoneMenuDragX != nil else { return }
+                let x = min(max(0, value.translation.width), Self.menuWidth)
+                let flungOpen = value.predictedEndTranslation.width > Self.menuWidth * 0.6
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    phoneMenuOpen = x > Self.menuOpenThreshold || flungOpen
+                    phoneMenuDragX = nil
+                }
+            }
     }
 
     private var phoneMainShell: some View {
@@ -620,7 +685,8 @@ struct AppNavigation: View {
     // Page-aware chrome:
     //  • Tab pages: [pill] + [right circle] — Search morphs the pill into
     //    its field; the timeline adds a scroll-to-top circle while scrolled.
-    //  • Messages: ONLY the "+" recipient button.
+    //  • Messages list: [Home] + the "+" recipient button; inside a chat
+    //    the bar disappears entirely (the conversation composer takes over).
     //  • Drawer-only pages (Settings, Drafts, Bookmarks, …): no bar at all —
     //    the drawer and its pinned Home row are the way around.
     @ViewBuilder
@@ -648,7 +714,15 @@ struct AppNavigation: View {
             .padding(.top, AtmoTheme.Spacing.xs)
             .padding(.bottom, AtmoTheme.Spacing.sm)
         } else if active == .messages {
-            HStack {
+            // Conversation list: [Home — back to the timeline] on the left,
+            // "+" (new conversation) on the right. Inside a chat this whole
+            // bar is gone (conversationOpen above) — the composer owns the
+            // bottom edge there.
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                ThreadHomeButton {
+                    selectedItem = .timeline
+                    phoneTimelineNavPath = NavigationPath()
+                }
                 Spacer(minLength: 0)
                 NewDMFAB { showNewConversation = true }
             }
@@ -676,9 +750,9 @@ struct AppNavigation: View {
                         }
                     } label: {
                         Image(systemName: active.filledIcon)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(AtmoColors.accent)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 56, height: 56)
                             .glassEffect(.regular.interactive(), in: Circle())
                     } primaryAction: {
                         Haptics.tap()
@@ -732,7 +806,7 @@ struct AppNavigation: View {
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: pillIcon(for: item))
-                            .font(.system(size: phoneBarShowsLabels ? 17 : 19, weight: .medium))
+                            .font(.system(size: phoneBarShowsLabels ? 19 : 24, weight: .medium))
                             .contentTransition(.symbolEffect(.replace))
                         if phoneBarShowsLabels {
                             Text(item.rawValue)
@@ -740,14 +814,13 @@ struct AppNavigation: View {
                         }
                     }
                     .foregroundStyle(selectedItem == item ? AtmoColors.accent : Color.secondary)
-                    .frame(width: phoneBarShowsLabels ? 58 : 52,
-                           height: phoneBarShowsLabels ? 48 : 44)
+                    .frame(width: phoneBarShowsLabels ? 62 : 60, height: 56)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: Capsule())
     }
@@ -956,8 +1029,9 @@ private struct DismissKeyboardFAB: View {
             Image(systemName: "keyboard.chevron.compact.down")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(Circle().inset(by: -10))
         }
         .buttonStyle(FABButtonStyle())
         .accessibilityLabel("Dismiss Keyboard")
@@ -969,7 +1043,7 @@ private struct DismissKeyboardFAB: View {
 // straight back to the timeline (the full menu returns with it).
 private struct ThreadHomeButton: View {
     let action: () -> Void
-    @AppStorage(PhoneBarConfig.labelsKey) private var showsLabels = true
+    @AppStorage(PhoneBarConfig.labelsKey) private var showsLabels = false
 
     var body: some View {
         Button {
@@ -978,18 +1052,18 @@ private struct ThreadHomeButton: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: "house.fill")
-                    .font(.system(size: showsLabels ? 17 : 19, weight: .medium))
+                    .font(.system(size: showsLabels ? 19 : 24, weight: .medium))
                 if showsLabels {
                     Text("Home")
                         .font(.system(size: 10, weight: .medium))
                 }
             }
             .foregroundStyle(AtmoColors.accent)
-            .frame(width: showsLabels ? 58 : 52, height: showsLabels ? 48 : 44)
-            .contentShape(Rectangle())
+            .frame(width: showsLabels ? 62 : 60, height: 56)
+            .contentShape(Rectangle().inset(by: -8))
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: Capsule())
         .accessibilityLabel("Back to Home")
@@ -1007,10 +1081,13 @@ private struct NewDMFAB: View {
             action()
         } label: {
             Image(systemName: "plus")
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(AtmoColors.accent)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .glassEffect(.regular.interactive(), in: Circle())
+                // The bar hugs the home-indicator region — give thumb taps
+                // that land just off the visible circle some forgiveness.
+                .contentShape(Circle().inset(by: -10))
         }
         .buttonStyle(FABButtonStyle())
         .accessibilityLabel("New Message")
@@ -1027,10 +1104,11 @@ private struct ComposeFAB: View {
             action()
         } label: {
             Image(systemName: "square.and.pencil")
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 23, weight: .semibold))
                 .foregroundStyle(AtmoColors.accent)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(Circle().inset(by: -10))
         }
         .buttonStyle(FABButtonStyle())
     }

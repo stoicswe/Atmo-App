@@ -59,6 +59,7 @@ struct FeedItemView: View {
                     AncestorPostRow(
                         post: ancestor,
                         isFirst: index == 0,
+                        selfThreadPosition: livePost.selfThreadCount.map { (index + 1, $0) },
                         onTap: onTap,
                         onMentionTap: onMentionTap
                     )
@@ -94,6 +95,9 @@ struct FeedItemView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
+                        if let count = livePost.selfThreadCount {
+                            SelfThreadPill(index: count, count: count)
+                        }
                         Text(livePost.indexedAt.atmoFormatted())
                             .font(AtmoFonts.timestamp)
                             .foregroundStyle(.tertiary)
@@ -195,6 +199,9 @@ private struct AncestorPostRow: View {
     let post: PostItem
     /// First row of the feed cell — carries the cell's top breathing room.
     let isFirst: Bool
+    /// This row's (position, total) within an author self-thread, when the
+    /// cell shows one — drives the "k/n" pill.
+    var selfThreadPosition: (index: Int, count: Int)? = nil
     var onTap: (() -> Void)?
     var onMentionTap: ((String) -> Void)?
 
@@ -231,6 +238,9 @@ private struct AncestorPostRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
+                    if let position = selfThreadPosition {
+                        SelfThreadPill(index: position.index, count: position.count)
+                    }
                     Text(post.indexedAt.atmoFormatted())
                         .font(AtmoFonts.timestamp)
                         .foregroundStyle(.tertiary)
@@ -291,5 +301,24 @@ private struct ThreadGapRow: View {
         .padding(.vertical, AtmoTheme.Spacing.xs)
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
+    }
+}
+
+// MARK: - Self-Thread Pill
+/// Small "k/n" capsule marking a post's place in its author's own thread
+/// (the root plus their consecutive self-replies shown in the cell).
+struct SelfThreadPill: View {
+    let index: Int
+    let count: Int
+
+    var body: some View {
+        Text("\(index)/\(count)")
+            .font(.caption2.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(AtmoColors.accent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(AtmoColors.accent.opacity(0.14), in: Capsule())
+            .accessibilityLabel("Post \(index) of \(count) in thread")
     }
 }
