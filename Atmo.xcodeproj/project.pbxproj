@@ -44,6 +44,7 @@
 		8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */; };
 		81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
 		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A585053040099E29C26DAB2B /* VerifiedBadge.swift */; };
 		9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */; };
 		9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		9F5252CF24C5091CEBD26A34 /* WatchSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBACCE37292793A5CC6E3831 /* WatchSettingsView.swift */; };
@@ -129,6 +130,7 @@
 		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretsStore.swift; sourceTree = "<group>"; };
+		A585053040099E29C26DAB2B /* VerifiedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifiedBadge.swift; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
 		A9CE2293C659B96F8502E117 /* AtmoColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoColors.swift; sourceTree = "<group>"; };
 		AAE176C0DD24FECA866AD862 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
@@ -271,6 +273,7 @@
 				1852C1676F9B93E2152D1D2C /* LoadingView.swift */,
 				EFDAE3CD661558EEAF60A875 /* RichTextView.swift */,
 				900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */,
+				A585053040099E29C26DAB2B /* VerifiedBadge.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -614,6 +617,7 @@
 				CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */,
 				68E35D479091FE23D6CBE6DC /* UbiquitousKeyValueStore.swift in Sources */,
 				9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */,
+				97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */,
 				AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

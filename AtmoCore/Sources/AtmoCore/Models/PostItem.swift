@@ -14,6 +14,8 @@ public struct PostItem: Identifiable, Hashable, Sendable {
     public let authorHandle: String
     public let authorDisplayName: String?
     public let authorAvatarURL: URL?
+    /// Bluesky verification badge for the author, when valid.
+    public var authorVerification: VerificationBadge? = nil
 
     // Content
     public let text: String
@@ -84,6 +86,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorHandle = post.author.actorHandle
         self.authorDisplayName = post.author.displayName
         self.authorAvatarURL = post.author.avatarImageURL
+        self.authorVerification = VerificationBadge(state: post.author.verificationState)
 
         self.indexedAt = post.indexedAt
 
@@ -167,6 +170,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorHandle = post.author.actorHandle
         self.authorDisplayName = post.author.displayName
         self.authorAvatarURL = post.author.avatarImageURL
+        self.authorVerification = VerificationBadge(state: post.author.verificationState)
 
         self.indexedAt = post.indexedAt
 

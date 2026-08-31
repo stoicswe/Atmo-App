@@ -45,6 +45,42 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Feed filter tabs
+    // Pill chips in the app's Activity-tab language; selection swaps the
+    // author feed via getAuthorFeed's server-side filters, with visited
+    // tabs cached in the view model for instant return.
+    @ViewBuilder
+    private func feedFilterTabs(vm: ProfileViewModel) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: AtmoTheme.Spacing.sm) {
+                ForEach(ProfileFeedFilter.allCases) { filter in
+                    let isSelected = vm.selectedFilter == filter
+                    Button {
+                        Haptics.tap()
+                        Task { await vm.selectFilter(filter) }
+                    } label: {
+                        Text(filter.displayName)
+                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                            .padding(.horizontal, AtmoTheme.Spacing.lg)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule().fill(isSelected
+                                    ? AnyShapeStyle(AtmoColors.accent)
+                                    : AnyShapeStyle(Color.secondary.opacity(0.12)))
+                            )
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+            .padding(.vertical, AtmoTheme.Spacing.sm)
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.selectedFilter)
+    }
+
     /// Shown when nothing loaded, nothing is in flight, and no error was
     /// recorded — instead of a blank page.
     private func retryState(vm: ProfileViewModel) -> some View {
@@ -68,6 +104,15 @@ struct ProfileView: View {
     private var profileContent: some View {
         // Single ScrollView with one flat LazyVStack — avoids nested LazyVStack
         // scroll glitching caused by two LazyVStacks stacked inside one ScrollView.
+        scrollBody
+            // iPhone: the banner runs to the physical top edge — content
+            // starts at the very top, and pushed profiles drop the nav-bar
+            // glass so the banner shows through under the back button.
+            .modifier(PhoneBannerBleed())
+    }
+
+    @ViewBuilder
+    private var scrollBody: some View {
         ScrollView {
             LazyVStack(spacing: 0, pinnedViews: []) {
                 if let vm = viewModel {
@@ -81,6 +126,20 @@ struct ProfileView: View {
                         )
 
                         Divider().overlay(AtmoColors.glassDivider)
+
+                        // ── Feed tabs: Posts / Replies / Media / Videos ──
+                        feedFilterTabs(vm: vm)
+
+                        Divider().overlay(Color.secondary.opacity(0.1))
+
+                        // Per-tab empty state (e.g. an account with no videos).
+                        if vm.posts.isEmpty, !vm.isLoadingPosts {
+                            Text("No \(vm.selectedFilter.displayName.lowercased()) yet")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, AtmoTheme.Spacing.xxl)
+                        }
 
                         // ── Posts inlined directly into the outer LazyVStack ──
                         // (No nested LazyVStack — eliminates the scroll glitch)
@@ -141,5 +200,26 @@ struct ProfileView: View {
                 await viewModel?.load()
             }
         }
+    }
+}
+
+// MARK: - Phone Banner Bleed
+// iPhone-only: lets the profile banner fill to the physical top edge. The
+// scroll content ignores the top safe area (the banner compensates with
+// extra height), and the nav bar's glass is hidden so pushed profiles show
+// the banner beneath a floating back button.
+private struct PhoneBannerBleed: ViewModifier {
+    func body(content: Content) -> some View {
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            content
+                .ignoresSafeArea(edges: .top)
+                .toolbarBackground(.hidden, for: .navigationBar)
+        } else {
+            content
+        }
+#else
+        content
+#endif
     }
 }

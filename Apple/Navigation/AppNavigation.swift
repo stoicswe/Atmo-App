@@ -55,6 +55,8 @@ private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .drafts, .setti
 enum PhoneBarConfig {
     static let storageKey = "atmo.phone.barItems"
     static let defaultValue = "Search,Activity,Profile"
+    /// Whether the bar's buttons show text labels under their icons.
+    static let labelsKey = "atmo.phone.barLabels"
     static let maxCustomTabs = 3
     /// Everything that can be placed in either the bar or the drawer.
     static let eligible: [SidebarItem] =
@@ -80,18 +82,22 @@ final class PhoneChromeState {
     static let shared = PhoneChromeState()
     /// True while the tab pill is minimized to a single corner button.
     var barCollapsed = false
-    /// Whether the home timeline is resting at its top — drives the
-    /// bar's scroll-to-top circle.
+    /// Whether the home timeline is resting at its top — drives the Home
+    /// tab's arrow morphing.
     var timelineAtTop = true
-    /// Incremented by the bar's scroll-to-top circle; the timeline
-    /// observes it and jumps.
+    /// Incremented to ask the timeline to jump to its top (Home button
+    /// while scrolled, drawer Home, new-posts pill).
     var scrollToTopRequest = 0
-    /// DM composer draft while a conversation owns the bottom bar.
-    var dmDraft: String = ""
-    /// Non-nil while a conversation is on top: the bar renders the message
-    /// field + send arrow and calls this to send `dmDraft`. Registered by
-    /// ConversationDetailView on appear, cleared on disappear.
-    var dmSend: (@MainActor () -> Void)? = nil
+    /// Incremented to ask the timeline to jump BACK to where the user was
+    /// before the last scroll-to-top (Home button's down-arrow state).
+    var scrollBackRequest = 0
+    /// True while a pre-jump position is stored to return to.
+    var timelineReturnAvailable = false
+    /// True while a DM conversation is on top of the stack. The app bar
+    /// steps aside entirely — the conversation renders its own composer
+    /// via a view-local safeAreaInset, which is the only reliable way to
+    /// keep its message list inset above the input on pushed screens.
+    var conversationOpen = false
 
     /// Non-nil while a thread screen is on top: the bar shows [Home] +
     /// [compose-as-reply], and the compose circle calls this.
@@ -123,14 +129,18 @@ struct AppNavigation: View {
     @State private var draftToResume: ComposerDraft? = nil
     /// Drives the "Draft saved" toast that appears after an implicit swipe-dismiss.
     @State private var showDraftSavedToast: Bool = false
+    /// Recipient picker for a new DM (the "+" on the Messages page).
+    /// Declared and presented at the SAME level as the composer sheet —
+    /// the one presentation point verified to work everywhere.
+    @State private var showNewConversation: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
     /// iPhone: user-chosen bottom-bar items (comma-joined rawValues).
     @AppStorage(PhoneBarConfig.storageKey) private var phoneBarItemsRaw = PhoneBarConfig.defaultValue
-    /// iPhone: recipient picker for a new DM (the "+" on the Messages page).
-    @State private var showNewConversation = false
+    /// iPhone: text labels under the bar icons (Settings → Appearance).
+    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels = true
     /// iPhone: focus for the bottom-bar search field — hoisted here so the
     /// dismiss-keyboard circle can clear it through SwiftUI (a raw
     /// resignFirstResponder fought the FocusState and needed two taps).
@@ -196,6 +206,14 @@ struct AppNavigation: View {
             })
             .sheet(isPresented: $showComposer, onDismiss: handleComposerDismiss) {
                 ComposerView()
+            }
+            // New-DM recipient picker; opening a person pushes their
+            // conversation onto the phone stack.
+            .sheet(isPresented: $showNewConversation) {
+                NewConversationView { convo in
+                    selectedItem = .messages
+                    phoneTimelineNavPath.append(convo)
+                }
             }
             // Opened when the user taps a draft row in DraftsView.
             // ComposerViewModel.restoreDraft() picks up the saved text from
@@ -471,15 +489,6 @@ struct AppNavigation: View {
                 Haptics.soft()
             }
         }
-        // Recipient picker for a new DM; opening a person pushes their
-        // conversation onto the stack. Attached at the shell root, away
-        // from the safe-area-inset chrome.
-        .sheet(isPresented: $showNewConversation) {
-            NewConversationView { convo in
-                selectedItem = .messages
-                phoneTimelineNavPath.append(convo)
-            }
-        }
     }
 
     private var phoneMainShell: some View {
@@ -515,9 +524,13 @@ struct AppNavigation: View {
         }
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
-        // Always present — inside a conversation it MORPHS into the message
-        // composer rather than layering with a second input bar.
-        .safeAreaInset(edge: .bottom, spacing: 0) { phoneBottomBar }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            phoneBottomBar
+                // Sit lower, hugging the home-indicator region like the
+                // native tab bar — except while the search keyboard is up,
+                // where sinking would clip the field into the keyboard.
+                .offset(y: phoneSearchFocused ? 0 : 22)
+        }
         // Status-bar blur: with the toolbar glass hidden, this is the only
         // chrome above the content. The material runs a little past the
         // status bar and fades out through a gradient mask — a hard-edged
@@ -613,16 +626,12 @@ struct AppNavigation: View {
     @ViewBuilder
     private var phoneBottomBar: some View {
         let active = selectedItem ?? .timeline
-        if phoneChrome.dmSend != nil {
-            // Inside a conversation: the bar IS the message composer —
-            // field where the pill sits, send arrow where compose sits.
-            HStack(spacing: AtmoTheme.Spacing.md) {
-                PhoneDMField(chrome: phoneChrome)
-                SendDMFAB(chrome: phoneChrome)
-            }
-            .padding(.horizontal, AtmoTheme.Spacing.lg)
-            .padding(.top, AtmoTheme.Spacing.xs)
-            .padding(.bottom, AtmoTheme.Spacing.sm)
+        if phoneChrome.conversationOpen {
+            // Inside a conversation the app bar contributes nothing — the
+            // conversation's own safeAreaInset composer owns the bottom
+            // edge (a view-local inset is the only reliable way to keep a
+            // pushed screen's scroll content above its input bar).
+            EmptyView()
         } else if phoneChrome.threadReply != nil {
             // Inside a thread: [Home — pops back to the timeline] on the
             // left, and the compose circle acts as "reply to this thread".
@@ -684,16 +693,6 @@ struct AppNavigation: View {
                     Spacer(minLength: 0)
                 }
 
-                // Timeline, scrolled down: the way back up lives IN the bar
-                // so its tap target is unambiguous — the floating overlay
-                // version kept losing touches to the feed rows beneath it.
-                if active == .timeline, !phoneChrome.timelineAtTop {
-                    ScrollToTopBarButton {
-                        phoneChrome.scrollToTopRequest += 1
-                    }
-                    .transition(.blurReplace)
-                }
-
                 // Right circle: Search gets a dismiss-keyboard control (the
                 // field lives in this bar); everywhere else composes.
                 if active == .search {
@@ -718,17 +717,31 @@ struct AppNavigation: View {
             ForEach(phoneTabItems) { item in
                 Button {
                     Haptics.tap()
+                    // The Home button doubles as scroll control while on
+                    // the timeline: scrolled → jump to top; at top with a
+                    // stored return point → jump back down to it.
+                    if item == .timeline, selectedItem == .timeline {
+                        if !phoneChrome.timelineAtTop {
+                            phoneChrome.scrollToTopRequest += 1
+                        } else if phoneChrome.timelineReturnAvailable {
+                            phoneChrome.scrollBackRequest += 1
+                        }
+                    }
                     selectedItem = item
                     phoneChrome.barCollapsed = false
                 } label: {
                     VStack(spacing: 2) {
-                        Image(systemName: selectedItem == item ? item.filledIcon : item.icon)
-                            .font(.system(size: 17, weight: .medium))
-                        Text(item.rawValue)
-                            .font(.system(size: 10, weight: .medium))
+                        Image(systemName: pillIcon(for: item))
+                            .font(.system(size: phoneBarShowsLabels ? 17 : 19, weight: .medium))
+                            .contentTransition(.symbolEffect(.replace))
+                        if phoneBarShowsLabels {
+                            Text(item.rawValue)
+                                .font(.system(size: 10, weight: .medium))
+                        }
                     }
                     .foregroundStyle(selectedItem == item ? AtmoColors.accent : Color.secondary)
-                    .frame(width: 58, height: 48)
+                    .frame(width: phoneBarShowsLabels ? 58 : 52,
+                           height: phoneBarShowsLabels ? 48 : 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -737,6 +750,16 @@ struct AppNavigation: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: Capsule())
+    }
+
+    /// Home morphs while on the timeline: up-arrow when scrolled (jump to
+    /// top), down-arrow at the top with a return point stored (jump back).
+    private func pillIcon(for item: SidebarItem) -> String {
+        if item == .timeline, selectedItem == .timeline {
+            if !phoneChrome.timelineAtTop { return "arrow.up" }
+            if phoneChrome.timelineReturnAvailable { return "arrow.down" }
+        }
+        return selectedItem == item ? item.filledIcon : item.icon
     }
 #endif
 
@@ -799,32 +822,44 @@ private struct PhoneSideMenu: View {
     let onSelect: (SidebarItem) -> Void
 
     var body: some View {
-        // A floating Liquid Glass panel: inset from the top and bottom
-        // edges with rounded corners, rather than an edge-to-edge sheet.
-        VStack(alignment: .leading, spacing: 0) {
-            Text("@omic")
-                .font(.largeTitle.bold())
-                .padding(.horizontal, AtmoTheme.Spacing.xl)
-                .padding(.top, AtmoTheme.Spacing.xl)
-                .padding(.bottom, AtmoTheme.Spacing.lg)
+        // A rounded Liquid Glass panel spanning the full height: the glass
+        // bleeds to the physical top and bottom edges (rounded corners
+        // intact) while the content stays inside the safe areas.
+        ZStack(alignment: .topLeading) {
+            // Flush with the left screen edge, so only the trailing corners
+            // round — the standard drawer profile.
+            Color.clear
+                .glassEffect(.regular, in: UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 36,
+                    topTrailingRadius: 36,
+                    style: .continuous
+                ))
+                .ignoresSafeArea(edges: .vertical)
 
-            // Pinned: always a way back to the home timeline.
-            menuRow(.timeline)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("@omic")
+                    .font(.largeTitle.bold())
+                    .padding(.horizontal, AtmoTheme.Spacing.xl)
+                    .padding(.top, AtmoTheme.Spacing.xl)
+                    .padding(.bottom, AtmoTheme.Spacing.lg)
 
-            Divider()
-                .padding(.horizontal, AtmoTheme.Spacing.xl)
-                .padding(.vertical, AtmoTheme.Spacing.sm)
+                // Pinned: always a way back to the home timeline.
+                menuRow(.timeline)
 
-            ForEach(items) { item in
-                menuRow(item)
+                Divider()
+                    .padding(.horizontal, AtmoTheme.Spacing.xl)
+                    .padding(.vertical, AtmoTheme.Spacing.sm)
+
+                ForEach(items) { item in
+                    menuRow(item)
+                }
+
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 36, style: .continuous))
-        .padding(.leading, AtmoTheme.Spacing.sm)
-        .padding(.vertical, AtmoTheme.Spacing.lg)
     }
 
     @ViewBuilder
@@ -934,6 +969,7 @@ private struct DismissKeyboardFAB: View {
 // straight back to the timeline (the full menu returns with it).
 private struct ThreadHomeButton: View {
     let action: () -> Void
+    @AppStorage(PhoneBarConfig.labelsKey) private var showsLabels = true
 
     var body: some View {
         Button {
@@ -942,12 +978,14 @@ private struct ThreadHomeButton: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: "house.fill")
-                    .font(.system(size: 17, weight: .medium))
-                Text("Home")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: showsLabels ? 17 : 19, weight: .medium))
+                if showsLabels {
+                    Text("Home")
+                        .font(.system(size: 10, weight: .medium))
+                }
             }
             .foregroundStyle(AtmoColors.accent)
-            .frame(width: 58, height: 48)
+            .frame(width: showsLabels ? 58 : 52, height: showsLabels ? 48 : 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -955,74 +993,6 @@ private struct ThreadHomeButton: View {
         .padding(.vertical, 4)
         .glassEffect(.regular, in: Capsule())
         .accessibilityLabel("Back to Home")
-    }
-}
-
-// MARK: - Phone DM Composer (in-bar)
-// The message field the bottom bar morphs into inside a conversation.
-private struct PhoneDMField: View {
-    @Bindable var chrome: PhoneChromeState
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        TextField("Message…", text: $chrome.dmDraft, axis: .vertical)
-            .textFieldStyle(.plain)
-            .focused($focused)
-            .lineLimit(1...4)
-            .padding(.horizontal, AtmoTheme.Spacing.lg)
-            .padding(.vertical, AtmoTheme.Spacing.sm)
-            .frame(minHeight: 48)
-            .frame(maxWidth: .infinity)
-            .glassEffect(.regular, in: RoundedRectangle(
-                cornerRadius: AtmoTheme.CornerRadius.pill, style: .continuous))
-            .onAppear { focused = true }
-    }
-}
-
-/// Send arrow beside the DM field — up arrow, accent when there's content.
-private struct SendDMFAB: View {
-    @Bindable var chrome: PhoneChromeState
-
-    private var canSend: Bool {
-        !chrome.dmDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        Button {
-            Haptics.tap()
-            chrome.dmSend?()
-        } label: {
-            Image(systemName: "arrow.up")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(canSend ? AtmoColors.accent : Color.secondary)
-                .frame(width: 48, height: 48)
-                .glassEffect(.regular.interactive(), in: Circle())
-        }
-        .buttonStyle(FABButtonStyle())
-        .disabled(!canSend)
-        .accessibilityLabel("Send")
-    }
-}
-
-// MARK: - Scroll To Top Bar Button
-// Lives in the bottom bar next to compose while the timeline is scrolled —
-// a floating overlay version kept losing touches to the feed rows.
-private struct ScrollToTopBarButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(AtmoColors.accent)
-                .frame(width: 48, height: 48)
-                .glassEffect(.regular.interactive(), in: Circle())
-        }
-        .buttonStyle(FABButtonStyle())
-        .accessibilityLabel("Scroll to Top")
     }
 }
 

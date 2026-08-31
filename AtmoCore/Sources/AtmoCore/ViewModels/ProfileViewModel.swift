@@ -2,6 +2,36 @@ import Foundation
 import ATProtoKit
 import Observation
 
+// MARK: - Profile Feed Filter
+/// The author-feed tabs on a profile page, mapped to the AT Protocol's
+/// getAuthorFeed filters (same set as the official app).
+public enum ProfileFeedFilter: String, CaseIterable, Identifiable, Sendable {
+    case posts
+    case replies
+    case media
+    case videos
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .posts:   return "Posts"
+        case .replies: return "Replies"
+        case .media:   return "Media"
+        case .videos:  return "Videos"
+        }
+    }
+
+    var lexiconFilter: AppBskyLexicon.Feed.GetAuthorFeed.Filter {
+        switch self {
+        case .posts:   return .postsWithNoReplies
+        case .replies: return .postsWithReplies
+        case .media:   return .postsWithMedia
+        case .videos:  return .postsWithVideo
+        }
+    }
+}
+
 @Observable
 @MainActor
 public final class ProfileViewModel {
@@ -11,8 +41,12 @@ public final class ProfileViewModel {
     public private(set) var isLoading: Bool = false
     public private(set) var isLoadingPosts: Bool = false
     public private(set) var error: Error? = nil
+    public private(set) var selectedFilter: ProfileFeedFilter = .posts
     private var cursor: String? = nil
     private var hasMore: Bool = true
+    /// Loaded pages per tab, so switching back is instant instead of a
+    /// refetch.
+    private var filterCache: [ProfileFeedFilter: (posts: [PostItem], cursor: String?, hasMore: Bool)] = [:]
 
     private let service: ATProtoService
     public let actorDID: String?
@@ -98,12 +132,34 @@ public final class ProfileViewModel {
         await loadPosts(reset: true)
     }
 
+    /// Switches the author-feed tab, restoring cached pages when the tab
+    /// was visited before.
+    public func selectFilter(_ filter: ProfileFeedFilter) async {
+        guard filter != selectedFilter else { return }
+        // Stash the outgoing tab's pages for an instant return.
+        filterCache[selectedFilter] = (posts, cursor, hasMore)
+        selectedFilter = filter
+        if let cached = filterCache[filter] {
+            posts = cached.posts
+            cursor = cached.cursor
+            hasMore = cached.hasMore
+            return
+        }
+        cursor = nil
+        posts = []
+        hasMore = true
+        await loadPosts()
+    }
+
     public func loadPosts(reset: Bool = false) async {
         guard let kit = service.atProtoKit else { return }
         if reset {
             cursor = nil
             posts = []
             hasMore = true
+            // A full reset (pull-refresh, new post submitted) invalidates
+            // every tab's cached pages, not just the visible one.
+            filterCache.removeAll()
         }
         guard hasMore, !isLoadingPosts else { return }
 
@@ -126,9 +182,21 @@ public final class ProfileViewModel {
 
         isLoadingPosts = true
         do {
-            let output = try await kit.getAuthorFeed(by: did, limit: 30, cursor: cursor)
+            let output = try await kit.getAuthorFeed(
+                by: did,
+                limit: 30,
+                cursor: cursor,
+                postFilter: selectedFilter.lexiconFilter
+            )
             let newPosts = output.feed.map { PostItem(feedPost: $0) }
-            posts.append(contentsOf: newPosts)
+            // URI dedup: an author's post plus their own repost of it can
+            // arrive as two entries sharing one identity (observed on the
+            // Videos filter) — duplicate IDs crash the lazy ForEach.
+            let existing = Set(posts.map(\.uri))
+            var seen = Set<String>()
+            posts.append(contentsOf: newPosts.filter {
+                !existing.contains($0.uri) && seen.insert($0.uri).inserted
+            })
             cursor = output.cursor
             hasMore = output.cursor != nil
         } catch {

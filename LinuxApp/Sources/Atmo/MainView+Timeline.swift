@@ -33,7 +33,10 @@ extension MainView {
                 }
                 return PostRowSnapshot(
                     id: post.uri,
-                    author: post.authorDisplayName ?? post.authorHandle,
+                    // "✔" suffix marks verified accounts (GTK has no inline
+                    // icon run here; parity with the Apple badge).
+                    author: (post.authorDisplayName ?? post.authorHandle)
+                        + (post.authorVerification != nil ? " ✔" : ""),
                     handle: post.authorHandle,
                     time: post.createdAt.atmoFormatted(),
                     text: post.displayText,

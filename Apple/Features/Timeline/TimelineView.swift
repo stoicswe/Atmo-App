@@ -39,6 +39,10 @@ struct TimelineView: View {
     /// Debounces iCloud read-position writes while the user scrolls.
     @State private var positionSaveTask: Task<Void, Never>? = nil
 
+    /// Where the user was before the last jump-to-top — the Home button's
+    /// down-arrow state jumps back here.
+    @State private var returnAnchorURI: String? = nil
+
     // Custom pull-to-refresh state
     @State private var isRefreshTriggered: Bool = false
     @State private var pullDistance: CGFloat = 0
@@ -259,10 +263,14 @@ struct TimelineView: View {
             if !empty { attemptPositionRestore(vm: vm) }
         }
 #if os(iOS)
-        // The bottom bar's scroll-to-top circle signals through the shared
-        // chrome state; each bump is one jump request.
+        // The Home button signals through the shared chrome state; each
+        // bump is one jump request (up to the top, or back down to where
+        // the user left from).
         .onChange(of: PhoneChromeState.shared.scrollToTopRequest) { _, _ in
             jumpToTop(vm: vm, proxy: proxy)
+        }
+        .onChange(of: PhoneChromeState.shared.scrollBackRequest) { _, _ in
+            jumpBack(vm: vm, proxy: proxy)
         }
 #endif
         // ── iCloud read-position save ──
@@ -311,6 +319,14 @@ struct TimelineView: View {
     /// look smooth through.
     private func jumpToTop(vm: TimelineViewModel, proxy: ScrollViewProxy) {
         vm.clearNewPostsCount()
+        // Remember where the user left from, so the Home button's
+        // down-arrow state can bring them straight back.
+        if !isAtTop, let current = scrolledID {
+            returnAnchorURI = current
+#if os(iOS)
+            PhoneChromeState.shared.timelineReturnAvailable = true
+#endif
+        }
         let currentIndex = scrolledID
             .flatMap { id in vm.posts.firstIndex(where: { $0.uri == id }) } ?? 0
         if reduceMotion || currentIndex > 25 {
@@ -322,6 +338,26 @@ struct TimelineView: View {
         }
         if let first = vm.posts.first {
             positionStore.save(topPostURI: first.uri)
+        }
+    }
+
+    /// Jumps back to the stored pre-jump position (Home's down-arrow).
+    private func jumpBack(vm: TimelineViewModel, proxy: ScrollViewProxy) {
+        defer {
+            returnAnchorURI = nil
+#if os(iOS)
+            PhoneChromeState.shared.timelineReturnAvailable = false
+#endif
+        }
+        guard let anchor = returnAnchorURI,
+              let index = vm.posts.firstIndex(where: { $0.uri == anchor })
+        else { return }
+        if reduceMotion || index > 25 {
+            proxy.scrollTo(anchor, anchor: .top)
+        } else {
+            withAnimation(.smooth(duration: 0.35)) {
+                proxy.scrollTo(anchor, anchor: .top)
+            }
         }
     }
 

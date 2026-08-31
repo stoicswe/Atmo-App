@@ -1,6 +1,22 @@
 import SwiftUI
 import AtmoCore
 
+/// Applies the split-view banner bleed (under the translucent sidebar) on
+/// iPad/macOS only — never on iPhone, where no sidebar inset exists.
+private struct SplitLeadingBleed: ViewModifier {
+    func body(content: Content) -> some View {
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            content
+        } else {
+            content.ignoresSafeArea(.container, edges: .leading)
+        }
+#else
+        content.ignoresSafeArea(.container, edges: .leading)
+#endif
+    }
+}
+
 struct ProfileHeaderView: View {
     let profile: ProfileModel
     let isOwnProfile: Bool
@@ -8,40 +24,64 @@ struct ProfileHeaderView: View {
     /// Only needed for own profile — passed through to EditProfileView.
     var viewModel: ProfileViewModel? = nil
 
+    /// On iPhone the profile scroll ignores the top safe area so the
+    /// banner runs to the physical top edge — the extra height here sits
+    /// behind the status bar, keeping ~130pt of banner visible below it.
+    static var bannerHeight: CGFloat {
+#if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone ? 200 : 140
+#else
+        140
+#endif
+    }
+
     @State private var showEditProfile = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Banner
-            ZStack(alignment: .bottomLeading) {
-                // Banner image
-                if let bannerURL = profile.bannerURL {
-                    AsyncCachedImage(url: bannerURL) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            LinearGradient(
-                                colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+            // Banner — a proposal-sized Color with the artwork as a
+            // BACKGROUND. A background can never influence layout, so the
+            // image's intrinsic size (height × aspect for scaledToFill) is
+            // structurally incapable of inflating the header stack — which
+            // is what shifted every profile row off the left edge once the
+            // banner grew taller.
+            Color.clear
+                .frame(height: Self.bannerHeight)
+                .frame(maxWidth: .infinity)
+                .background {
+                    if let bannerURL = profile.bannerURL {
+                        AsyncCachedImage(url: bannerURL) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                LinearGradient(
+                                    colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            }
                         }
+                    } else {
+                        LinearGradient(
+                            colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     }
-                } else {
-                    LinearGradient(
-                        colors: [AtmoColors.accent.opacity(0.4), Color.indigo.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
                 }
-            }
-            .frame(height: 140)
-            .clipped()
+                .clipped()
+            // See bannerHeight: the extra phone height sits behind the
+            // status bar, keeping the visible banner portion consistent.
             // Extend the banner behind the sidebar column on iPad/macOS split view.
             // The detail column has a leading safe-area inset equal to the sidebar width;
             // ignoring it lets the banner image fill the full window width underneath
             // the translucent sidebar panel while keeping all other content inset normally.
-            .ignoresSafeArea(.container, edges: .leading)
+            //
+            // iPad/macOS ONLY: on iPhone (whose scroll ignores the TOP safe
+            // area for the edge-to-edge banner) this leading ignore expanded
+            // the lazy stack's bounds and shoved the whole profile column
+            // off the left edge.
+            .modifier(SplitLeadingBleed())
 
             // Avatar row
             HStack(alignment: .top) {
@@ -95,8 +135,15 @@ struct ProfileHeaderView: View {
             // Bio section
             VStack(alignment: .leading, spacing: AtmoTheme.Spacing.xs) {
                 if let name = profile.displayName, !name.isEmpty {
-                    Text(name)
-                        .font(.title3.weight(.bold))
+                    HStack(spacing: 6) {
+                        Text(name)
+                            .font(.title3.weight(.bold))
+                        if let badge = profile.verification {
+                            VerifiedBadge(badge: badge, size: 15)
+                        }
+                    }
+                } else if let badge = profile.verification {
+                    VerifiedBadge(badge: badge, size: 15)
                 }
                 Text("@\(profile.handle)")
                     .font(AtmoFonts.handle)

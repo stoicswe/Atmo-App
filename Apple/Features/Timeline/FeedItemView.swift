@@ -86,6 +86,9 @@ struct FeedItemView: View {
                                 .font(AtmoFonts.authorName)
                                 .lineLimit(1)
                         }
+                        if let badge = livePost.authorVerification {
+                            VerifiedBadge(badge: badge)
+                        }
                         Text("@\(livePost.authorHandle)")
                             .font(AtmoFonts.authorHandle)
                             .foregroundStyle(.secondary)
@@ -219,6 +222,9 @@ private struct AncestorPostRow: View {
                         Text(name)
                             .font(AtmoFonts.authorName)
                             .lineLimit(1)
+                    }
+                    if let badge = post.authorVerification {
+                        VerifiedBadge(badge: badge)
                     }
                     Text("@\(post.authorHandle)")
                         .font(AtmoFonts.authorHandle)

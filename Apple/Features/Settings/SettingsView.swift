@@ -119,6 +119,9 @@ private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+#if os(iOS)
+    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = true
+#endif
 
     var body: some View {
         Form {
@@ -138,10 +141,12 @@ private struct AppearanceTab: View {
                     NavigationLink("Customize Bottom Menu") {
                         BottomMenuEditorView()
                     }
+                    Toggle("Menu labels", isOn: $phoneBarShowsLabels)
+                        .tint(AccentPresets.current.color)
                 } header: {
                     Text("Navigation")
                 } footer: {
-                    Text("Choose which items join Home in the bottom menu, and their order. Everything else lives in the menu that slides in from the left.")
+                    Text("Choose which items join Home in the bottom menu, and their order. Everything else lives in the menu that slides in from the left. Turn off labels for an icons-only menu.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -20,6 +20,8 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
     public var isFollowing: Bool
     public var isFollowedBy: Bool
     public var followURI: String?
+    /// Bluesky verification badge, when valid.
+    public var verification: VerificationBadge? = nil
 
     // MARK: - Init from detailed profile
     public init(profile: AppBskyLexicon.Actor.ProfileViewDetailedDefinition) {
@@ -36,6 +38,7 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
         self.isFollowing = profile.viewer?.followingURI != nil
         self.followURI = profile.viewer?.followingURI
         self.isFollowedBy = profile.viewer?.followedByURI != nil
+        self.verification = VerificationBadge(state: profile.verificationState)
     }
 
     // MARK: - Init from search result (ProfileViewDefinition — lighter type returned by searchActors)
@@ -53,6 +56,7 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
         self.isFollowing = searchResult.viewer?.followingURI != nil
         self.followURI = searchResult.viewer?.followingURI
         self.isFollowedBy = searchResult.viewer?.followedByURI != nil
+        self.verification = VerificationBadge(state: searchResult.verificationState)
     }
 
     public func hash(into hasher: inout Hasher) {

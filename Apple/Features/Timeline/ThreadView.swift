@@ -548,8 +548,13 @@ private struct RootPostView: View {
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    if let name = livePost.authorDisplayName {
-                        Text(name).font(AtmoFonts.authorName)
+                    HStack(spacing: 4) {
+                        if let name = livePost.authorDisplayName {
+                            Text(name).font(AtmoFonts.authorName)
+                        }
+                        if let badge = livePost.authorVerification {
+                            VerifiedBadge(badge: badge)
+                        }
                     }
                     Text("@\(livePost.authorHandle)")
                         .font(AtmoFonts.authorHandle)
@@ -750,6 +755,9 @@ private struct ReplyRowView: View {
                                     Text(name)
                                         .font(.subheadline.weight(.semibold))
                                         .lineLimit(1)
+                                }
+                                if let badge = livePost.authorVerification {
+                                    VerifiedBadge(badge: badge, size: 11)
                                 }
                                 Text("@\(livePost.authorHandle)")
                                     .font(.caption)

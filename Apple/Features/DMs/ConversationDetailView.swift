@@ -12,10 +12,9 @@ struct ConversationDetailView: View {
         conversation.participants.first { $0.did != service.currentUserDID }
     }
 
-    /// iPhone: the app's bottom bar morphs into the composer (field + send
-    /// arrow), so this view draws no input of its own there. iPad/macOS
-    /// keep the inline bar.
-    private var usesAppBarComposer: Bool {
+    /// iPhone: the app's bottom bar hides while a conversation is open so
+    /// this view's own composer owns the bottom edge.
+    private var hidesAppBar: Bool {
 #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .phone
 #else
@@ -60,21 +59,24 @@ struct ConversationDetailView: View {
                 }
             }
 
-            // Inline input bar — iPad/macOS only; the iPhone's app bottom
-            // bar becomes the composer instead (see usesAppBarComposer).
-            if !usesAppBarComposer {
-                inlineInputBar
-            }
+        }
+        // View-LOCAL inset: this is what actually keeps the message list
+        // above the composer on a pushed screen — an inset applied to the
+        // outer navigation container didn't reach this scroll view, so
+        // fresh messages rendered behind the bar.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            inlineInputBar
         }
         .navigationTitle(otherParticipant?.displayName ?? otherParticipant?.handle ?? "Chat")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard hidesAppBar else { return }
+            PhoneChromeState.shared.conversationOpen = true
+        }
         .onDisappear {
-            // Hand the bottom bar back to the app when leaving.
-            guard usesAppBarComposer else { return }
-            let chrome = PhoneChromeState.shared
-            chrome.dmSend = nil
-            chrome.dmDraft = ""
+            guard hidesAppBar else { return }
+            PhoneChromeState.shared.conversationOpen = false
         }
 #endif
         .task {
@@ -85,20 +87,10 @@ struct ConversationDetailView: View {
                 )
             }
 #if os(iOS)
-            // Registered here (not onAppear) so the view model exists when
-            // the closure is built; the bar morphs into the composer the
-            // moment dmSend becomes non-nil.
-            if usesAppBarComposer, let vm = viewModel {
-                let chrome = PhoneChromeState.shared
-                chrome.dmDraft = ""
-                chrome.dmSend = { [weak vm] in
-                    guard let vm else { return }
-                    let text = PhoneChromeState.shared.dmDraft
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { return }
-                    PhoneChromeState.shared.dmDraft = ""
-                    Task { await vm.sendMessage(text: text) }
-                }
+            // Belt for the appear/disappear pair: the flag is also set here,
+            // which runs reliably on push.
+            if hidesAppBar {
+                PhoneChromeState.shared.conversationOpen = true
             }
 #endif
             await viewModel?.load()
