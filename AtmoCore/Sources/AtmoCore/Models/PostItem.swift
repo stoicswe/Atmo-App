@@ -263,8 +263,10 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         replyRootURI: String? = nil,
         indexedAt: Date = Date(),
         isRepost: Bool = false,
-        contentLabels: [String] = []
+        contentLabels: [String] = [],
+        authorVerification: VerificationBadge? = nil
     ) {
+        self.authorVerification = authorVerification
         self.uri = testURI
         self.id = testURI
         self.cid = ""

@@ -51,8 +51,11 @@ final class TopicSummarizer {
 #if canImport(FoundationModels)
         guard Self.isSupported, posts.count >= 3 else { return }
 
-        let sample = posts.prefix(25).map { post in
-            "- " + post.displayText
+        // Verified accounts' posts lead the sample and are marked in the
+        // prompt — the model is told to weight them more heavily.
+        let sample = TopicSummaryStore.prioritizedSample(posts, limit: 25).map { post in
+            let marker = post.authorVerification != nil ? "[verified] " : ""
+            return "- " + marker + post.displayText
                 .replacingOccurrences(of: "\n", with: " ")
                 .prefix(280)
         }
@@ -65,7 +68,10 @@ final class TopicSummarizer {
         let session = LanguageModelSession(instructions: """
             You summarize what people on social media are discussing about \
             a topic. Be factual, neutral, and concise: 2–3 sentences, no \
-            preamble, no hashtags, no quotation of usernames.
+            preamble, no hashtags, no quotation of usernames. Posts marked \
+            [verified] come from verified accounts — weight them more \
+            heavily than unmarked posts when deciding what is accurate and \
+            what the topic is really about.
             """)
 
         if streamIntoUI { isStreaming = true }
@@ -139,15 +145,28 @@ struct TopicSummaryCard: View {
                 )
                 .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
                 .padding(.vertical, AtmoTheme.Spacing.sm)
+            } else {
+                // The card starts with nothing to show — the summary only
+                // exists once the task below generates it. An `if` with no
+                // else resolved to EmptyView here, and SwiftUI never fires
+                // .task/.onAppear on EmptyView: no view → no task → no
+                // text → no view, a deadlock where the summary never
+                // appeared. This invisible 1pt placeholder is a real
+                // layout node, so the task actually starts.
+                Color.clear.frame(height: 1)
             }
         }
-        // Keyed on topic AND posts-readiness: the card mounts the moment a
-        // topic is tapped, while the Top posts are still loading — a task
-        // keyed on the topic alone ran once with an empty list, failed the
-        // minimum-posts guard, and never retried (no summary ever
-        // appeared). The readiness flip re-runs it exactly once, when
-        // there is enough material to summarize.
-        .task(id: "\(topic)|\(posts.count >= 3)") {
+        // Keyed on topic AND a coarse posts-readiness bucket. The card
+        // mounts the moment a topic is tapped, while posts are still
+        // loading — a task keyed on the topic alone ran once with an
+        // empty list, failed the minimum-posts guard, and never retried.
+        // The bucket (none → some → plenty) re-runs it as material
+        // arrives, while staying deliberately coarse for efficiency: the
+        // on-device model runs at most twice per topic, and the second
+        // run happens only when background enrichment grew a sparse
+        // sample into a rich one. A rich first sample starts at the top
+        // bucket, so later corpus growth triggers no extra inference.
+        .task(id: "\(topic)|\(posts.count >= 25 ? 2 : (posts.count >= 3 ? 1 : 0))") {
             guard summariesEnabled, TopicSummarizer.isSupported else { return }
             if let cached = TopicSummaryStore.shared.summary(for: topic), cached.isFresh {
                 // Cached: display instantly, then re-analyze silently so

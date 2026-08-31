@@ -225,7 +225,10 @@ struct SearchView: View {
                     // AI topic summary for tapped topics (Apple
                     // Intelligence, on-device), streaming in as it writes.
                     if let topic = vm.summaryTopic {
-                        TopicSummaryCard(topic: topic, posts: vm.postResults)
+                        // summaryPosts: the background-enriched corpus
+                        // (topic feed + contextual variants) when it
+                        // exists, else the visible results.
+                        TopicSummaryCard(topic: topic, posts: vm.summaryPosts)
                     }
                     ForEach(vm.postResults) { post in
                         SearchPostRow(post: post)
@@ -462,6 +465,9 @@ private struct SearchPostRow: View {
                             .font(AtmoFonts.authorName)
                             .lineLimit(1)
                     }
+                    if let badge = post.authorVerification {
+                        VerifiedBadge(badge: badge)
+                    }
                     Text("@\(post.authorHandle)")
                         .font(AtmoFonts.authorHandle)
                         .foregroundStyle(.secondary)
@@ -496,10 +502,15 @@ private struct SearchPersonRow: View {
             AvatarView(url: person.avatarURL, size: AtmoTheme.AvatarSize.medium)
 
             VStack(alignment: .leading, spacing: 2) {
-                if let name = person.displayName {
-                    Text(name)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                HStack(spacing: 4) {
+                    if let name = person.displayName {
+                        Text(name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    if let badge = person.verification {
+                        VerifiedBadge(badge: badge, size: 12)
+                    }
                 }
                 Text("@\(person.handle)")
                     .font(.caption)
@@ -588,7 +599,11 @@ private struct ExploreSectionsView: View {
                     sectionHeader("Interests")
                     FlowChips(topics: store.suggestedTopics) { topic in
                         Haptics.tap()
-                        searchViewModel.activateTopic(topic.topic)
+                        searchViewModel.activateTopic(
+                            topic.topic,
+                            description: topic.description,
+                            feedURI: topic.feedURI
+                        )
                     }
                 }
 
@@ -633,7 +648,13 @@ private struct ExploreSectionsView: View {
     private func topicRow(rank: Int, topic: TrendingTopicItem) -> some View {
         Button {
             Haptics.tap()
-            searchViewModel.activateTopic(topic.topic)
+            // The trend's description and backing feed drive invisible
+            // result enrichment for the summary and sparse results.
+            searchViewModel.activateTopic(
+                topic.topic,
+                description: topic.description,
+                feedURI: topic.feedURI
+            )
         } label: {
             HStack(alignment: .top, spacing: AtmoTheme.Spacing.md) {
                 Text("\(rank)")

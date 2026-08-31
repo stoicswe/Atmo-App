@@ -18,6 +18,10 @@ public struct TrendingTopicItem: Identifiable, Sendable, Hashable {
     public let actorAvatarURLs: [URL]
     /// Bluesky marked the trend as hot.
     public let isHot: Bool
+    /// The trend's backing feed generator (at-uri), when the payload
+    /// carried one. The official app shows a trend's posts through this
+    /// curated feed — a far richer source than a phrase search.
+    public let feedURI: String?
 
     public init(
         topic: String,
@@ -25,7 +29,8 @@ public struct TrendingTopicItem: Identifiable, Sendable, Hashable {
         description: String?,
         postCount: Int? = nil,
         actorAvatarURLs: [URL] = [],
-        isHot: Bool = false
+        isHot: Bool = false,
+        feedURI: String? = nil
     ) {
         self.id = topic
         self.topic = topic
@@ -34,6 +39,21 @@ public struct TrendingTopicItem: Identifiable, Sendable, Hashable {
         self.postCount = postCount
         self.actorAvatarURLs = actorAvatarURLs
         self.isHot = isHot
+        self.feedURI = feedURI
+    }
+
+    /// Converts a trend's app link ("/profile/{did}/feed/{rkey}") to the
+    /// feed generator's at-uri. Returns nil for any other link shape
+    /// (interests link to search pages, for example).
+    public static func feedURI(fromLink link: String?) -> String? {
+        guard let link else { return nil }
+        let parts = link.split(separator: "/").map(String.init)
+        guard parts.count == 4,
+              parts[0] == "profile",
+              parts[1].hasPrefix("did:"),
+              parts[2] == "feed",
+              !parts[3].isEmpty else { return nil }
+        return "at://\(parts[1])/app.bsky.feed.generator/\(parts[3])"
     }
 }
 
@@ -134,6 +154,7 @@ public final class ExploreStore {
         let topic: String
         let displayName: String?
         let description: String?
+        let link: String?
         let postCount: Int?
         let status: String?
         let actors: [PublicActor]?
@@ -159,7 +180,8 @@ public final class ExploreStore {
                 description: trend.description,
                 postCount: trend.postCount,
                 actorAvatarURLs: (trend.actors ?? []).prefix(3).compactMap { $0.avatar.flatMap(URL.init(string:)) },
-                isHot: trend.status == "hot"
+                isHot: trend.status == "hot",
+                feedURI: TrendingTopicItem.feedURI(fromLink: trend.link)
             )
         }
     }

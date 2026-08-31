@@ -65,6 +65,18 @@ public final class SearchViewModel {
     public var peopleResults:  [ProfileModel] = []
     public var hashtagResults: [String]       = []   // derived from query + post text
 
+    /// Wider post pool assembled invisibly in the background: the topic's
+    /// own backing feed (when Bluesky supplied one) plus contextual query
+    /// variants, merged with the visible results. Feeds the AI summary so
+    /// it isn't starved when the headline phrase alone matches few posts.
+    public private(set) var summaryCorpus: [PostItem] = []
+
+    /// What the topic-summary card should summarize: the enriched corpus
+    /// when it exists, else the visible results.
+    public var summaryPosts: [PostItem] {
+        summaryCorpus.isEmpty ? postResults : summaryCorpus
+    }
+
     public var isLoading: Bool = false
     public var error: String?  = nil
 
@@ -74,6 +86,9 @@ public final class SearchViewModel {
 
     /// In-flight search task — cancelled and replaced on every new query keystroke.
     private var searchTask: Task<Void, Never>? = nil
+    /// Background result-enrichment task (topic feed + query variants) —
+    /// cancelled whenever the query moves on.
+    private var enrichmentTask: Task<Void, Never>? = nil
     /// Pagination cursor for the post results.
     private var postsCursor: String? = nil
     /// Pagination cursor for the people results.
@@ -114,7 +129,18 @@ public final class SearchViewModel {
 
     /// Drive this from `.onChange(of: viewModel.query)` in the view.
     public func onQueryChanged(_ newQuery: String) {
-        summaryTopic = nil
+        // Typing a DIFFERENT query dismisses the topic summary. The
+        // equality check matters: activateTopic sets `query`
+        // programmatically, which makes the search bar's .onChange echo
+        // back into this method one view-update later — an unconditional
+        // reset here wiped the just-set summary topic every single time,
+        // so the card never appeared.
+        if newQuery != summaryTopic {
+            summaryTopic = nil
+            enrichmentTask?.cancel()
+            enrichmentTask = nil
+            summaryCorpus = []
+        }
         // Cancel any in-flight search immediately so stale results are not
         // applied after the user has already typed more characters.
         searchTask?.cancel()
@@ -188,6 +214,14 @@ public final class SearchViewModel {
         // Hashtags appearing in the result posts are relevant too.
         mergeHashtags(from: posts.items)
         isLoading      = false
+
+        // A hand-typed query with sparse results gets the same invisible
+        // widening as topics (the user's own words, re-combined — quoted
+        // phrase and keyword core; no trend feed or description exist
+        // here). Topic taps already started their enrichment.
+        if summaryTopic == nil, posts.items.count < 10, enrichmentTask == nil {
+            startEnrichment(query: query, description: nil, feedURI: nil)
+        }
     }
 
     /// Loads the next page of post results (infinite scroll). Appends
@@ -349,14 +383,119 @@ public final class SearchViewModel {
     }
 
     /// Pre-fills the query with a trending/suggested topic and runs a
-    /// post search — the Explore sections' tap action.
-    public func activateTopic(_ topic: String) {
+    /// post search — the Explore sections' tap action. `description` and
+    /// `feedURI` (when the trend carried them) drive invisible background
+    /// enrichment: the trend's own curated feed plus contextual query
+    /// variants widen the pool the AI summary draws from, and backfill
+    /// the visible results when the headline phrase alone matches little.
+    public func activateTopic(
+        _ topic: String,
+        description: String? = nil,
+        feedURI: String? = nil
+    ) {
         sort = .top
         query = topic
         selectedCategory = .posts
         onQueryChanged(topic)
         // After onQueryChanged (which clears it for typed queries).
         summaryTopic = topic
+        startEnrichment(query: topic, description: description, feedURI: feedURI)
+    }
+
+    // MARK: - Background Result Enrichment
+
+    /// Invisible recall-widening pass, the way Bluesky's own app sources
+    /// a trend's page: pull the trend's backing FEED (its curated posts),
+    /// then run contextual query variants (quoted phrase, keyword core,
+    /// description-derived proper nouns), merge everything URI-deduped
+    /// into `summaryCorpus`, and — when the visible results are sparse —
+    /// backfill the results list itself with the extra on-topic posts.
+    private func startEnrichment(query: String, description: String?, feedURI: String?) {
+        enrichmentTask?.cancel()
+        summaryCorpus = []
+        guard let kit = service.atProtoKit else { return }
+
+        enrichmentTask = Task { [weak self] in
+            // Let the primary (visible) search settle first — it is
+            // debounced and its arrival REPLACES postResults, which would
+            // wipe an early backfill. Bounded wait; proceeds regardless
+            // after ~5s so a zero-result primary still gets enriched.
+            for _ in 0..<20 {
+                guard let self, !Task.isCancelled else { return }
+                if !self.isLoading, !self.postResults.isEmpty { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard let self, !Task.isCancelled else { return }
+
+            // Efficiency gates (this whole pass is invisible — its only
+            // consumers are the AI summary and sparse-result backfill):
+            //  • when summaries are off and the visible results are
+            //    already healthy, there is nothing to gain — do nothing;
+            //  • stop issuing requests once the pool is big enough. The
+            //    trend's feed alone usually meets the target, so the
+            //    typical rich-topic tap costs ONE extra request.
+            let summariesWanted = UserDefaults.standard.bool(forKey: TopicSummaryStore.enabledKey)
+            let resultsAreSparse = self.postResults.count < 10
+            guard summariesWanted || resultsAreSparse else { return }
+            let poolTarget = 40
+
+            var extras: [PostItem] = []
+
+            // The trend's own feed — the strongest source of on-topic
+            // posts, independent of whether they contain the headline.
+            if let feedURI {
+                if let output = try? await kit.getFeed(by: feedURI, limit: 50) {
+                    extras += output.feed.map { PostItem(feedPost: $0) }
+                }
+                guard !Task.isCancelled else { return }
+            }
+
+            // Contextual query variants, most precise first; skipped
+            // entirely once the pool target is met.
+            for variant in SearchQueryExpansion.variants(for: query, description: description)
+            where extras.count < poolTarget {
+                if let output = try? await kit.searchPosts(
+                    matching: variant,
+                    sortRanking: SearchSort.top.ranking,
+                    limit: 25
+                ) {
+                    extras += output.posts.map { PostItem(postView: $0) }
+                }
+                guard !Task.isCancelled else { return }
+            }
+            guard !extras.isEmpty else { return }
+
+            // Corpus: visible results lead (they matched the exact
+            // phrase), then the widened pool.
+            self.summaryCorpus = Self.mergedUnique(
+                primary: self.postResults, extras: extras, cap: 80
+            )
+
+            // Sparse visible results get quietly backfilled with the
+            // on-topic extras so the page itself isn't thin either.
+            if self.postResults.count < 10 {
+                self.postResults = Self.mergedUnique(
+                    primary: self.postResults, extras: extras, cap: 50
+                )
+                self.mergeHashtags(from: self.postResults)
+            }
+        }
+    }
+
+    /// URI-deduplicated merge preserving order: all of `primary`, then
+    /// every unseen post from `extras`, capped. Pure; unit-tested.
+    nonisolated static func mergedUnique(
+        primary: [PostItem],
+        extras: [PostItem],
+        cap: Int
+    ) -> [PostItem] {
+        var seen = Set<String>()
+        var merged: [PostItem] = []
+        for post in primary + extras where seen.insert(post.uri).inserted {
+            merged.append(post)
+            if merged.count == cap { break }
+        }
+        return merged
     }
 
     // MARK: - Helpers
@@ -364,6 +503,9 @@ public final class SearchViewModel {
     public func clearResults() {
         searchTask?.cancel()
         searchTask = nil
+        enrichmentTask?.cancel()
+        enrichmentTask = nil
+        summaryCorpus  = []
         postResults    = []
         peopleResults  = []
         hashtagResults = []

@@ -43,4 +43,27 @@ struct TopicSummaryTests {
         let reloaded = TopicSummaryStore(defaults: suite)
         #expect(reloaded.summary(for: "topic")?.text == "Persisted.")
     }
+
+    // MARK: - Verified-first sampling
+
+    @Test func verifiedAuthorsLeadTheSampleKeepingOrder() {
+        let posts = [
+            PostItem(testURI: "p1", text: "a"),
+            PostItem(testURI: "p2", text: "b", authorVerification: .verified),
+            PostItem(testURI: "p3", text: "c"),
+            PostItem(testURI: "p4", text: "d", authorVerification: .trustedVerifier),
+            PostItem(testURI: "p5", text: "e")
+        ]
+        let sample = TopicSummaryStore.prioritizedSample(posts)
+        #expect(sample.map(\.uri) == ["p2", "p4", "p1", "p3", "p5"])
+    }
+
+    @Test func sampleIsCappedAfterPrioritizing() {
+        let unverified = (0..<30).map { PostItem(testURI: "u\($0)") }
+        let verified = PostItem(testURI: "v", authorVerification: .verified)
+        let sample = TopicSummaryStore.prioritizedSample(unverified + [verified], limit: 25)
+        #expect(sample.count == 25)
+        // The verified post makes the cut even from the very back of the list.
+        #expect(sample.first?.uri == "v")
+    }
 }

@@ -17,6 +17,19 @@ public final class TopicSummaryStore {
     /// Oldest entries are pruned beyond this count.
     nonisolated private static let capacity = 50
 
+    /// Orders posts for the summary prompt: posts from verified accounts
+    /// (and trusted verifiers) first, each group keeping its original
+    /// ranking, then capped to `limit`. The model's sample is small, so
+    /// leaning it toward higher-trust sources produces better summaries.
+    nonisolated public static func prioritizedSample(
+        _ posts: [PostItem],
+        limit: Int = 25
+    ) -> [PostItem] {
+        let verified = posts.filter { $0.authorVerification != nil }
+        let unverified = posts.filter { $0.authorVerification == nil }
+        return Array((verified + unverified).prefix(limit))
+    }
+
     public struct Entry: Codable, Sendable, Equatable {
         public let text: String
         public let date: Date

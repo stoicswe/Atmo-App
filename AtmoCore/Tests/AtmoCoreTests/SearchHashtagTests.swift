@@ -27,4 +27,26 @@ struct SearchHashtagTests {
         #expect(SearchViewModel.hashtags(in: []).isEmpty)
         #expect(SearchViewModel.hashtags(in: ["no tags here"]).isEmpty)
     }
+
+    // MARK: - Topic summary lifecycle
+
+    /// activateTopic sets `query` programmatically, and the search bar's
+    /// .onChange echoes that back into onQueryChanged one view-update
+    /// later. The summary topic must survive that echo (it used to be
+    /// wiped every time, so the summary card never appeared) while a
+    /// genuinely different query still dismisses it.
+    @Test @MainActor func summaryTopicSurvivesTheSearchBarEcho() {
+        let vm = SearchViewModel(service: ATProtoService())
+
+        vm.activateTopic("Quantum Computing")
+        #expect(vm.summaryTopic == "Quantum Computing")
+
+        // The .onChange(of: query) echo caused by the programmatic set.
+        vm.onQueryChanged("Quantum Computing")
+        #expect(vm.summaryTopic == "Quantum Computing")
+
+        // The user actually typing something else dismisses the summary.
+        vm.onQueryChanged("Quantum Computers")
+        #expect(vm.summaryTopic == nil)
+    }
 }
