@@ -41,6 +41,23 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
     }
 
+    /// "Tap and slide" for category chips: a crisp tap as the selection
+    /// lands, then two quick fading soft pulses — the feel of the capsule
+    /// gliding into its expanded state.
+    static func slideSelect() {
+        Task { @MainActor in
+            let tap = UIImpactFeedbackGenerator(style: .light)
+            let glide = UIImpactFeedbackGenerator(style: .soft)
+            tap.prepare()
+            glide.prepare()
+            tap.impactOccurred(intensity: 0.8)
+            try? await Task.sleep(for: .milliseconds(50))
+            glide.impactOccurred(intensity: 0.5)
+            try? await Task.sleep(for: .milliseconds(45))
+            glide.impactOccurred(intensity: 0.3)
+        }
+    }
+
     /// Heartbeat "lub-dub" for liking a post: a firm beat followed by a
     /// lighter echo.
     static func heartbeat() {
@@ -76,6 +93,7 @@ enum Haptics {
     static func confirm() {}
     static func thump() {}
     static func heartbeat() {}
+    static func slideSelect() {}
     static func celebrate() {}
 }
 #endif

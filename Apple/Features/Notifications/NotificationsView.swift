@@ -65,7 +65,9 @@ struct NotificationsView: View {
                         category: category,
                         isSelected: vm.selectedCategory == category
                     ) {
-                        Haptics.tap()
+                        // Tap-and-slide only when the selection actually
+                        // moves — re-tapping the open chip stays silent.
+                        if vm.selectedCategory != category { Haptics.slideSelect() }
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             vm.selectedCategory = category
                         }

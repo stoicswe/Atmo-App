@@ -59,6 +59,9 @@ struct SettingsView: View {
                 HStack(spacing: AtmoTheme.Spacing.sm) {
                     ForEach(SettingsTab.allCases) { tab in
                         CategoryChip(tab: tab, isSelected: selectedTab == tab) {
+                            // Tap-and-slide only when the selection actually
+                            // moves — re-tapping the open chip stays silent.
+                            if selectedTab != tab { Haptics.slideSelect() }
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 selectedTab = tab
                             }
