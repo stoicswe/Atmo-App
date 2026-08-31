@@ -175,6 +175,9 @@ struct AppNavigation: View {
     // Each is lazily initialised on first use (needs service).
     @State private var timelineViewModel: TimelineViewModel?
     @State private var searchViewModel: SearchViewModel?
+    /// Background DM poll (cache + incoming-message notifications); lives
+    /// for the whole session, independent of the Messages page.
+    @State private var messagesMonitor: MessagesMonitor?
 
     // Single NavigationPath for the split-view detail column.
     // Owned here (not inside TimelineView) so it survives sidebar switches.
@@ -285,6 +288,11 @@ struct AppNavigation: View {
                 }
                 if searchViewModel == nil {
                     searchViewModel = SearchViewModel(service: service)
+                }
+                if messagesMonitor == nil {
+                    // Background DM poll: keeps the Messages cache warm and
+                    // raises a notification when an incoming message lands.
+                    messagesMonitor = MessagesMonitor(service: service)
                 }
             }
     }

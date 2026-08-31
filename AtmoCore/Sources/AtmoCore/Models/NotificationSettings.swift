@@ -48,6 +48,8 @@ public struct FeedAlert: Identifiable, Sendable {
         case interaction(NotificationItem.NotificationReason)
         /// A new post from a subscribed account.
         case newPost(authorDID: String)
+        /// An incoming direct message.
+        case directMessage(conversationID: String)
     }
 
     /// Stable identity (the source record's URI) so repeated sync passes

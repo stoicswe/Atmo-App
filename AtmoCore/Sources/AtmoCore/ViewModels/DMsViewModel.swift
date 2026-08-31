@@ -14,6 +14,10 @@ public final class DMsViewModel {
 
     public init(service: ATProtoService) {
         self.service = service
+        // Serve the session cache instantly — the page renders the last
+        // known list with no spinner, and load() refreshes it async
+        // (the list UI only shows a spinner when it has nothing to show).
+        conversations = MessagesCache.shared.conversations
     }
 
     public func load() async {
@@ -24,6 +28,7 @@ public final class DMsViewModel {
         do {
             let output = try await chat.listConversations(limit: 50)
             conversations = output.conversations.map { ConversationItem(convo: $0) }
+            MessagesCache.shared.update(conversations)
             error = nil
         } catch {
             self.error = error

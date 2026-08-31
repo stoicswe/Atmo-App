@@ -236,6 +236,15 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.reason = nil
     }
 
+    // MARK: - Feed Ordering
+    /// When this cell's story happened, for chronological feed ordering:
+    /// a repost is news at the moment of the repost, everything else at
+    /// the post's own index time.
+    public var feedSortDate: Date {
+        if case .repost(_, _, _, let repostedAt) = reason { return repostedAt }
+        return indexedAt
+    }
+
     // MARK: - Test Fixtures
     /// Internal memberwise-style initializer used by unit tests to build
     /// fixtures without constructing full ATProtoKit lexicon values.

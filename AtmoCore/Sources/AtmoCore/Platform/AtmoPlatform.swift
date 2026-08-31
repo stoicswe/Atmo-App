@@ -153,6 +153,9 @@ public struct AtmoPlatform: Sendable {
     public var backgroundNotification: Notification.Name?
     /// Seconds between silent timeline refresh checks.
     public var timelineRefreshInterval: TimeInterval
+    /// Seconds between direct-message polls — deliberately shorter than
+    /// the timeline interval, since a waiting message is time-sensitive.
+    public var messagesRefreshInterval: TimeInterval
     /// Presents background-sync alerts to the user.
     public var alertPresenter: any AlertPresenting
 
@@ -164,6 +167,7 @@ public struct AtmoPlatform: Sendable {
         foregroundNotification: Notification.Name? = nil,
         backgroundNotification: Notification.Name? = nil,
         timelineRefreshInterval: TimeInterval = 3 * 60,
+        messagesRefreshInterval: TimeInterval = 45,
         alertPresenter: any AlertPresenting = NoopAlertPresenter()
     ) {
         self.secrets = secrets
@@ -173,6 +177,7 @@ public struct AtmoPlatform: Sendable {
         self.foregroundNotification = foregroundNotification
         self.backgroundNotification = backgroundNotification
         self.timelineRefreshInterval = timelineRefreshInterval
+        self.messagesRefreshInterval = messagesRefreshInterval
         self.alertPresenter = alertPresenter
     }
 

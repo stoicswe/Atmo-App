@@ -50,6 +50,10 @@ public final class PostSlot: Identifiable {
         }
     }
 
+    /// A GIF from the picker, posted as an external embed (the Bluesky
+    /// convention) — mutually exclusive with images and video.
+    public var attachedGIF: GIFItem? = nil
+
     public var characterCount: Int { text.count }
     public var isOverLimit: Bool { characterCount > 300 }
     public var remainingCharacters: Int { 300 - characterCount }
@@ -58,10 +62,16 @@ public final class PostSlot: Identifiable {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && attachedImages.isEmpty
             && attachedVideo == nil
+            && attachedGIF == nil
     }
 
     public var canSubmit: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isOverLimit
+        // Media-only posts are valid (a GIF or voice memo needs no words).
+        (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedImages.isEmpty
+            || attachedVideo != nil
+            || attachedGIF != nil)
+            && !isOverLimit
     }
 
     public init(id: UUID = UUID(), text: String = "") {
@@ -70,7 +80,7 @@ public final class PostSlot: Identifiable {
     }
 
     public func addImage(data: Data, fileName: String) {
-        guard attachedImages.count < 4, attachedVideo == nil else { return }
+        guard attachedImages.count < 4, attachedVideo == nil, attachedGIF == nil else { return }
         attachedImages.append(ImageAttachment(data: data, fileName: fileName))
     }
 
@@ -78,15 +88,34 @@ public final class PostSlot: Identifiable {
         attachedImages.removeAll { $0.id == id }
     }
 
+    /// Sets the alt text on one attached image (no-op when the image was
+    /// removed in the meantime — e.g. an async description arriving late).
+    public func updateImageAltText(id: UUID, altText: String) {
+        guard let index = attachedImages.firstIndex(where: { $0.id == id }) else { return }
+        attachedImages[index].altText = altText
+    }
+
     /// Attaches a video, displacing any images (a post carries one or the
     /// other, never both).
     public func attachVideo(data: Data, fileName: String, aspectRatio: (width: Int, height: Int)? = nil) {
         attachedImages.removeAll()
+        attachedGIF = nil
         attachedVideo = VideoAttachment(data: data, fileName: fileName, aspectRatio: aspectRatio)
     }
 
     public func removeVideo() {
         attachedVideo = nil
+    }
+
+    /// Attaches a picked GIF, displacing other media (one embed per post).
+    public func attachGIF(_ gif: GIFItem) {
+        attachedImages.removeAll()
+        attachedVideo = nil
+        attachedGIF = gif
+    }
+
+    public func removeGIF() {
+        attachedGIF = nil
     }
 }
 
@@ -249,6 +278,11 @@ public final class ComposerViewModel {
 
     private var draftSaveTask: Task<Void, Never>? = nil
 
+    /// Latched once the post has gone out: from that moment no code path —
+    /// a late debounce, a dismissal policy, anything — may write a draft of
+    /// content that was successfully published.
+    private var draftsRetired = false
+
     private func wireSlotCallbacks() {
         for slot in slots {
             slot.onTextChanged = { [weak self] in self?.scheduleDraftSave() }
@@ -266,6 +300,8 @@ public final class ComposerViewModel {
     }
 
     public func saveDraft() {
+        // Published content is not a draft.
+        guard !draftsRetired else { return }
         // Never persist an empty draft — and if the user typed, autosave
         // fired, then they deleted everything, remove the stale copy too.
         guard hasMeaningfulContent else {
@@ -305,6 +341,18 @@ public final class ComposerViewModel {
         slots = saved.posts.map { draftPost in
             PostSlot(id: draftPost.id, text: draftPost.text)
         }
+        wireSlotCallbacks()
+    }
+
+    /// Switches the composer to an explicitly chosen draft (the composer's
+    /// drafts button). Whatever is currently typed is saved under its own
+    /// draft id first, so picking a draft never loses work.
+    public func loadDraft(_ draft: ComposerDraft) {
+        saveDraft()
+        draftSaveTask?.cancel()
+        draftID = draft.id
+        slots = draft.posts.map { PostSlot(id: $0.id, text: $0.text) }
+        if slots.isEmpty { slots = [PostSlot()] }
         wireSlotCallbacks()
     }
 
@@ -366,6 +414,15 @@ public final class ComposerViewModel {
                         aspectoRatio: video.aspectRatio.map {
                             AppBskyLexicon.Embed.AspectRatioDefinition(width: $0.width, height: $0.height)
                         }
+                    )
+                } else if let gif = slot.attachedGIF {
+                    // GIFs travel as external embeds pointing at the media
+                    // URL with ww/hh dimensions — the Bluesky convention.
+                    embed = .external(
+                        url: gif.embedURL,
+                        title: gif.title,
+                        description: "Animated GIF",
+                        thumbnailURL: gif.previewURL
                     )
                 } else if !imageQueries.isEmpty {
                     embed = .images(images: imageQueries)
@@ -440,6 +497,10 @@ public final class ComposerViewModel {
                 }
             }
 
+            // Retire drafting BEFORE deleting: any in-flight debounce or
+            // later dismissal policy becomes a no-op, so a sent post can
+            // never leave a draft copy behind.
+            draftsRetired = true
             discardDraft()
             didSubmitSuccessfully = true
 

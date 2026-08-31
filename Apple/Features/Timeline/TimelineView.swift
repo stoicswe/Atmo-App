@@ -582,11 +582,10 @@ private struct RowFadeIn: ViewModifier {
 }
 
 // MARK: - Refresh Indicator
-// The pull dial: ratchet detents appear one by one around the ring as the
-// pull deepens — the visual counterpart of the rough-surface haptic — while
-// a gradient arc fills toward the trigger point. Crossing the threshold
-// flips the arrow and pops the dial ("release to refresh"); releasing swaps
-// it for the spinner with a scale pop.
+// The pull dial: a gradient arc fills toward the trigger point (the haptic
+// ratchet carries the rough-surface feel on its own). Crossing the
+// threshold flips the arrow and pops the dial ("release to refresh");
+// releasing swaps it for the spinner with a scale pop.
 private struct RefreshIndicatorView: View {
     let pullDistance: CGFloat
     let threshold: CGFloat
@@ -611,16 +610,6 @@ private struct RefreshIndicatorView: View {
                         .scaleEffect(0.9)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
-                    // Ratchet detents — one per haptic step of the pull.
-                    ForEach(0..<8, id: \.self) { index in
-                        Capsule()
-                            .fill(AtmoColors.accent)
-                            .frame(width: 2, height: 5)
-                            .offset(y: -14)
-                            .rotationEffect(.degrees(Double(index) * 45))
-                            .opacity(min(1, max(0, progress * 9 - CGFloat(index))) * 0.5)
-                    }
-
                     // Gradient arc filling toward the trigger point, with a
                     // slight wind-up rotation for liveliness.
                     Circle()
@@ -744,28 +733,25 @@ private struct NewPostsPill: View {
         .buttonStyle(.plain)
     }
 
-    /// Overlapping avatar circles, each offset left by `overlap` pts.
+    /// Overlapping avatar circles — an HStack with negative spacing, so
+    /// the fan's width is computed by layout itself. (The previous manual
+    /// offset-in-a-fixed-frame approach could disagree with the rendered
+    /// fan while the author list animated, drawing the arrow and label on
+    /// top of the avatars.)
     @ViewBuilder
     private var avatarStack: some View {
-        // ZStack with negative spacing produces the overlapping fan effect.
-        // We render in reverse order so the first (newest) author sits on top.
-        let displayed = authors // already capped at 5 in the ViewModel
-        ZStack(alignment: .leading) {
+        let displayed = authors // already capped at 5, unique DIDs (ViewModel)
+        HStack(spacing: -overlap) {
             ForEach(Array(displayed.enumerated()), id: \.element.authorDID) { index, author in
                 AvatarView(url: author.authorAvatarURL, size: avatarSize)
                     .overlay(
                         Circle()
                             .strokeBorder(AtmoColors.accent, lineWidth: 1.5)
                     )
-                    .offset(x: CGFloat(index) * (avatarSize - overlap))
                     .zIndex(Double(displayed.count - index)) // first author on top
             }
         }
-        // Total width = size + (n-1) * (size - overlap)
-        .frame(
-            width: avatarSize + CGFloat(max(0, displayed.count - 1)) * (avatarSize - overlap),
-            height: avatarSize
-        )
+        .frame(height: avatarSize)
     }
 }
 

@@ -211,11 +211,20 @@ public final class TimelineViewModel {
             let output = try await kit.getTimeline(limit: 50, cursor: nil)
             let fetched = output.feed.map { PostItem(feedPost: $0) }
 
-            // Find which items are genuinely new (not already in the list).
-            // Use URI as the canonical identity — two entries with the same URI
-            // are the same post regardless of repost wrapping.
-            let existingURIs = Set(posts.map { $0.uri })
-            let newItems = fetched.filter { !existingURIs.contains($0.uri) }
+            // Find which items are genuinely new. "Already in the list"
+            // must cover everything the list REPRESENTS — the cells AND the
+            // ancestors collapsed inside them: head pages re-deliver old
+            // slices of known conversations (the root, an intermediate
+            // reply) at their natural positions, and treating those as new
+            // hoisted their whole cell above genuinely newer posts.
+            let cellURIs = Set(posts.map { $0.uri })
+            var representedURIs = cellURIs
+            for post in posts {
+                for ancestor in post.threadAncestors {
+                    representedURIs.insert(ancestor.uri)
+                }
+            }
+            let newItems = fetched.filter { !representedURIs.contains($0.uri) }
 
             guard !newItems.isEmpty else { return (0, nil) }
 
@@ -233,9 +242,10 @@ public final class TimelineViewModel {
                 newItems.map(\.uri).filter { renderedURIs.contains($0) }
             )
 
-            // Anchor = the highest pre-existing post still rendered; the view
-            // keeps the viewport glued to it while new rows land above.
-            let anchorURI = deduped.first(where: { existingURIs.contains($0.uri) })?.uri
+            // Anchor = the highest pre-existing CELL still rendered (an
+            // ancestor URI never was a row, so it can't anchor a viewport);
+            // the view keeps the viewport glued to it while new rows land.
+            let anchorURI = deduped.first(where: { cellURIs.contains($0.uri) })?.uri
             newPostsAnchorURI = anchorURI
 
             return (newItems.count, anchorURI)
@@ -396,7 +406,21 @@ public final class TimelineViewModel {
             guard seenURIs.insert(representative.uri).inserted else { continue }
             result.append(representative)
         }
+
+        // The home feed is chronological — enforce it on the way out. Cells
+        // can end up out of order when slices merge across a seam (e.g. a
+        // stale slice of a known conversation re-delivered at the head used
+        // to hoist its whole cell above genuinely newer posts). Stable sort
+        // by each cell's story time, input order breaking ties.
         return result
+            .enumerated()
+            .sorted { a, b in
+                if a.element.feedSortDate != b.element.feedSortDate {
+                    return a.element.feedSortDate > b.element.feedSortDate
+                }
+                return a.offset < b.offset
+            }
+            .map(\.element)
     }
 
     // MARK: - Thread Post Seeding

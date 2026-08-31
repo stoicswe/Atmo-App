@@ -55,6 +55,8 @@ struct ComposerView: View {
     // externally — swipe on iOS, click-outside or native Cancel on macOS — and we
     // should auto-save the draft.
     @State private var dismissedExplicitly: Bool = false
+    /// Drafts browser opened from the toolbar's doc button.
+    @State private var showDraftsSheet: Bool = false
 
     // Translation state for the reply-to post
     @State private var showReplyTranslation: Bool = false
@@ -131,6 +133,17 @@ struct ComposerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { handleCancel() }
                 }
+                // Threads-style drafts button: browse saved drafts and
+                // continue one in this composer.
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Haptics.tap()
+                        showDraftsSheet = true
+                    } label: {
+                        Image(systemName: "doc.text")
+                    }
+                    .accessibilityLabel("Drafts")
+                }
                 // Threads-style "…" menu: explicit draft actions live here.
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -179,6 +192,11 @@ struct ComposerView: View {
                 Button("Keep Editing", role: .cancel) {}
             } message: {
                 Text("Save your draft to continue editing it later, or discard it permanently.")
+            }
+            .sheet(isPresented: $showDraftsSheet) {
+                ComposerDraftsSheet { draft in
+                    viewModel?.loadDraft(draft)
+                }
             }
             .task {
                 if viewModel == nil {
@@ -390,13 +408,17 @@ private struct SlotComposerRow: View {
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var selectedVideoItem: PhotosPickerItem? = nil
     @State private var isLoadingVideo = false
+    @State private var showGIFPicker = false
+    @State private var showVoiceMemo = false
     /// Why the last picked video couldn't be attached (limit or transcode
     /// failure) — shown under the toolbar until the next attempt.
     @State private var videoError: String? = nil
 
     // Alt-text editor state
     @State private var editingAltImageID: UUID? = nil
-    @State private var altTextDraft: String = ""
+    /// Images currently being described on-device (Vision + Apple
+    /// Intelligence) — drives the spinner in the thumbnail's ALT badge.
+    @State private var generatingAltIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -458,6 +480,12 @@ private struct SlotComposerRow: View {
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
+                    // Attached GIF chip
+                    if let gif = slot.attachedGIF {
+                        attachedGIFChip(gif)
+                            .padding(.vertical, AtmoTheme.Spacing.xs)
+                    }
+
                     // Why the last picked video couldn't be attached.
                     if let videoError {
                         Label(videoError, systemImage: "exclamationmark.triangle.fill")
@@ -484,25 +512,37 @@ private struct SlotComposerRow: View {
             // The connector line provides the visual gap below.
             .padding(.bottom, AtmoTheme.Spacing.xs)
         }
-        // Alt-text editor (Bluesky accessibility feature)
-        .alert(
-            "Alt Text",
+        .sheet(isPresented: $showGIFPicker) {
+            GIFPickerSheet { gif in
+                slot.attachGIF(gif)
+            }
+        }
+        .sheet(isPresented: $showVoiceMemo) {
+            VoiceMemoSheet { data, aspectRatio in
+                slot.attachVideo(
+                    data: data,
+                    fileName: "voice-\(UUID().uuidString).mp4",
+                    aspectRatio: aspectRatio
+                )
+            }
+        }
+        // Alt-text editor: image preview + editable description, with a
+        // regenerate button for the on-device analysis.
+        .sheet(
             isPresented: Binding(
                 get: { editingAltImageID != nil },
                 set: { if !$0 { editingAltImageID = nil } }
             )
         ) {
-            TextField("Describe this image", text: $altTextDraft)
-            Button("Save") {
-                if let id = editingAltImageID,
-                   let idx = slot.attachedImages.firstIndex(where: { $0.id == id }) {
-                    slot.attachedImages[idx].altText = altTextDraft
+            if let id = editingAltImageID,
+               let attachment = slot.attachedImages.first(where: { $0.id == id }) {
+                AltTextEditorSheet(
+                    imageData: attachment.data,
+                    initialText: attachment.altText
+                ) { newText in
+                    slot.updateImageAltText(id: id, altText: newText)
                 }
-                editingAltImageID = nil
             }
-            Button("Cancel", role: .cancel) { editingAltImageID = nil }
-        } message: {
-            Text("Alt text describes the image for people using screen readers.")
         }
     }
 
@@ -546,6 +586,38 @@ private struct SlotComposerRow: View {
                 }
             }
 
+            // GIF — Bluesky's picker selection, posted as an external embed
+            Button {
+                Haptics.tap()
+                showGIFPicker = true
+            } label: {
+                Text("GIF")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(slot.attachedGIF != nil ? AtmoColors.accent : Color.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2.5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(slot.attachedGIF != nil ? AtmoColors.accent : Color.secondary, lineWidth: 1.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(slot.attachedGIF != nil)
+            .accessibilityLabel("Add GIF")
+
+            // Mic — voice memo, rendered to a waveform video
+            Button {
+                Haptics.tap()
+                showVoiceMemo = true
+            } label: {
+                Image(systemName: "mic")
+                    .font(.body)
+                    .foregroundStyle(hasVideo ? Color.secondary.opacity(0.4) : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(hasVideo)
+            .accessibilityLabel("Record voice memo")
+
             if isLoadingVideo {
                 ProgressView()
                     .controlSize(.small)
@@ -568,8 +640,28 @@ private struct SlotComposerRow: View {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
             let fileName = item.itemIdentifier ?? "image_\(UUID().uuidString)"
             slot.addImage(data: data, fileName: "\(fileName).jpg")
+            // Describe the image on-device (Vision + Apple Intelligence) so
+            // alt text is filled in by the time the post goes out.
+            if let attached = slot.attachedImages.last, attached.altText.isEmpty {
+                autoGenerateAltText(for: attached.id, data: attached.data)
+            }
         }
         selectedItems = []
+    }
+
+    /// Runs image analysis in the background and fills the attachment's alt
+    /// text — unless the user typed their own or removed the image first.
+    private func autoGenerateAltText(for id: UUID, data: Data) {
+        generatingAltIDs.insert(id)
+        Task { @MainActor in
+            let generated = await ImageAltTextGenerator.generate(for: data)
+            generatingAltIDs.remove(id)
+            guard let generated,
+                  let current = slot.attachedImages.first(where: { $0.id == id }),
+                  current.altText.isEmpty
+            else { return }
+            slot.updateImageAltText(id: id, altText: generated)
+        }
     }
 
     /// Loads movie data from the picker, transcodes it to an H.264 MP4
@@ -628,6 +720,42 @@ private struct SlotComposerRow: View {
         .neumorphicGlassCard()
     }
 
+    // MARK: - GIF chip
+
+    private func attachedGIFChip(_ gif: GIFItem) -> some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            AsyncCachedImage(url: gif.previewURL) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Color.secondary.opacity(0.15)
+                }
+            }
+            .frame(width: 56, height: 42)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("GIF attached")
+                    .font(.caption.weight(.medium))
+                Text(gif.title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button {
+                slot.removeGIF()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(AtmoTheme.Spacing.md)
+        .neumorphicGlassCard()
+    }
+
     // MARK: - Image strip
 
     private var attachedImagesRow: some View {
@@ -655,28 +783,42 @@ private struct SlotComposerRow: View {
                         .buttonStyle(.plain)
                         .offset(x: 4, y: -4)
                     }
-                    // ALT badge (bottom-leading) — tap to edit alt text,
-                    // filled once alt text exists (matching Bluesky's app).
+                    // ALT badge (bottom-leading): spinner while the image is
+                    // being described on-device; an ⓘ once alt text exists.
+                    // Tap to view/edit in the alt-text editor.
                     .overlay(alignment: .bottomLeading) {
+                        let isAnalyzing = generatingAltIDs.contains(img.id)
                         Button {
-                            altTextDraft = img.altText
                             editingAltImageID = img.id
                         } label: {
-                            Text(img.altText.isEmpty ? "+ALT" : "ALT")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(
-                                    Capsule().fill(
-                                        img.altText.isEmpty
-                                            ? Color.black.opacity(0.6)
-                                            : AtmoColors.accent
-                                    )
+                            HStack(spacing: 3) {
+                                if isAnalyzing {
+                                    ProgressView()
+                                        .scaleEffect(0.55)
+                                        .tint(.white)
+                                        .frame(width: 10, height: 10)
+                                } else if !img.altText.isEmpty {
+                                    Image(systemName: "info.circle.fill")
+                                        .font(.caption2.weight(.bold))
+                                }
+                                Text(img.altText.isEmpty && !isAnalyzing ? "+ALT" : "ALT")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().fill(
+                                    img.altText.isEmpty
+                                        ? Color.black.opacity(0.6)
+                                        : AtmoColors.accent
                                 )
+                            )
                         }
                         .buttonStyle(.plain)
                         .padding(4)
+                        .disabled(isAnalyzing)
+                        .accessibilityLabel(img.altText.isEmpty ? "Add alt text" : "View or edit alt text")
                     }
                 }
             }
@@ -715,6 +857,163 @@ private struct SlotComposerRow: View {
         UIImage(data: data)
 #else
         NSImage(data: data)
+#endif
+    }
+}
+
+// MARK: - Composer Drafts Sheet
+/// Drafts browser reachable from the composer's toolbar: pick a draft to
+/// continue it here (current typing is auto-saved first), swipe to delete.
+private struct ComposerDraftsSheet: View {
+    let onPick: (ComposerDraft) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                let drafts = DraftStore.shared.drafts
+                if drafts.isEmpty {
+                    ContentUnavailableView(
+                        "No Drafts",
+                        systemImage: "doc.text",
+                        description: Text("Drafts you save will appear here.")
+                    )
+                } else {
+                    List {
+                        ForEach(drafts) { draft in
+                            Button {
+                                Haptics.tap()
+                                onPick(draft)
+                                dismiss()
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(draft.posts.first?.text.isEmpty == false
+                                         ? draft.posts.first!.text
+                                         : "Untitled draft")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                    HStack(spacing: 6) {
+                                        Text(draft.modifiedAt.atmoFormatted())
+                                        if draft.posts.count > 1 {
+                                            Text("· \(draft.posts.count)-post thread")
+                                        }
+                                        if draft.replyToURI != nil {
+                                            Text("· reply")
+                                        }
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .onDelete { offsets in
+                            let drafts = DraftStore.shared.drafts
+                            for offset in offsets where offset < drafts.count {
+                                DraftStore.shared.delete(id: drafts[offset].id)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Drafts")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+#if os(macOS)
+        .frame(minWidth: 400, minHeight: 460)
+#endif
+    }
+}
+
+// MARK: - Alt Text Editor
+/// Sheet for viewing and editing one image's alt text: preview on top,
+/// editable description below, and a button to rerun the on-device
+/// analysis (Vision + Apple Intelligence).
+private struct AltTextEditorSheet: View {
+    let imageData: Data
+    let initialText: String
+    let onSave: (String) -> Void
+
+    @State private var text: String = ""
+    @State private var isGenerating = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: AtmoTheme.Spacing.md) {
+                if let image = PlatformImage(data: imageData) {
+                    Image(platformImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
+                }
+
+                Text("Alt text describes the image for people using screen readers.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextEditor(text: $text)
+                    .frame(minHeight: 110)
+                    .padding(AtmoTheme.Spacing.sm)
+                    .scrollContentBackground(.hidden)
+                    .background(
+                        RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+
+                Button {
+                    isGenerating = true
+                    Task { @MainActor in
+                        if let generated = await ImageAltTextGenerator.generate(for: imageData) {
+                            text = generated
+                        }
+                        isGenerating = false
+                    }
+                } label: {
+                    if isGenerating {
+                        HStack(spacing: 6) {
+                            ProgressView().scaleEffect(0.8)
+                            Text("Analyzing…")
+                        }
+                    } else {
+                        Label("Generate description", systemImage: "sparkles")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(AtmoColors.accent)
+                .disabled(isGenerating)
+
+                Spacer(minLength: 0)
+            }
+            .padding(AtmoTheme.Spacing.lg)
+            .navigationTitle("Alt Text")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear { text = initialText }
+        }
+#if os(macOS)
+        .frame(minWidth: 440, minHeight: 540)
 #endif
     }
 }

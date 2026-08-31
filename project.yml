@@ -93,6 +93,9 @@ targets:
         # standard HTTPS/TLS (exempt), so TestFlight skips the "Missing
         # Compliance" hold and auto-distributes to internal testers.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        # Voice memos: the composer's mic button records audio clips that
+        # are rendered into waveform videos.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Atmo uses the microphone to record voice memos you attach to posts."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": YES

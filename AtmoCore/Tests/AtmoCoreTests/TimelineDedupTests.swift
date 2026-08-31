@@ -170,4 +170,63 @@ struct TimelineDedupTests {
         let single = PostItem(testURI: "at://did:a/app.bsky.feed.post/1")
         #expect(TimelineViewModel.collapseThreadSlices([single]).count == 1)
     }
+
+    // MARK: - Chronological ordering
+
+    @Test func cellsComeOutNewestFirstRegardlessOfInputOrder() {
+        // A stale-slice merge can hand collapse an out-of-order array:
+        // a 34-minute-old reply cell sitting above a 7-minute-old post.
+        let root = "at://did:a/app.bsky.feed.post/root"
+        let reply = PostItem(
+            testURI: "at://did:a/app.bsky.feed.post/reply",
+            replyParentURI: root,
+            replyRootURI: root,
+            indexedAt: t0.addingTimeInterval(-34 * 60)
+        )
+        let fresh = PostItem(
+            testURI: "at://did:b/app.bsky.feed.post/fresh",
+            indexedAt: t0.addingTimeInterval(-7 * 60)
+        )
+        let result = TimelineViewModel.collapseThreadSlices([reply, fresh])
+        #expect(result.map(\.uri) == [fresh.uri, reply.uri])
+    }
+
+    @Test func staleSliceOfKnownConversationDoesNotHoistItsCell() {
+        // The head fetch re-delivers the 10h-old ROOT of a conversation
+        // whose newest reply is 34m old; prepended above a 7m post, the
+        // conversation must still sort below the 7m post.
+        let rootURI = "at://did:a/app.bsky.feed.post/root"
+        let staleRoot = PostItem(testURI: rootURI, indexedAt: t0.addingTimeInterval(-10 * 3600))
+        let fresh = PostItem(
+            testURI: "at://did:b/app.bsky.feed.post/fresh",
+            indexedAt: t0.addingTimeInterval(-7 * 60)
+        )
+        let replyCell = PostItem(
+            testURI: "at://did:a/app.bsky.feed.post/reply",
+            replyParentURI: rootURI,
+            replyRootURI: rootURI,
+            indexedAt: t0.addingTimeInterval(-34 * 60)
+        )
+        // Merge seam order: [stale slice][existing cells...]
+        let result = TimelineViewModel.collapseThreadSlices([staleRoot, fresh, replyCell])
+        #expect(result.map(\.uri) == [fresh.uri, replyCell.uri])
+    }
+
+    @Test func repostsSortByRepostTimeNotOriginalPostTime() {
+        let repost = PostItem(
+            testURI: "at://did:a/app.bsky.feed.post/old",
+            indexedAt: t0.addingTimeInterval(-60),
+            isRepost: true
+        )
+        let older = PostItem(
+            testURI: "at://did:b/app.bsky.feed.post/mid",
+            indexedAt: t0.addingTimeInterval(-120)
+        )
+        let newest = PostItem(
+            testURI: "at://did:c/app.bsky.feed.post/new",
+            indexedAt: t0
+        )
+        let result = TimelineViewModel.collapseThreadSlices([older, repost, newest])
+        #expect(result.map(\.uri) == [newest.uri, repost.uri, older.uri])
+    }
 }

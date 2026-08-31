@@ -33,6 +33,9 @@ struct UserNotificationsPresenter: AlertPresenting {
                 content.threadIdentifier = "atmo.interactions"
             case .newPost(let authorDID):
                 content.threadIdentifier = "atmo.posts.\(authorDID)"
+            case .directMessage(let conversationID):
+                // One stack per conversation, like Messages.
+                content.threadIdentifier = "atmo.dms.\(conversationID)"
             }
 
             let request = UNNotificationRequest(

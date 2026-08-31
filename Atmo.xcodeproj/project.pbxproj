@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 159C86922803A5EE97A1D0B3 /* GlassModifiers.swift */; };
+		0754FB8F08C37F2424C85621 /* ImageAltTextGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0428C8CF6D1961E0D0B8A60 /* ImageAltTextGenerator.swift */; };
 		08B19C0F3DD2FFC095D6913A /* AtmoColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE2293C659B96F8502E117 /* AtmoColors.swift */; };
 		0BEE367ACF73BAA1DEB8E681 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
 		16413942467282E362CE91CD /* InAppBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967CF623DACB557545B3E065 /* InAppBrowser.swift */; };
@@ -29,6 +30,7 @@
 		496F933C6600B2472C27686C /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1852C1676F9B93E2152D1D2C /* LoadingView.swift */; };
 		4C4B14C8E18179FDD53D0A24 /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A042721FAAFC56FB1EF66BA /* ThreadView.swift */; };
 		52309379F3B2F77238279E09 /* ATProtoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1E32899101AB10F64A175CE4 /* ATProtoKit */; };
+		525C3745C23625E7227952AF /* GIFPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */; };
 		52A7076A1EC50C6BFBE8049A /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC62D50695E20DD950DBCC06 /* MessageBubbleView.swift */; };
 		54BA4BC259F1F2EDF4DB2490 /* AtmoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D4C752CD2EE12A1600868A /* AtmoTheme.swift */; };
 		5937998BA3B19976F6A6D359 /* ComposerToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 487A47451110A7905995A9DF /* ComposerToolbar.swift */; };
@@ -48,6 +50,8 @@
 		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A30966828A3215EB97F9E95 /* VideoPreparer.swift */; };
 		97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A585053040099E29C26DAB2B /* VerifiedBadge.swift */; };
+		99AE6A6A224F8D73C0BF7BBC /* WaveformVideoRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92842F70CAD67EDA55ED508 /* WaveformVideoRenderer.swift */; };
+		9C3AADAD4AEF37DC322745D7 /* VoiceMemoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */; };
 		9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */; };
 		9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		9F5252CF24C5091CEBD26A34 /* WatchSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBACCE37292793A5CC6E3831 /* WatchSettingsView.swift */; };
@@ -117,6 +121,7 @@
 		35D8ECCAC181EE3791D987A6 /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
 		36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationsPresenter.swift; sourceTree = "<group>"; };
 		487A47451110A7905995A9DF /* ComposerToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolbar.swift; sourceTree = "<group>"; };
+		55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoSheet.swift; sourceTree = "<group>"; };
 		5CC35E00C3AF01396EEA33F0 /* ThreadReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadReaderView.swift; sourceTree = "<group>"; };
 		60BFCDD1F37B662C607BF339 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
@@ -139,10 +144,13 @@
 		A585053040099E29C26DAB2B /* VerifiedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifiedBadge.swift; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
 		A9CE2293C659B96F8502E117 /* AtmoColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoColors.swift; sourceTree = "<group>"; };
+		A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFPickerSheet.swift; sourceTree = "<group>"; };
 		AAE176C0DD24FECA866AD862 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
 		AC62D50695E20DD950DBCC06 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
+		B0428C8CF6D1961E0D0B8A60 /* ImageAltTextGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAltTextGenerator.swift; sourceTree = "<group>"; };
 		B42653DA347F1073FF2A5E5C /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplePlatform.swift; sourceTree = "<group>"; };
+		B92842F70CAD67EDA55ED508 /* WaveformVideoRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformVideoRenderer.swift; sourceTree = "<group>"; };
 		B9AD2FFF59B01294EB8AFC66 /* ErrorBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerView.swift; sourceTree = "<group>"; };
 		BBACCE37292793A5CC6E3831 /* WatchSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettingsView.swift; sourceTree = "<group>"; };
 		BC7B1466B45A8EACAE111A51 /* PostEmbedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostEmbedView.swift; sourceTree = "<group>"; };
@@ -299,7 +307,11 @@
 			children = (
 				487A47451110A7905995A9DF /* ComposerToolbar.swift */,
 				BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */,
+				A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */,
+				B0428C8CF6D1961E0D0B8A60 /* ImageAltTextGenerator.swift */,
 				7A30966828A3215EB97F9E95 /* VideoPreparer.swift */,
+				55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */,
+				B92842F70CAD67EDA55ED508 /* WaveformVideoRenderer.swift */,
 			);
 			path = Composer;
 			sourceTree = "<group>";
@@ -598,9 +610,11 @@
 				6DA828B883E3B1912E20D3F5 /* EditProfileView.swift in Sources */,
 				3137ACFB0D8B6B24FB93BB88 /* ErrorBannerView.swift in Sources */,
 				237A8B3C295991985EF383B8 /* FeedItemView.swift in Sources */,
+				525C3745C23625E7227952AF /* GIFPickerSheet.swift in Sources */,
 				1FD075E8CE0F3E8D42D1958C /* GlassCard.swift in Sources */,
 				0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */,
 				5F8C12D599119CB1CF601449 /* Haptics.swift in Sources */,
+				0754FB8F08C37F2424C85621 /* ImageAltTextGenerator.swift in Sources */,
 				4072269A50D8C59B0D80239E /* ImageViewerView.swift in Sources */,
 				16413942467282E362CE91CD /* InAppBrowser.swift in Sources */,
 				EDBF8BC2F06A2A30279639E1 /* KeychainSecretsStore.swift in Sources */,
@@ -631,6 +645,8 @@
 				97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */,
 				85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */,
 				AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */,
+				9C3AADAD4AEF37DC322745D7 /* VoiceMemoSheet.swift in Sources */,
+				99AE6A6A224F8D73C0BF7BBC /* WaveformVideoRenderer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -708,6 +724,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Atmo uses the microphone to record voice memos you attach to posts.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -752,6 +769,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Atmo uses the microphone to record voice memos you attach to posts.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

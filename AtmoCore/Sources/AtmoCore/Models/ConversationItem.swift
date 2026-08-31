@@ -7,6 +7,9 @@ public struct ConversationItem: Identifiable, Hashable, Sendable {
     public let participants: [ParticipantInfo]
     public let lastMessage: String?
     public let lastMessageAt: Date?
+    /// DID of whoever sent the last message — lets the DM poller tell an
+    /// incoming message from the user's own.
+    public let lastMessageSenderDID: String?
     public let unreadCount: Int
 
     public struct ParticipantInfo: Hashable, Sendable {
@@ -32,11 +35,31 @@ public struct ConversationItem: Identifiable, Hashable, Sendable {
            case .messageView(let view) = lastMsg {
             self.lastMessage = view.text
             self.lastMessageAt = view.sentAt
+            self.lastMessageSenderDID = view.sender.authorDID
         } else {
             self.lastMessage = nil
             self.lastMessageAt = nil
+            self.lastMessageSenderDID = nil
         }
         self.unreadCount = convo.unreadCount
+    }
+
+    /// Internal fixture initializer for unit tests.
+    init(
+        testID: String,
+        participants: [ParticipantInfo] = [],
+        lastMessage: String? = nil,
+        lastMessageAt: Date? = nil,
+        lastMessageSenderDID: String? = nil,
+        unreadCount: Int = 0
+    ) {
+        self.id = testID
+        self.convoID = testID
+        self.participants = participants
+        self.lastMessage = lastMessage
+        self.lastMessageAt = lastMessageAt
+        self.lastMessageSenderDID = lastMessageSenderDID
+        self.unreadCount = unreadCount
     }
 
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
