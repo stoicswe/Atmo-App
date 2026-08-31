@@ -250,11 +250,22 @@ public final class TimelineViewModel {
         hasMore && cursor != nil
     }
 
+    /// Timestamp of the last completed page fetch — throttles back-to-back
+    /// loadMore calls.
+    @ObservationIgnored private var lastLoadMoreAt: Date? = nil
+
     public func loadMore() async {
         guard hasMore, !isLoading, !isRefreshing, !isCheckingForNew, cursor != nil else { return }
+        // Throttle: the tail row's onAppear can re-fire the instant each
+        // page lands. During a pathological layout pass (e.g. a navigation
+        // transition realizing the entire lazy feed) that grew the feed
+        // without bound and froze the main thread. Real scrolling never
+        // reaches the feed's end more often than twice a second.
+        if let last = lastLoadMoreAt, Date().timeIntervalSince(last) < 0.5 { return }
         // Prevent concurrent loadMore calls from racing each other
         isLoading = true
         await fetch()
+        lastLoadMoreAt = Date()
         isLoading = false
     }
 

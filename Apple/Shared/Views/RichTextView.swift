@@ -148,10 +148,18 @@ struct RichTextView: View {
 
     /// Colours @mentions sky-blue and attaches a tappable `atmo://profile/<handle>` link.
     /// Only applied to runs not already covered by server facets.
+    /// Compiled once — building an NSRegularExpression on every render was
+    /// a dominant cost in feed row bodies (visible in main-thread hang
+    /// samples as NSRegularExpression.init under styledText).
+    private static let mentionRegex = try? NSRegularExpression(
+        pattern: #"@([\w][\w.-]*[\w]|[\w]+)"#
+    )
+    private static let hashtagRegex = try? NSRegularExpression(
+        pattern: #"(?<!\w)#(\w+)"#
+    )
+
     private func applyMentionLinks(to attributed: inout AttributedString) {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"@([\w][\w.-]*[\w]|[\w]+)"#
-        ) else { return }
+        guard let regex = Self.mentionRegex else { return }
 
         let nsString = text as NSString
         let matches  = regex.matches(in: text, range: NSRange(location: 0, length: nsString.length))
@@ -183,9 +191,7 @@ struct RichTextView: View {
     private func applyHashtagLinks(to attributed: inout AttributedString) {
         // Match # followed by one or more word characters.
         // The negative look-behind (?<!\w) prevents matching mid-word "#" (e.g. in URLs).
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(?<!\w)#(\w+)"#
-        ) else { return }
+        guard let regex = Self.hashtagRegex else { return }
 
         let nsString = text as NSString
         let matches  = regex.matches(in: text, range: NSRange(location: 0, length: nsString.length))

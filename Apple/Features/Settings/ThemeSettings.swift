@@ -124,9 +124,20 @@ enum AccentPresets {
     /// Read the user's currently-selected accent preset from UserDefaults.
     /// Lives outside SwiftUI so non-reactive code paths can resolve the
     /// color without an `@AppStorage`.
+    ///
+    /// Cached by preset id: this is hit several times per feed row render
+    /// (every tinted glyph and link color), so the linear preset search
+    /// only reruns when the user actually changes the accent.
+    private static var cachedID: String? = nil
+    private static var cachedPreset: AccentPreset = all[0]
+
     static var current: AccentPreset {
         let id = UserDefaults.standard.string(forKey: ThemeKeys.accentPresetID) ?? defaultID
-        return preset(forID: id)
+        if id != cachedID {
+            cachedID = id
+            cachedPreset = preset(forID: id)
+        }
+        return cachedPreset
     }
 }
 
