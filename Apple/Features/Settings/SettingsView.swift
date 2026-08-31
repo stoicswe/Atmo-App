@@ -37,23 +37,8 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .appearance
 
     var body: some View {
-#if os(macOS)
-        TabView {
-            AppearanceTab()
-                .tabItem { Label(SettingsTab.appearance.rawValue, systemImage: SettingsTab.appearance.icon) }
-            NotificationsSettingsTab()
-                .tabItem { Label(SettingsTab.notifications.rawValue, systemImage: SettingsTab.notifications.icon) }
-            FamilyTab()
-                .tabItem { Label(SettingsTab.family.rawValue, systemImage: SettingsTab.family.icon) }
-            AccessibilityTab()
-                .tabItem { Label(SettingsTab.accessibility.rawValue, systemImage: SettingsTab.accessibility.icon) }
-            AccountTab()
-                .tabItem { Label(SettingsTab.account.rawValue, systemImage: SettingsTab.account.icon) }
-            AboutTab()
-                .tabItem { Label(SettingsTab.about.rawValue, systemImage: SettingsTab.about.icon) }
-        }
-        .navigationTitle("Settings")
-#else
+        // One layout on every platform: the Mail-style category chip bar
+        // (selected chip expands to icon + label) over the active section.
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AtmoTheme.Spacing.sm) {
@@ -82,11 +67,11 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
     }
 
-#if os(iOS)
     // Mail-style category chip: a compact icon circle that expands into a
     // tinted capsule with its label when selected.
     private struct CategoryChip: View {
@@ -118,7 +103,6 @@ struct SettingsView: View {
             .buttonStyle(.plain)
         }
     }
-#endif
 }
 
 // MARK: - Family

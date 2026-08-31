@@ -1,6 +1,9 @@
 import Foundation
 import ATProtoKit
 import Observation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - Explore Models
 /// One trending or suggested topic from Bluesky's Explore surface.
@@ -71,47 +74,35 @@ public final class ExploreStore {
     public private(set) var suggestedFeeds: [CustomFeedItem] = []
     public private(set) var suggestedAccounts: [SuggestedAccountItem] = []
     public private(set) var hasLoadedOnce = false
-    private var isLoading = false
 
     private init() {}
 
     /// Best-effort parallel fetch of all four sections; each fails
     /// independently and silently (the section just stays empty).
+    ///
+    /// Trends and topics come straight from the PUBLIC AppView with
+    /// tolerant decoding — the live `getTrends` payload carries status
+    /// values ("trending") the typed lexicon rejects, and public access
+    /// means these sections work even before the session restores.
+    /// Suggested feeds/accounts are personalized and need the session.
+    /// (No in-flight guard — same `.task(id:)` cancel-and-replace
+    /// rationale as `SavedFeedsStore.load`.)
     public func load(service: ATProtoService) async {
-        guard !isLoading, let kit = service.atProtoKit else { return }
-        isLoading = true
-        defer { isLoading = false }
+        async let trendsResult = Self.fetchPublicTrends(limit: 8)
+        async let topicsResult = Self.fetchPublicTopics(limit: 8)
 
-        // getTrends carries post counts, actor facepiles, and hot status —
-        // what the official Explore shows; getTrendingTopics still supplies
-        // the evergreen "interests" list.
-        async let trendsResult = try? kit.getTrends(limit: 8)
-        async let topicsResult = try? kit.getTrendingTopics(limit: 8)
-        async let feedsResult = try? kit.getSuggestedFeeds(limit: 8)
-        async let actorsResult = try? kit.getSuggestions(limit: 8)
+        let kit = service.atProtoKit
+        async let feedsResult = kit.map { k in Task { try? await k.getSuggestedFeeds(limit: 8) } }?.value
+        async let actorsResult = kit.map { k in Task { try? await k.getSuggestions(limit: 8) } }?.value
 
-        if let trends = await trendsResult {
-            trendingTopics = trends.trends.map { trend in
-                TrendingTopicItem(
-                    topic: trend.topic,
-                    displayName: trend.displayName,
-                    description: nil,
-                    postCount: trend.postCount,
-                    actorAvatarURLs: trend.actors.prefix(3).compactMap(\.avatarImageURL),
-                    isHot: trend.status == .hot
-                )
-            }
+        if let trends = await trendsResult, !trends.isEmpty {
+            trendingTopics = trends
         }
         if let topics = await topicsResult {
-            // Fallback when getTrends failed (older AppViews).
             if trendingTopics.isEmpty {
-                trendingTopics = topics.topics.map {
-                    TrendingTopicItem(topic: $0.topic, displayName: $0.displayName, description: $0.description)
-                }
+                trendingTopics = topics.topics
             }
-            suggestedTopics = topics.suggestedTopics.map {
-                TrendingTopicItem(topic: $0.topic, displayName: $0.displayName, description: $0.description)
-            }
+            suggestedTopics = topics.suggested
         }
         if let feeds = await feedsResult {
             suggestedFeeds = feeds.feeds.map {
@@ -135,5 +126,59 @@ public final class ExploreStore {
             }
         }
         hasLoadedOnce = true
+    }
+
+    // MARK: Public AppView fetches (tolerant decoding)
+
+    private struct PublicTrend: Decodable {
+        let topic: String
+        let displayName: String?
+        let description: String?
+        let postCount: Int?
+        let status: String?
+        let actors: [PublicActor]?
+        struct PublicActor: Decodable {
+            let avatar: String?
+        }
+    }
+
+    nonisolated private static func fetchPublicTrends(limit: Int) async -> [TrendingTopicItem]? {
+        struct Response: Decodable { let trends: [PublicTrend] }
+        guard let url = URL(string: "https://public.api.bsky.app/xrpc/app.bsky.unspecced.getTrends?limit=\(limit)"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let decoded = try? JSONDecoder().decode(Response.self, from: data)
+        else { return nil }
+        return decoded.trends.map { trend in
+            // getTrends' `topic` is an opaque feed key ("1ddc5211b77e"),
+            // not a searchable term — the human phrase lives in
+            // displayName, and that's what a tap should search for.
+            let searchTerm = trend.displayName?.isEmpty == false ? trend.displayName! : trend.topic
+            return TrendingTopicItem(
+                topic: searchTerm,
+                displayName: trend.displayName,
+                description: trend.description,
+                postCount: trend.postCount,
+                actorAvatarURLs: (trend.actors ?? []).prefix(3).compactMap { $0.avatar.flatMap(URL.init(string:)) },
+                isHot: trend.status == "hot"
+            )
+        }
+    }
+
+    nonisolated private static func fetchPublicTopics(limit: Int) async -> (topics: [TrendingTopicItem], suggested: [TrendingTopicItem])? {
+        struct Topic: Decodable {
+            let topic: String
+            let displayName: String?
+            let description: String?
+        }
+        struct Response: Decodable {
+            let topics: [Topic]
+            let suggested: [Topic]?
+        }
+        guard let url = URL(string: "https://public.api.bsky.app/xrpc/app.bsky.unspecced.getTrendingTopics?limit=\(limit)"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let decoded = try? JSONDecoder().decode(Response.self, from: data)
+        else { return nil }
+        let map = { (t: Topic) in TrendingTopicItem(topic: t.topic, displayName: t.displayName, description: t.description) }
+        return (decoded.topics.map(map), (decoded.suggested ?? []).map(map))
     }
 }

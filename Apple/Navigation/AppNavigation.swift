@@ -313,7 +313,11 @@ struct AppNavigation: View {
                     // raises a notification when an incoming message lands.
                     messagesMonitor = MessagesMonitor(service: service)
                 }
-                // Saved custom feeds for the drawer's quick-switch shelf.
+            }
+            // Saved custom feeds for the drawer/sidebar shelves — keyed on
+            // the session DID so it re-runs once restore completes (a
+            // launch-time run fires before the session exists).
+            .task(id: service.currentUserDID) {
                 await SavedFeedsStore.shared.load(service: service)
             }
     }
@@ -340,25 +344,18 @@ struct AppNavigation: View {
             // gets the system selection highlight, hover states, spacing,
             // and badge rendering — no custom-styled rows.
             List(selection: $selectedItem) {
+                // Mirrors the iPhone drawer: Home with the pinned feeds
+                // directly beneath it (the quick-switch shelf), then the
+                // rest of the primary items.
                 Section {
-                    ForEach(primaryItems) { item in
+                    sidebarFeedRow(nil)
+                    ForEach(SavedFeedsStore.shared.pinned) { feed in
+                        sidebarFeedRow(feed)
+                    }
+                    ForEach(primaryItems.filter { $0 != .timeline }) { item in
                         sidebarLabel(for: item)
                             .tag(item)
                             .listItemTint(.fixed(sidebarTint))
-                    }
-                }
-
-                // Saved feeds — pinned first, then the rest; parity with
-                // the iPhone drawer's quick-switch shelf.
-                if !SavedFeedsStore.shared.pinned.isEmpty || !SavedFeedsStore.shared.unpinned.isEmpty {
-                    Section("Feeds") {
-                        sidebarFeedRow(nil)
-                        ForEach(SavedFeedsStore.shared.pinned) { feed in
-                            sidebarFeedRow(feed)
-                        }
-                        ForEach(SavedFeedsStore.shared.unpinned) { feed in
-                            sidebarFeedRow(feed)
-                        }
                     }
                 }
 
@@ -367,6 +364,15 @@ struct AppNavigation: View {
                         sidebarLabel(for: item)
                             .tag(item)
                             .listItemTint(.fixed(sidebarTint))
+                    }
+                }
+
+                // Saved-but-unpinned feeds, like the drawer's Feeds block.
+                if !SavedFeedsStore.shared.unpinned.isEmpty {
+                    Section("Feeds") {
+                        ForEach(SavedFeedsStore.shared.unpinned) { feed in
+                            sidebarFeedRow(feed)
+                        }
                     }
                 }
             }
@@ -958,20 +964,15 @@ struct AppNavigation: View {
                     .frame(width: 20, height: 20)
                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 } else {
-                    Image(systemName: "person.2")
+                    Image(systemName: isActive ? "house.fill" : "house")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(sidebarTint)
                         .frame(width: 20)
                 }
-                Text(feed?.displayName ?? "Following")
+                Text(feed?.displayName ?? "Home")
                     .lineLimit(1)
                     .fontWeight(isActive ? .semibold : .regular)
                 Spacer(minLength: 0)
-                if feed?.isPinned == true {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                }
             }
             .contentShape(Rectangle())
         }

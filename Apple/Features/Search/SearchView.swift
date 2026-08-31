@@ -615,7 +615,11 @@ private struct ExploreSectionsView: View {
             .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
             .padding(.vertical, AtmoTheme.Spacing.md)
         }
-        .task {
+        // Keyed on the session DID: runs at first appearance AND again
+        // when the session finishes restoring — the personalized sections
+        // (feeds, accounts) need it; a launch-time run used to fire before
+        // restore and never retry, leaving the page blank.
+        .task(id: service.currentUserDID) {
             await ExploreStore.shared.load(service: service)
         }
     }

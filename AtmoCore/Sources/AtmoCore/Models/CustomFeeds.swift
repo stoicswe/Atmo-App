@@ -35,16 +35,20 @@ public final class SavedFeedsStore {
     public private(set) var pinned: [CustomFeedItem] = []
     public private(set) var unpinned: [CustomFeedItem] = []
     public private(set) var hasLoadedOnce = false
-    private var isLoading = false
 
     private init() {}
 
     /// Fetches saved-feed preferences and resolves each generator's
     /// display info. Silent on failure — the drawer just shows no feeds.
+    ///
+    /// No in-flight guard, deliberately: callers run this from
+    /// `.task(id: sessionDID)`, which CANCELS the launch-time attempt the
+    /// moment the session identity lands and immediately starts the real
+    /// one. A busy-flag made that replacement bail while the cancelled
+    /// attempt unwound — leaving the store empty forever. A cancelled
+    /// attempt throws before writing, so the latest attempt's writes win.
     public func load(service: ATProtoService) async {
-        guard !isLoading, let kit = service.atProtoKit else { return }
-        isLoading = true
-        defer { isLoading = false }
+        guard let kit = service.atProtoKit else { return }
 
         do {
             let output = try await kit.getPreferences()
@@ -81,7 +85,8 @@ public final class SavedFeedsStore {
             unpinned = merged.unpinned
             hasLoadedOnce = true
         } catch {
-            // Background fetch — not worth surfacing.
+            // Background fetch — not worth surfacing (cancellation of a
+            // superseded attempt lands here too).
         }
     }
 

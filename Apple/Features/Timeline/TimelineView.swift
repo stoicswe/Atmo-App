@@ -72,6 +72,29 @@ struct TimelineView: View {
                     guard isReady, viewModel.posts.isEmpty, !viewModel.isLoading else { return }
                     Task { await viewModel.loadInitial() }
                 }
+#if os(macOS)
+                // macOS refreshes via the toolbar (⌘R) — the elastic
+                // pull gesture is disabled there.
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        if viewModel.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button {
+                                Task {
+                                    viewModel.clearNewPostsCount()
+                                    await viewModel.refresh()
+                                }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .keyboardShortcut("r", modifiers: .command)
+                            .help("Refresh timeline")
+                        }
+                    }
+                }
+#endif
         } else {
             NavigationStack(path: $ownedNavPath) {
                 feedBody
@@ -430,7 +453,9 @@ struct TimelineView: View {
         }
 #endif
 
-        // ── Pull-to-refresh ──
+        // ── Pull-to-refresh (iOS only; macOS refreshes via the toolbar
+        // button — trackpad rubber-banding made the pull gesture janky) ──
+#if os(iOS)
         // offset > 0 means the user has actively pulled the scroll content below its
         // natural top edge. We only update pullDistance when the user is ACTIVELY
         // pulling (offset > 0). During normal downward scrolling (offset <= 0) we
@@ -498,7 +523,7 @@ struct TimelineView: View {
                 isRefreshTriggered = false
             }
         }
-
+#endif
     }
 
     /// One-shot scroll to the iCloud-synced read position. Runs after the
