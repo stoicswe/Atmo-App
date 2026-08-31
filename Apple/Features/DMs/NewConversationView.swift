@@ -16,6 +16,8 @@ struct NewConversationView: View {
     @State private var searchText: String = ""
     /// The candidate currently being opened (shows a row spinner).
     @State private var openingDID: String? = nil
+    /// Candidate awaiting the ask-a-parent flow (managed child accounts).
+    @State private var askTarget: NewConversationViewModel.Candidate? = nil
 
     var body: some View {
         NavigationStack {
@@ -35,6 +37,9 @@ struct NewConversationView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .sheet(item: $askTarget) { candidate in
+                AskToDMSheet(handle: candidate.handle, displayName: candidate.displayName)
             }
         }
         .task {
@@ -94,6 +99,13 @@ struct NewConversationView: View {
     ) -> some View {
         Button {
             guard openingDID == nil else { return }
+            // Family controls: a managed child account asks a parent
+            // before starting a NEW conversation. Approved handles (and
+            // non-managed accounts) go straight through.
+            guard ParentalControlsStore.shared.canStartDM(with: candidate.handle) else {
+                askTarget = candidate
+                return
+            }
             openingDID = candidate.did
             Task {
                 if let convo = await vm.openConversation(with: candidate.did) {

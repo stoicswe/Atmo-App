@@ -19,7 +19,11 @@ struct SensitiveMediaShield: ViewModifier {
     private var policyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
     @State private var revealed = false
 
-    private var policy: SensitiveMediaPolicy { .stored(rawValue: policyRaw) }
+    /// The stored preference, overridden to Hide for managed child
+    /// accounts (Family controls lock).
+    private var policy: SensitiveMediaPolicy {
+        ParentalControlsStore.shared.effectiveSensitiveMediaPolicy(stored: .stored(rawValue: policyRaw))
+    }
 
     func body(content: Content) -> some View {
         if !isSensitive || policy == .show {

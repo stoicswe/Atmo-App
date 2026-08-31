@@ -1,4 +1,5 @@
 import SwiftUI
+import AtmoCore
 
 // MARK: - In-App Browser
 // iOS: web links open inside the app in an SFSafariViewController (Reader,
@@ -47,6 +48,7 @@ private struct SafariView: UIViewControllerRepresentable {
 struct InAppBrowserHost: ViewModifier {
 #if os(iOS)
     @State private var item: InAppBrowserItem? = nil
+    @State private var showLinkBlockedAlert = false
 
     func body(content: Content) -> some View {
         content
@@ -54,12 +56,23 @@ struct InAppBrowserHost: ViewModifier {
                 SafariView(url: item.url)
                     .ignoresSafeArea()
             }
+            .alert("Links Are Off", isPresented: $showLinkBlockedAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Opening links is managed by your Family settings.")
+            }
             .environment(\.openURL, OpenURLAction { url in
                 // SFSafariViewController accepts only web URLs; everything
                 // else (mailto:, app schemes) keeps the system behavior.
                 guard let scheme = url.scheme?.lowercased(),
                       scheme == "http" || scheme == "https"
                 else { return .systemAction }
+                // Family controls: a managed child account may have link
+                // browsing turned off entirely.
+                guard ParentalControlsStore.shared.active.allowsLinkBrowsing else {
+                    showLinkBlockedAlert = true
+                    return .handled
+                }
                 item = InAppBrowserItem(url: url)
                 return .handled
             })

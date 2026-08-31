@@ -20,5 +20,11 @@
 	     stoicswe.com-atmin-app App ID in the developer portal. -->
 	<key>com.apple.developer.sensitivecontentanalysis.client</key>
 	<true/>
+	<!-- Declared Age Range (Apple family controls): lets a parent share
+	     the child's age bracket with the app, activating the managed
+	     controls. Same portal note as above: if automatic signing rejects
+	     it, enable the "Declared Age Range" capability on the App ID. -->
+	<key>com.apple.developer.declared-age-range</key>
+	<true/>
 </dict>
 </plist>

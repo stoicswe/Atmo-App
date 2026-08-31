@@ -11,7 +11,7 @@ struct WatchLoginView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                Text("Atmo")
+                Text("@omic")
                     .font(.title3.bold())
 
                 if service.requiresTwoFactor {

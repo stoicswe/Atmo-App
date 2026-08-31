@@ -91,7 +91,10 @@ public final class MessagesMonitor {
             }
             hasBaseline = true
 
-            if !incoming.isEmpty {
+            if !incoming.isEmpty,
+               // Family controls: a managed child account only surfaces
+               // incoming-DM notifications when the parent allows it.
+               ParentalControlsStore.shared.active.allowsDMNotifications {
                 _ = await Atmo.platform.alertPresenter.requestAuthorization()
                 await Atmo.platform.alertPresenter.present(incoming.map(Self.alert(for:)))
             }

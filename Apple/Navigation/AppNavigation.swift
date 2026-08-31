@@ -271,6 +271,8 @@ struct AppNavigation: View {
             // web links to the in-app browser on iOS. (Sheets containing
             // links still host their own copy; see InAppBrowserHost.)
             .hostsInAppBrowser()
+            // Declared Age Range probe + PermissionKit response listener.
+            .integratesFamilyControls()
             .task {
                 // Create persistent VMs eagerly on first appearance.
                 // Crucially, kick off the initial timeline fetch here — in the

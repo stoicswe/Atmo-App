@@ -15,6 +15,7 @@ struct SettingsView: View {
     private enum SettingsTab: String, CaseIterable, Identifiable {
         case appearance = "Appearance"
         case notifications = "Notifications"
+        case family = "Family"
         case accessibility = "Accessibility"
         case account = "Account"
         case about = "About"
@@ -25,6 +26,7 @@ struct SettingsView: View {
             switch self {
             case .appearance:    return "paintbrush"
             case .notifications: return "bell.badge"
+            case .family:        return "figure.2.and.child.holdinghands"
             case .accessibility: return "figure.arms.open"
             case .account:       return "person.crop.circle"
             case .about:         return "info.circle"
@@ -41,6 +43,8 @@ struct SettingsView: View {
                 .tabItem { Label(SettingsTab.appearance.rawValue, systemImage: SettingsTab.appearance.icon) }
             NotificationsSettingsTab()
                 .tabItem { Label(SettingsTab.notifications.rawValue, systemImage: SettingsTab.notifications.icon) }
+            FamilyTab()
+                .tabItem { Label(SettingsTab.family.rawValue, systemImage: SettingsTab.family.icon) }
             AccessibilityTab()
                 .tabItem { Label(SettingsTab.accessibility.rawValue, systemImage: SettingsTab.accessibility.icon) }
             AccountTab()
@@ -68,6 +72,7 @@ struct SettingsView: View {
             switch selectedTab {
             case .appearance:    AppearanceTab()
             case .notifications: NotificationsSettingsTab()
+            case .family:        FamilyTab()
             case .accessibility: AccessibilityTab()
             case .account:       AccountTab()
             case .about:         AboutTab()
@@ -113,13 +118,111 @@ struct SettingsView: View {
 #endif
 }
 
+// MARK: - Family
+// Content controls in one place: the sensitive-media policy and the
+// Apple Family (Declared Age Range / PermissionKit) managed controls.
+
+private struct FamilyTab: View {
+    @AppStorage(SensitiveMediaPolicy.storageKey) private var sensitivePolicyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
+    @AppStorage(FamilyControlsIntegration.probedKey) private var hasProbedAgeRange: Bool = false
+
+    var body: some View {
+        Form {
+            sensitiveContentSection
+            familySection
+            disclaimerSection
+        }
+#if os(macOS)
+        .formStyle(.grouped)
+#endif
+    }
+
+    // MARK: Disclaimer
+
+    private var disclaimerSection: some View {
+        Section {
+            Link(destination: URL(string: "https://www.apple.com/families/")!) {
+                Label("Learn about Apple parental controls", systemImage: "arrow.up.right")
+            }
+        } footer: {
+            Text("@omic supports Apple's parental controls for child accounts, including the age range a parent shares through Family Sharing and ask-a-parent permission requests. These protections are provided by Apple's family frameworks — what can be managed here, and how approvals work, is determined by that SDK and your device's Family settings, not by @omic itself.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Sensitive content
+
+    private var sensitiveContentSection: some View {
+        Section {
+            Picker("Explicit images", selection: $sensitivePolicyRaw) {
+                ForEach(SensitiveMediaPolicy.allCases) { policy in
+                    Text(policy.displayName).tag(policy.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(ParentalControlsStore.shared.active.locksSensitiveMediaHidden)
+        } header: {
+            Text("Sensitive Content")
+        } footer: {
+            Text(ParentalControlsStore.shared.active.locksSensitiveMediaHidden
+                 ? "Locked to Hide by your Family settings."
+                 : "Applies to media labeled adult or graphic on Bluesky. Blur covers it until you tap Show; Hide removes it entirely. When your device's Sensitive Content Warning (Settings → Privacy & Security) is on, unlabeled nudity is also detected on-device — the same protection iMessage uses; nothing leaves your device.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Managed controls
+    // Read-only reflection of the managed state: a child can see what's in
+    // force but only parent-approval flows can change it.
+
+    private var familySection: some View {
+        let store = ParentalControlsStore.shared
+        return Section {
+            LabeledContent("Account", value: familyStatusText(store.ageCategory))
+            if store.isChildAccount {
+                Group {
+                    Toggle("Ask before new chats", isOn: .constant(store.active.requiresAskToDM))
+                    Toggle("Show my posts in Discover", isOn: .constant(store.active.showsPostsInDiscover))
+                    Toggle("New message alerts", isOn: .constant(store.active.allowsDMNotifications))
+                    Toggle("Open links in browser", isOn: .constant(store.active.allowsLinkBrowsing))
+                }
+                .disabled(true)
+                LabeledContent("Sensitive media", value: "Hidden")
+            }
+            Button("Check Family Settings") {
+                // Clearing the flag re-arms the root probe, which watches
+                // this value and re-runs immediately.
+                hasProbedAgeRange = false
+            }
+        } header: {
+            Text("Managed Controls")
+        } footer: {
+            Text(store.isChildAccount
+                 ? "These controls are managed through Apple Family settings and parent approvals — they can't be changed here."
+                 : "When a parent shares an age range for this device's account (Settings → Family), managed controls apply automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func familyStatusText(_ category: AgeCategory) -> String {
+        switch category {
+        case .unknown: return "Not managed"
+        case .child: return "Child (managed)"
+        case .teen: return "Teen"
+        case .adult: return "Adult"
+        }
+    }
+}
+
 // MARK: - Appearance
 
 private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
-    @AppStorage(SensitiveMediaPolicy.storageKey) private var sensitivePolicyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
 #if os(iOS)
     @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
 #endif
@@ -136,20 +239,6 @@ private struct AppearanceTab: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                Picker("Explicit images", selection: $sensitivePolicyRaw) {
-                    ForEach(SensitiveMediaPolicy.allCases) { policy in
-                        Text(policy.displayName).tag(policy.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Sensitive Content")
-            } footer: {
-                Text("Applies to media labeled adult or graphic on Bluesky. Blur covers it until you tap Show; Hide removes it entirely. When your device's Sensitive Content Warning (Settings → Privacy & Security) is on, unlabeled nudity is also detected on-device — the same protection iMessage uses; nothing leaves your device.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
 #if os(iOS)
             if UIDevice.current.userInterfaceIdiom == .phone {
@@ -202,7 +291,7 @@ private struct AppearanceTab: View {
             } header: {
                 Text("Accent color")
             } footer: {
-                Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus Atmo's own Sky.")
+                Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -507,7 +596,7 @@ private struct AccountTab: View {
             } header: {
                 Text("Signed in")
             } footer: {
-                Text("Atmo signs in with a Bluesky App Password. Your session tokens are stored in the Keychain.")
+                Text("@omic signs in with a Bluesky App Password. Your session tokens are stored in the Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -680,7 +769,7 @@ private struct AboutTab: View {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "—"
         let build = info?["CFBundleVersion"] as? String ?? "—"
-        return "Atmo \(short) (\(build))"
+        return "@omic \(short) (\(build))"
     }
 }
 

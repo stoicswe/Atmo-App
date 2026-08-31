@@ -48,7 +48,7 @@ struct LoginView: View {
                             )
                             .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing)
 
-                        Text("Atmo")
+                        Text("@omic")
                             .font(AtmoFonts.appTitle)
                         Text("for Bluesky")
                             .font(.callout)
