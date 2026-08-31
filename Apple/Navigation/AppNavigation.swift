@@ -348,6 +348,20 @@ struct AppNavigation: View {
                     }
                 }
 
+                // Saved feeds — pinned first, then the rest; parity with
+                // the iPhone drawer's quick-switch shelf.
+                if !SavedFeedsStore.shared.pinned.isEmpty || !SavedFeedsStore.shared.unpinned.isEmpty {
+                    Section("Feeds") {
+                        sidebarFeedRow(nil)
+                        ForEach(SavedFeedsStore.shared.pinned) { feed in
+                            sidebarFeedRow(feed)
+                        }
+                        ForEach(SavedFeedsStore.shared.unpinned) { feed in
+                            sidebarFeedRow(feed)
+                        }
+                    }
+                }
+
                 Section("Library") {
                     ForEach(bottomItems) { item in
                         sidebarLabel(for: item)
@@ -914,6 +928,55 @@ struct AppNavigation: View {
     private var currentCustomFeedURI: String? {
         if case .custom(let uri, _) = timelineViewModel?.feedSource { return uri }
         return nil
+    }
+
+    /// One sidebar row per saved feed (nil = the Following timeline).
+    /// Plain buttons rather than selection rows: the List's selection type
+    /// is SidebarItem, and feeds switch the timeline's SOURCE instead.
+    @ViewBuilder
+    private func sidebarFeedRow(_ feed: CustomFeedItem?) -> some View {
+        let isActive = selectedItem == .timeline && currentCustomFeedURI == feed?.uri
+        Button {
+            switchTimelineFeed(feed)
+            selectedItem = .timeline
+        } label: {
+            HStack(spacing: 8) {
+                if let feed {
+                    AsyncCachedImage(url: feed.avatarURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(sidebarTint.opacity(0.25))
+                                .overlay {
+                                    Image(systemName: "square.stack")
+                                        .font(.caption2)
+                                        .foregroundStyle(sidebarTint)
+                                }
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                } else {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(sidebarTint)
+                        .frame(width: 20)
+                }
+                Text(feed?.displayName ?? "Following")
+                    .lineLimit(1)
+                    .fontWeight(isActive ? .semibold : .regular)
+                Spacer(minLength: 0)
+                if feed?.isPinned == true {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(isActive ? sidebarTint.opacity(0.12) : nil)
     }
 
     /// Switches the home timeline between Following (nil) and a saved feed.

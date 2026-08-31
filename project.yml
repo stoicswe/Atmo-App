@@ -79,6 +79,9 @@ targets:
         ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
         ENABLE_INCOMING_NETWORK_CONNECTIONS: NO
         ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY: YES
+        # Voice memos: the macOS sandbox needs the audio-input resource
+        # access or AVAudioRecorder silently refuses to record.
+        ENABLE_RESOURCE_ACCESS_AUDIO_INPUT: YES
         ENABLE_USER_SELECTED_FILES: readonly
         REGISTER_APP_GROUPS: YES
         AUTOMATION_APPLE_EVENTS: NO

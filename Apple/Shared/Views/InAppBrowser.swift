@@ -78,7 +78,28 @@ struct InAppBrowserHost: ViewModifier {
             })
     }
 #else
-    func body(content: Content) -> some View { content }
+    // macOS: links open in the default browser (the platform convention),
+    // but the Family link-blocking control is enforced the same as iOS.
+    @State private var showLinkBlockedAlert = false
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Links Are Off", isPresented: $showLinkBlockedAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Opening links is managed by your Family settings.")
+            }
+            .environment(\.openURL, OpenURLAction { url in
+                guard let scheme = url.scheme?.lowercased(),
+                      scheme == "http" || scheme == "https"
+                else { return .systemAction }
+                guard ParentalControlsStore.shared.active.allowsLinkBrowsing else {
+                    showLinkBlockedAlert = true
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
 #endif
 }
 

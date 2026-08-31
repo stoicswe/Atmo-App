@@ -29,10 +29,13 @@ final class TopicSummarizer {
 
     /// True when the OS serves Apple's advanced on-device model
     /// (newer-generation hardware — iPhone 17 Pro class, iOS 27+).
-    /// iOS-only for now: the `variant` API is 27-era and the macOS build
-    /// still compiles against the macOS 26 SDK.
+    ///
+    /// The `variant` API only exists in 27-era SDKs, and `#available` is a
+    /// RUNTIME check — building with a 26-era SDK (Xcode Cloud's stable
+    /// toolchain, Build 24's failure) needs this COMPILE-time gate too:
+    /// stable Xcode 26.x ships Swift 6.3, the 27 toolchain ships 6.4.
     static var usesAdvancedModel: Bool {
-#if canImport(FoundationModels) && os(iOS)
+#if canImport(FoundationModels) && os(iOS) && compiler(>=6.4)
         if #available(iOS 27.0, *) {
             return SystemLanguageModel.default.variant == .coreAdvanced3
         }
