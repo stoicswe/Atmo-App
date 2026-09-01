@@ -124,6 +124,7 @@ struct VoiceMemoSheet: View {
             }
             .onDisappear { stopEverything() }
         }
+        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
 #endif

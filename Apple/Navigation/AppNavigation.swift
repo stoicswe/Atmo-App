@@ -387,6 +387,9 @@ struct AppNavigation: View {
                 }
             }
             .listStyle(.sidebar)
+            // Accent wash behind the sidebar too, so the whole window
+            // carries the theme (replaces the sidebar material while on).
+            .themedBackdrop()
             // Wide enough that "Notifications" and "Messages" don't truncate.
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .navigationTitle("@omic")

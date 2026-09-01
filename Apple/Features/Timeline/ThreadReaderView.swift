@@ -51,6 +51,7 @@ struct ThreadReaderView: View {
         // Sheets can't lean on the root's browser host (a covered node
         // cannot present) — the Reader hosts its own for its link cards.
         .hostsInAppBrowser()
+        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 520, minHeight: 620)
 #endif

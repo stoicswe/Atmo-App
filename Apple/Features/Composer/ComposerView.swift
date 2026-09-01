@@ -253,6 +253,9 @@ struct ComposerView: View {
                 text: replyTo?.text ?? ""
             )
         }
+        // Accent wash inside every composer presentation — new post,
+        // reply, quote, resumed draft (Settings → Appearance).
+        .themedBackdrop()
     }
 
     // MARK: - Cancel handling
@@ -998,6 +1001,7 @@ private struct ComposerDraftsSheet: View {
                 }
             }
         }
+        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 400, minHeight: 460)
 #endif
@@ -1083,6 +1087,7 @@ private struct AltTextEditorSheet: View {
             }
             .onAppear { text = initialText }
         }
+        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 440, minHeight: 540)
 #endif

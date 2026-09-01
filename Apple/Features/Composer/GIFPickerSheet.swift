@@ -54,6 +54,7 @@ struct GIFPickerSheet: View {
                 }
             }
         }
+        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 460, minHeight: 540)
 #endif

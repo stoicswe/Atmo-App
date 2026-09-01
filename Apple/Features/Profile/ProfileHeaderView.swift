@@ -169,6 +169,7 @@ struct ProfileHeaderView: View {
         .sheet(isPresented: $showEditProfile) {
             if let vm = viewModel {
                 EditProfileView(profile: profile, viewModel: vm)
+                    .themedBackdrop()
             }
         }
     }

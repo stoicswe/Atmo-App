@@ -251,6 +251,7 @@ struct PostInteractionSettingsSheet: View {
                 }
             }
         }
+        .themedBackdrop()
 #if os(iOS)
         .presentationDetents([.medium, .large])
 #endif

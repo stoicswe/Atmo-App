@@ -101,11 +101,14 @@ struct TimelineView: View {
                     .navigationTitle("Home")
                     .navigationDestination(for: PostNavTarget.self) { target in
                         ThreadView(postURI: target.uri)
+                            .themedBackdrop()
                     }
                     .navigationDestination(for: String.self) { did in
                         ProfileView(actorDID: did)
+                            .themedBackdrop()
                     }
             }
+            .themedBackdrop()
             .task { await loadIfNeeded() }
             .onChange(of: service.atProtoKit != nil) { _, isReady in
                 guard isReady, viewModel.posts.isEmpty, !viewModel.isLoading else { return }
