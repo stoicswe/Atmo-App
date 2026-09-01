@@ -411,6 +411,10 @@ private struct SlotComposerRow: View {
     @State private var isLoadingVideo = false
     @State private var showGIFPicker = false
     @State private var showVoiceMemo = false
+#if os(iOS)
+    /// In-app camera (photo/video capture straight into the slot).
+    @State private var showCamera = false
+#endif
     /// Why the last picked video couldn't be attached (limit or transcode
     /// failure) — shown under the toolbar until the next attempt.
     @State private var videoError: String? = nil
@@ -520,6 +524,14 @@ private struct SlotComposerRow: View {
                 slot.attachGIF(gif)
             }
         }
+#if os(iOS)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraCaptureView { capture in
+                handleCameraCapture(capture)
+            }
+            .ignoresSafeArea()
+        }
+#endif
         .sheet(isPresented: $showVoiceMemo) {
             // The take attaches as an audio REFERENCE — the waveform video
             // renders at publish time (PostPublisher), not here.
@@ -557,6 +569,25 @@ private struct SlotComposerRow: View {
         let imageCount = slot.attachedImages.count
         let hasVideo = slot.attachedVideo != nil
         return HStack(spacing: AtmoTheme.Spacing.lg) {
+#if os(iOS)
+            // Camera — shoot a photo or video straight into the slot. The
+            // capture also lands in the user's photo library.
+            if CameraCaptureView.isAvailable {
+                Button {
+                    Haptics.tap()
+                    showCamera = true
+                } label: {
+                    Image(systemName: "camera")
+                        .font(.body)
+                        .foregroundStyle(imageCount >= 4 || hasVideo
+                                         ? Color.secondary.opacity(0.4) : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(imageCount >= 4 || hasVideo)
+                .accessibilityLabel("Take a photo or video")
+            }
+#endif
+
             PhotosPicker(
                 selection: $selectedItems,
                 maxSelectionCount: 4 - imageCount,
@@ -691,7 +722,19 @@ private struct SlotComposerRow: View {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
             try raw.write(to: url)
+            await attachVideoReference(at: url)
+        } catch {
+            videoError = "Couldn't read that video. Try a different clip."
+        }
+    }
 
+    /// Validates a composer-owned video file (length cap, readability),
+    /// reads its display dimensions, and attaches it as a reference.
+    /// Shared by the photo-library pick and the in-app camera. Sets
+    /// `videoError` (and removes the file) when the clip can't be posted.
+    @MainActor
+    private func attachVideoReference(at url: URL) async {
+        do {
             let asset = AVURLAsset(url: url)
             guard let duration = try? await asset.load(.duration).seconds, duration.isFinite else {
                 try? FileManager.default.removeItem(at: url)
@@ -709,6 +752,44 @@ private struct SlotComposerRow: View {
             videoError = "Couldn't read that video. Try a different clip."
         }
     }
+
+#if os(iOS)
+    // MARK: - Camera capture
+
+    /// A capture from the in-app camera: keep a copy in the user's photo
+    /// library (add-only, best-effort), then attach it to the slot exactly
+    /// like picked media — the preview tiles show it, and publishing runs
+    /// through PostPublisher's background pipeline on Post.
+    private func handleCameraCapture(_ capture: CameraCaptureView.Capture) {
+        videoError = nil
+        switch capture {
+        case .photo(let image):
+            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+            slot.addImage(data: data, fileName: "camera-\(UUID().uuidString).jpg")
+            // Same on-device description pass as picked photos.
+            if let attached = slot.attachedImages.last, attached.altText.isEmpty {
+                autoGenerateAltText(for: attached.id, data: attached.data)
+            }
+
+        case .video(let cameraTempURL):
+            // The camera's temp file dies with its UI — copy it NOW,
+            // synchronously, into a composer-owned reference file.
+            let kept = FileManager.default.temporaryDirectory
+                .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
+            do {
+                try FileManager.default.copyItem(at: cameraTempURL, to: kept)
+            } catch {
+                videoError = "Couldn't keep that recording. Try again."
+                return
+            }
+            UISaveVideoAtPathToSavedPhotosAlbum(kept.path, nil, nil, nil)
+            Task { @MainActor in
+                await attachVideoReference(at: kept)
+            }
+        }
+    }
+#endif
 
     // MARK: - GIF chip
 
