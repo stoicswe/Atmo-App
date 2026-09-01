@@ -252,10 +252,10 @@ struct ComposerView: View {
                 isPresented: $showReplyTranslation,
                 text: replyTo?.text ?? ""
             )
+            // Accent wash inside every composer presentation. INSIDE the
+            // stack — iOS nav hosting covers outside-the-stack backgrounds.
+            .themedBackdrop()
         }
-        // Accent wash inside every composer presentation — new post,
-        // reply, quote, resumed draft (Settings → Appearance).
-        .themedBackdrop()
     }
 
     // MARK: - Cancel handling
@@ -1000,8 +1000,8 @@ private struct ComposerDraftsSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .themedBackdrop()
         }
-        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 400, minHeight: 460)
 #endif
@@ -1086,8 +1086,8 @@ private struct AltTextEditorSheet: View {
                 }
             }
             .onAppear { text = initialText }
+            .themedBackdrop()
         }
-        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 440, minHeight: 540)
 #endif

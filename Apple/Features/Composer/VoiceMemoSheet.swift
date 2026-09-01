@@ -123,8 +123,8 @@ struct VoiceMemoSheet: View {
                 importFile(result)
             }
             .onDisappear { stopEverything() }
+            .themedBackdrop()
         }
-        .themedBackdrop()
 #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
 #endif

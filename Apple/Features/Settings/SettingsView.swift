@@ -270,6 +270,7 @@ private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+    @AppStorage(LikedPostsRetention.storageKey) private var likedRetentionRaw: String = LikedPostsRetention.defaultValue.rawValue
     @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
 #if os(iOS)
     @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
@@ -283,6 +284,26 @@ private struct AppearanceTab: View {
                 Text("Feed")
             } footer: {
                 Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Keep liked posts", selection: $likedRetentionRaw) {
+                    ForEach(LikedPostsRetention.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+                .onChange(of: likedRetentionRaw) { oldValue, newValue in
+                    LikedPostsStore.shared.retentionChanged(
+                        from: LikedPostsRetention(rawValue: oldValue) ?? .never,
+                        to: LikedPostsRetention(rawValue: newValue) ?? .never
+                    )
+                }
+            } header: {
+                Text("Liked History")
+            } footer: {
+                Text("How long the ♥ Liked section remembers posts you've liked. The history syncs privately through iCloud without appearing in iCloud Drive. Expired entries leave the history only — your likes on Bluesky are untouched. Extending the window re-syncs older likes from your account.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -250,8 +250,8 @@ struct PostInteractionSettingsSheet: View {
                     Button("Save") { dismiss() }
                 }
             }
+            .themedBackdrop()
         }
-        .themedBackdrop()
 #if os(iOS)
         .presentationDetents([.medium, .large])
 #endif

@@ -54,10 +54,11 @@
 		74EF77254149C0663801FD81 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */; };
 		81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
-		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8390A1B5BDE2DF72B827D98E /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2E5444F50ACEF0FDA98D79 /* CameraCaptureView.swift */; };
 		85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A30966828A3215EB97F9E95 /* VideoPreparer.swift */; };
 		9416002A7EAA42E6C11AF351 /* FamilyControlsIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7514C448FB5F66CB177762 /* FamilyControlsIntegration.swift */; };
+		961CF1A3E9B0AF62E5BF2354 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A5F2F77009664EB20C077752 /* AppIcon.icon */; };
 		97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A585053040099E29C26DAB2B /* VerifiedBadge.swift */; };
 		99AE6A6A224F8D73C0BF7BBC /* WaveformVideoRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92842F70CAD67EDA55ED508 /* WaveformVideoRenderer.swift */; };
 		9C3AADAD4AEF37DC322745D7 /* VoiceMemoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */; };
@@ -70,7 +71,7 @@
 		AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B04EE931B31F8F7BFBE70C9 /* View+Atmo.swift */; };
 		AFA3D7D5DD6407DF10099411 /* KeychainSecretsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */; };
 		B346F6A39232B0B8C9FE1592 /* UbiquitousKeyValueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */; };
-		B393D1BC5A3CEB74E2B531C5 /* AtmoWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 43DFA7F337C478835D66241B /* AtmoWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B393D1BC5A3CEB74E2B531C5 /* AtmoWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 43DFA7F337C478835D66241B /* AtmoWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B3E82C93C975BF5B130A66C3 /* PostPublishAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1D9BDBDBCE2292830AA7E9 /* PostPublishAttributes.swift */; };
 		B449D5D49FCF4C84E2842261 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9084323DF95DF070B6E3BC73 /* SettingsView.swift */; };
 		BA547FD6B799B74C41882C96 /* AtmoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9658D1CD2CE07F044CA212D /* AtmoWatchApp.swift */; };
@@ -80,6 +81,7 @@
 		C3FCC3EC164628B409301EB6 /* ProfileHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62B909A2464E8BE9773B576 /* ProfileHeaderView.swift */; };
 		CCD3FF9032F6926429B85AB8 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60BFCDD1F37B662C607BF339 /* SearchView.swift */; };
 		CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */; };
+		CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */; };
 		D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */; };
 		D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */; };
 		D8955B361EE8532C4AE57E4F /* NotificationRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C72B71FDBED4A59D692EC401 /* NotificationRowView.swift */; };
@@ -91,9 +93,11 @@
 		EDBF8BC2F06A2A30279639E1 /* KeychainSecretsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */; };
 		EDDDF319E4EAB088ECDDAD6B /* AtmoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 00BA650A642C01670434726A /* AtmoCore */; };
 		EE1432A2731D07E549451814 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6877B7BEB880A0D1F13C3DB9 /* BackgroundSync.swift */; };
+		F08AD90A262445DE0D9F4405 /* UbiquitousFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2D34D55070B2FDC31315BF /* UbiquitousFileStore.swift */; };
 		F1E7A2C138947A1556C26B77 /* ATProtoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5DFD0103A658C3BEAD99D4A2 /* ATProtoKit */; };
 		F235A2E06CE342C9401095D2 /* TopicSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CD6821579000DFC2010C06 /* TopicSummaryCard.swift */; };
 		FAB6AC450F9A9B635B439808 /* PostPublishAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1D9BDBDBCE2292830AA7E9 /* PostPublishAttributes.swift */; };
+		FCC2510DB09B78B7D5D22BF9 /* UbiquitousFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2D34D55070B2FDC31315BF /* UbiquitousFileStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -143,7 +147,7 @@
 		0A6686670E324E9F566CB4BF /* PostActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostActionsView.swift; sourceTree = "<group>"; };
 		10FBF08904E5D1B1C40366B7 /* PostPublishBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostPublishBridge.swift; sourceTree = "<group>"; };
 		159C86922803A5EE97A1D0B3 /* GlassModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassModifiers.swift; sourceTree = "<group>"; };
-		181362BFA45FA1C0A7EB1182 /* AtmoCore */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AtmoCore; sourceTree = SOURCE_ROOT; };
+		181362BFA45FA1C0A7EB1182 /* AtmoCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AtmoCore; path = AtmoCore; sourceTree = SOURCE_ROOT; };
 		1852C1676F9B93E2152D1D2C /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		1D5A94A7DD92632CA528A416 /* PostPublishStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostPublishStatusPill.swift; sourceTree = "<group>"; };
 		1E27E161212025CBDA762FF7 /* AtmoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoApp.swift; sourceTree = "<group>"; };
@@ -154,7 +158,7 @@
 		31F5CC67B73F5649C235A041 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		35D8ECCAC181EE3791D987A6 /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
 		36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationsPresenter.swift; sourceTree = "<group>"; };
-		43DFA7F337C478835D66241B /* AtmoWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AtmoWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		43DFA7F337C478835D66241B /* AtmoWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AtmoWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		487A47451110A7905995A9DF /* ComposerToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolbar.swift; sourceTree = "<group>"; };
 		55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoSheet.swift; sourceTree = "<group>"; };
 		5CC35E00C3AF01396EEA33F0 /* ThreadReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadReaderView.swift; sourceTree = "<group>"; };
@@ -174,12 +178,13 @@
 		900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslateButton.swift; sourceTree = "<group>"; };
 		90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCachedImage.swift; sourceTree = "<group>"; };
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Atmo.storekit; sourceTree = "<group>"; };
+		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 		A2E333B9A5EC43F657C9DD89 /* ComposerMediaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMediaPreview.swift; sourceTree = "<group>"; };
 		A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretsStore.swift; sourceTree = "<group>"; };
 		A585053040099E29C26DAB2B /* VerifiedBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifiedBadge.swift; sourceTree = "<group>"; };
+		A5F2F77009664EB20C077752 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		A6D5F6254C490BEED1F318C7 /* AtmoFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoFonts.swift; sourceTree = "<group>"; };
 		A9CE2293C659B96F8502E117 /* AtmoColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoColors.swift; sourceTree = "<group>"; };
 		A9EDCB899AC4237D528F37EA /* GIFPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFPickerSheet.swift; sourceTree = "<group>"; };
@@ -200,6 +205,7 @@
 		C72B71FDBED4A59D692EC401 /* NotificationRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationRowView.swift; sourceTree = "<group>"; };
 		C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AtmoWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9658D1CD2CE07F044CA212D /* AtmoWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoWatchApp.swift; sourceTree = "<group>"; };
+		CA2D34D55070B2FDC31315BF /* UbiquitousFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UbiquitousFileStore.swift; sourceTree = "<group>"; };
 		CBF8F6165BB4E8C1496674D9 /* AppleMediaProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMediaProcessor.swift; sourceTree = "<group>"; };
 		D715FDD86925513414979F8E /* BookmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarksView.swift; sourceTree = "<group>"; };
 		DCFE019FBE762F5CE1E1434B /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
@@ -210,6 +216,7 @@
 		E7364AB0C403D888FADBF61D /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
 		E76232602161DBBA414A3F3F /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveMediaShield.swift; sourceTree = "<group>"; };
+		EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LikedPostsView.swift; sourceTree = "<group>"; };
 		EFDAE3CD661558EEAF60A875 /* RichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextView.swift; sourceTree = "<group>"; };
 		EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwoFactorView.swift; sourceTree = "<group>"; };
 		F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -261,6 +268,7 @@
 			isa = PBXGroup;
 			children = (
 				D715FDD86925513414979F8E /* BookmarksView.swift */,
+				EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */,
 			);
 			path = Bookmarks;
 			sourceTree = "<group>";
@@ -352,6 +360,7 @@
 		6F8D308871B13EED9BDD3799 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				A5F2F77009664EB20C077752 /* AppIcon.icon */,
 				E35E4112FA41B1233D574B12 /* Assets.xcassets */,
 			);
 			path = Resources;
@@ -517,6 +526,7 @@
 				BB7514C448FB5F66CB177762 /* FamilyControlsIntegration.swift */,
 				A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */,
 				E1CFA79F7ED4A84640507EF6 /* SpotlightPostIndexer.swift */,
+				CA2D34D55070B2FDC31315BF /* UbiquitousFileStore.swift */,
 				F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */,
 				36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */,
 			);
@@ -651,6 +661,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				961CF1A3E9B0AF62E5BF2354 /* AppIcon.icon in Resources */,
 				BFED697050C2916BE78B1F11 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -676,6 +687,7 @@
 				9416002A7EAA42E6C11AF351 /* FamilyControlsIntegration.swift in Sources */,
 				AFA3D7D5DD6407DF10099411 /* KeychainSecretsStore.swift in Sources */,
 				AA7AEB11D4F63900E31D774F /* SpotlightPostIndexer.swift in Sources */,
+				F08AD90A262445DE0D9F4405 /* UbiquitousFileStore.swift in Sources */,
 				B346F6A39232B0B8C9FE1592 /* UbiquitousKeyValueStore.swift in Sources */,
 				74EF77254149C0663801FD81 /* UserNotificationsPresenter.swift in Sources */,
 				DC523B4305411F0780BAB576 /* WatchLoginView.swift in Sources */,
@@ -729,6 +741,7 @@
 				4072269A50D8C59B0D80239E /* ImageViewerView.swift in Sources */,
 				16413942467282E362CE91CD /* InAppBrowser.swift in Sources */,
 				EDBF8BC2F06A2A30279639E1 /* KeychainSecretsStore.swift in Sources */,
+				CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */,
 				496F933C6600B2472C27686C /* LoadingView.swift in Sources */,
 				3874E80E83F7CE3D56B75D42 /* LoginView.swift in Sources */,
 				52A7076A1EC50C6BFBE8049A /* MessageBubbleView.swift in Sources */,
@@ -756,6 +769,7 @@
 				C0C560B337FACFEC4A5AE2BE /* TranslateButton.swift in Sources */,
 				17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */,
 				CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */,
+				FCC2510DB09B78B7D5D22BF9 /* UbiquitousFileStore.swift in Sources */,
 				68E35D479091FE23D6CBE6DC /* UbiquitousKeyValueStore.swift in Sources */,
 				9D95D77F4D6706F568B39C79 /* UserNotificationsPresenter.swift in Sources */,
 				97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */,
@@ -771,13 +785,17 @@
 /* Begin PBXTargetDependency section */
 		C7C57E10BDE20A9B4FD90A0B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			platformFilter = ios;
+			platformFilters = (
+				ios,
+			);
 			target = BD3FF3D75E7C3BF859693E7F /* AtmoWatch */;
 			targetProxy = 9BE6D21A58E243B09687A12E /* PBXContainerItemProxy */;
 		};
 		E38F667755378F18B26EAB35 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			platformFilter = ios;
+			platformFilters = (
+				ios,
+			);
 			target = DD3BEC129863403A10055811 /* AtmoWidgets */;
 			targetProxy = 875AD33951179CBFE85E9E6A /* PBXContainerItemProxy */;
 		};
@@ -843,6 +861,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=macosx*]" = Atomic;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "@omic uses the camera to shoot photos and videos you attach to posts.";
@@ -862,6 +881,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmin-app";
 				PRODUCT_NAME = Atmo;
+				"PRODUCT_NAME[sdk=macosx*]" = Atomic;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -891,6 +911,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=macosx*]" = Atomic;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "@omic uses the camera to shoot photos and videos you attach to posts.";
@@ -910,6 +931,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "stoicswe.com-atmin-app";
 				PRODUCT_NAME = Atmo;
+				"PRODUCT_NAME[sdk=macosx*]" = Atomic;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -923,7 +945,6 @@
 		6FE186744816347D26581F8F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "Resources/AtmoWidgets-Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -942,7 +963,6 @@
 		9CB2008DFFDFA1BECA57123D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "Resources/AtmoWidgets-Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (

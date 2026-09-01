@@ -512,6 +512,8 @@ public final class TimelineViewModel {
             posts[index].likeURI = nil
             do {
                 try await bluesky.deleteRecord(.recordURI(atURI: likeURI))
+                // Drop it from the synced Liked history.
+                LikedPostsStore.shared.recordUnlike(uri: post.uri)
             } catch {
                 // Rollback optimistic update
                 posts[index].isLiked = true
@@ -531,6 +533,8 @@ public final class TimelineViewModel {
                     )
                 )
                 posts[index].likeURI = result.recordURI
+                // Keep the synced Liked history (the ♥ library section).
+                LikedPostsStore.shared.recordLike(post)
             } catch {
                 // Rollback
                 posts[index].isLiked = false

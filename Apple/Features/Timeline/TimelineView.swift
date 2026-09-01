@@ -107,8 +107,10 @@ struct TimelineView: View {
                         ProfileView(actorDID: did)
                             .themedBackdrop()
                     }
+                    // INSIDE the stack — iOS nav hosting covers outside
+                    // backgrounds (why the tint failed on iOS).
+                    .themedBackdrop()
             }
-            .themedBackdrop()
             .task { await loadIfNeeded() }
             .onChange(of: service.atProtoKit != nil) { _, isReady in
                 guard isReady, viewModel.posts.isEmpty, !viewModel.isLoading else { return }

@@ -45,8 +45,8 @@ struct NewConversationView: View {
                 AskToDMSheet(handle: candidate.handle, displayName: candidate.displayName)
                     .themedBackdrop()
             }
+            .themedBackdrop()
         }
-        .themedBackdrop()
         .task {
             if viewModel == nil {
                 viewModel = NewConversationViewModel(service: service)

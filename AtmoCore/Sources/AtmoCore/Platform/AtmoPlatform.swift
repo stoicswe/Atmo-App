@@ -133,6 +133,41 @@ public struct NoopAlertPresenter: AlertPresenting {
     public func present(_ alerts: [FeedAlert]) async {}
 }
 
+// MARK: - SyncedFileStore
+
+/// A cloud-synced file store for data too large for the synced key-value
+/// store (iCloud KVS caps at 1 MB across all keys). The Apple app backs
+/// this with the app's iCloud ubiquity container, storing OUTSIDE
+/// Documents/ so files sync across devices but never appear in iCloud
+/// Drive. The default no-op keeps AtmoCore portable — stores using this
+/// seam must keep their own local baseline copy.
+///
+/// Conflict model: `readVersions` returns the current file plus any
+/// unresolved conflict versions (two devices wrote concurrently); the
+/// caller merges domain-aware (e.g. set-union by key) and writes back,
+/// and `write` marks conflicts resolved.
+public protocol SyncedFileStore: Sendable {
+    /// The current contents plus any unresolved conflict versions.
+    /// Empty when the file doesn't exist yet or sync is unavailable.
+    func readVersions(name: String) async -> [Data]
+    /// Replaces the file (best-effort; no-op when sync is unavailable)
+    /// and marks any outstanding conflict versions resolved.
+    func write(_ data: Data, name: String) async
+    /// Emits whenever another device changes the file. Never emits when
+    /// sync is unavailable.
+    func externalChanges(name: String) -> AsyncStream<Void>
+}
+
+/// Default: no cloud file sync on this platform.
+public struct NoopSyncedFileStore: SyncedFileStore {
+    public init() {}
+    public func readVersions(name: String) async -> [Data] { [] }
+    public func write(_ data: Data, name: String) async {}
+    public func externalChanges(name: String) -> AsyncStream<Void> {
+        AsyncStream { $0.finish() }
+    }
+}
+
 // MARK: - PostMediaProcessing
 
 /// Turns composer media references into upload-ready video bytes at
@@ -199,6 +234,9 @@ public struct AtmoPlatform: Sendable {
     /// Resolves composer media references (video files, voice-memo audio)
     /// into upload-ready bytes at publish time.
     public var mediaProcessor: any PostMediaProcessing
+    /// Cloud-synced file storage for data beyond the KVS size budget
+    /// (the Liked history). Hidden from user-visible cloud storage.
+    public var syncedFiles: any SyncedFileStore
 
     public init(
         secrets: any SecretsStoring = UserDefaultsSecretsStore(),
@@ -210,7 +248,8 @@ public struct AtmoPlatform: Sendable {
         timelineRefreshInterval: TimeInterval = 3 * 60,
         messagesRefreshInterval: TimeInterval = 45,
         alertPresenter: any AlertPresenting = NoopAlertPresenter(),
-        mediaProcessor: any PostMediaProcessing = UnsupportedMediaProcessor()
+        mediaProcessor: any PostMediaProcessing = UnsupportedMediaProcessor(),
+        syncedFiles: any SyncedFileStore = NoopSyncedFileStore()
     ) {
         self.secrets = secrets
         self.syncedKeyValue = syncedKeyValue
@@ -222,6 +261,7 @@ public struct AtmoPlatform: Sendable {
         self.messagesRefreshInterval = messagesRefreshInterval
         self.alertPresenter = alertPresenter
         self.mediaProcessor = mediaProcessor
+        self.syncedFiles = syncedFiles
     }
 
     /// Portable default: file-backed credential storage next to the other

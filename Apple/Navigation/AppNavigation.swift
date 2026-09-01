@@ -9,6 +9,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case messages      = "Messages"
     case profile       = "Profile"
     case bookmarks     = "Bookmarks"
+    case liked         = "Liked"
     case drafts        = "Drafts"
     case settings      = "Settings"
 
@@ -22,6 +23,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .messages:      return "bubble.left.and.bubble.right"
         case .profile:       return "person.circle"
         case .bookmarks:     return "bookmark"
+        case .liked:         return "heart"
         case .drafts:        return "doc.text"
         case .settings:      return "gearshape"
         }
@@ -35,6 +37,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .messages:      return "bubble.left.and.bubble.right.fill"
         case .profile:       return "person.circle.fill"
         case .bookmarks:     return "bookmark.fill"
+        case .liked:         return "heart.fill"
         case .drafts:        return "doc.text.fill"
         case .settings:      return "gearshape.fill"
         }
@@ -43,8 +46,8 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 // Items shown in the scrollable top section of the sidebar
 private let primaryItems: [SidebarItem] = [.timeline, .search, .notifications, .messages]
-// Items pinned to the bottom of the sidebar panel (profile → bookmarks → drafts → settings)
-private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .drafts, .settings]
+// Items pinned to the bottom of the sidebar panel (profile → bookmarks → liked → drafts → settings)
+private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .liked, .drafts, .settings]
 
 #if os(iOS)
 // MARK: - Phone Bar Configuration
@@ -60,7 +63,7 @@ enum PhoneBarConfig {
     static let maxCustomTabs = 3
     /// Everything that can be placed in either the bar or the drawer.
     static let eligible: [SidebarItem] =
-        [.search, .notifications, .messages, .profile, .bookmarks, .drafts, .settings]
+        [.search, .notifications, .messages, .profile, .bookmarks, .liked, .drafts, .settings]
 
     static func decode(_ raw: String) -> [SidebarItem] {
         raw.split(separator: ",")
@@ -424,9 +427,12 @@ struct AppNavigation: View {
                     ConversationDetailView(conversation: convo)
                         .themedBackdrop()
                 }
+                // Accent-derived wash behind every tab. Must sit INSIDE the
+                // stack: iOS navigation hosting paints an opaque system
+                // background over anything applied outside it (why the tint
+                // showed on macOS but not iOS).
+                .themedBackdrop()
             }
-            // Accent-derived wash behind every tab (Settings → Appearance).
-            .themedBackdrop()
         }
     }
 
@@ -482,6 +488,11 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .bookmarks)
                 .navigationTitle(active == .bookmarks ? "Bookmarks" : "")
 
+            LikedPostsView(splitNavPath: $splitNavPath)
+                .opacity(active == .liked ? 1 : 0)
+                .allowsHitTesting(active == .liked)
+                .navigationTitle(active == .liked ? "Liked" : "")
+
             DraftsView(splitNavPath: $splitNavPath, onOpenDraft: { draft in
                 draftToResume = draft
             })
@@ -504,6 +515,7 @@ struct AppNavigation: View {
         case .messages:      return "Messages"
         case .profile:       return "Profile"
         case .bookmarks:     return "Bookmarks"
+        case .liked:         return "Liked"
         case .drafts:        return "Drafts"
         case .settings:      return "Settings"
         }
@@ -678,9 +690,11 @@ struct AppNavigation: View {
                     ConversationDetailView(conversation: convo)
                         .themedBackdrop()
                 }
+                // Accent-derived wash behind every tab. Must sit INSIDE the
+                // stack: iOS navigation hosting paints an opaque system
+                // background over anything applied outside it.
+                .themedBackdrop()
         }
-        // Accent-derived wash behind every tab (Settings → Appearance).
-        .themedBackdrop()
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -761,6 +775,9 @@ struct AppNavigation: View {
                 case .bookmarks:
                     BookmarksView(splitNavPath: $phoneTimelineNavPath)
                         .navigationTitle("Bookmarks")
+                case .liked:
+                    LikedPostsView(splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Liked")
                 case .drafts:
                     DraftsView(splitNavPath: $phoneTimelineNavPath, onOpenDraft: { draft in
                         draftToResume = draft
