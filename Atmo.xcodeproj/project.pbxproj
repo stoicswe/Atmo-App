@@ -54,7 +54,7 @@
 		74EF77254149C0663801FD81 /* UserNotificationsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E0C8EC75200B697CDD1185 /* UserNotificationsPresenter.swift */; };
 		8150894439CB53091D47AE85 /* WatchTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B95718F96B1698E4E6D325 /* WatchTimelineView.swift */; };
 		81C1B251767AB494C725524A /* ApplePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87E86E430EFC5C8B869C3B3 /* ApplePlatform.swift */; };
-		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8390A1B5BDE2DF72B827D98E /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2E5444F50ACEF0FDA98D79 /* CameraCaptureView.swift */; };
 		85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A30966828A3215EB97F9E95 /* VideoPreparer.swift */; };
 		9416002A7EAA42E6C11AF351 /* FamilyControlsIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7514C448FB5F66CB177762 /* FamilyControlsIntegration.swift */; };
@@ -71,7 +71,7 @@
 		AE8A906C844649E37C9E8907 /* View+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B04EE931B31F8F7BFBE70C9 /* View+Atmo.swift */; };
 		AFA3D7D5DD6407DF10099411 /* KeychainSecretsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F2E63AD46C5826C264DA4A /* KeychainSecretsStore.swift */; };
 		B346F6A39232B0B8C9FE1592 /* UbiquitousKeyValueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */; };
-		B393D1BC5A3CEB74E2B531C5 /* AtmoWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 43DFA7F337C478835D66241B /* AtmoWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B393D1BC5A3CEB74E2B531C5 /* AtmoWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 43DFA7F337C478835D66241B /* AtmoWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B3E82C93C975BF5B130A66C3 /* PostPublishAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1D9BDBDBCE2292830AA7E9 /* PostPublishAttributes.swift */; };
 		B449D5D49FCF4C84E2842261 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9084323DF95DF070B6E3BC73 /* SettingsView.swift */; };
 		BA547FD6B799B74C41882C96 /* AtmoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9658D1CD2CE07F044CA212D /* AtmoWatchApp.swift */; };
@@ -147,7 +147,7 @@
 		0A6686670E324E9F566CB4BF /* PostActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostActionsView.swift; sourceTree = "<group>"; };
 		10FBF08904E5D1B1C40366B7 /* PostPublishBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostPublishBridge.swift; sourceTree = "<group>"; };
 		159C86922803A5EE97A1D0B3 /* GlassModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassModifiers.swift; sourceTree = "<group>"; };
-		181362BFA45FA1C0A7EB1182 /* AtmoCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AtmoCore; path = AtmoCore; sourceTree = SOURCE_ROOT; };
+		181362BFA45FA1C0A7EB1182 /* AtmoCore */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AtmoCore; sourceTree = SOURCE_ROOT; };
 		1852C1676F9B93E2152D1D2C /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		1D5A94A7DD92632CA528A416 /* PostPublishStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostPublishStatusPill.swift; sourceTree = "<group>"; };
 		1E27E161212025CBDA762FF7 /* AtmoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoApp.swift; sourceTree = "<group>"; };
@@ -178,7 +178,7 @@
 		900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslateButton.swift; sourceTree = "<group>"; };
 		90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCachedImage.swift; sourceTree = "<group>"; };
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
+		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Atmo.storekit; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 		A2E333B9A5EC43F657C9DD89 /* ComposerMediaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMediaPreview.swift; sourceTree = "<group>"; };
@@ -219,7 +219,7 @@
 		EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LikedPostsView.swift; sourceTree = "<group>"; };
 		EFDAE3CD661558EEAF60A875 /* RichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextView.swift; sourceTree = "<group>"; };
 		EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwoFactorView.swift; sourceTree = "<group>"; };
-		F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Atmo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F1517B5F8C5E18DDEFE5BCA1 /* Atomic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atomic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F47B521D88EECE8CBBC9142B /* UbiquitousKeyValueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UbiquitousKeyValueStore.swift; sourceTree = "<group>"; };
 		FB2E5444F50ACEF0FDA98D79 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FDA7CC137FDE37E7F4B702FE /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
@@ -441,7 +441,7 @@
 		A728244928710EB3D14B4875 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */,
+				F1517B5F8C5E18DDEFE5BCA1 /* Atomic.app */,
 				C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */,
 				43DFA7F337C478835D66241B /* AtmoWidgets.appex */,
 			);
@@ -566,7 +566,7 @@
 				1E32899101AB10F64A175CE4 /* ATProtoKit */,
 			);
 			productName = Atmo;
-			productReference = F1517B5F8C5E18DDEFE5BCA1 /* Atmo.app */;
+			productReference = F1517B5F8C5E18DDEFE5BCA1 /* Atomic.app */;
 			productType = "com.apple.product-type.application";
 		};
 		BD3FF3D75E7C3BF859693E7F /* AtmoWatch */ = {
@@ -785,17 +785,13 @@
 /* Begin PBXTargetDependency section */
 		C7C57E10BDE20A9B4FD90A0B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			platformFilters = (
-				ios,
-			);
+			platformFilter = ios;
 			target = BD3FF3D75E7C3BF859693E7F /* AtmoWatch */;
 			targetProxy = 9BE6D21A58E243B09687A12E /* PBXContainerItemProxy */;
 		};
 		E38F667755378F18B26EAB35 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			platformFilters = (
-				ios,
-			);
+			platformFilter = ios;
 			target = DD3BEC129863403A10055811 /* AtmoWidgets */;
 			targetProxy = 875AD33951179CBFE85E9E6A /* PBXContainerItemProxy */;
 		};
@@ -860,7 +856,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
+				INFOPLIST_KEY_CFBundleDisplayName = Atomic;
 				"INFOPLIST_KEY_CFBundleDisplayName[sdk=macosx*]" = Atomic;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
@@ -910,7 +906,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "@omic";
+				INFOPLIST_KEY_CFBundleDisplayName = Atomic;
 				"INFOPLIST_KEY_CFBundleDisplayName[sdk=macosx*]" = Atomic;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";

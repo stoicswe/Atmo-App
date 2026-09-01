@@ -160,6 +160,12 @@ targets:
       path: Resources/AtmoWidgets-Info.plist
       properties:
         CFBundleDisplayName: "@omic"
+        # Track the app's versioning — xcodegen's generated plist defaults
+        # to literal "1.0"/"1", and App Store validation flags an appex
+        # whose CFBundleShortVersionString differs from its host app
+        # (ITMS-90473, Build 35).
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
