@@ -24,6 +24,14 @@ final class ImageLoader {
     private var failed: Set<URL> = []
     private var updateScheduled = false
 
+    /// Downloads waiting for a slot. A fresh timeline requests ~50 images
+    /// at once; corelibs-foundation's libcurl-backed URLSession is fragile
+    /// under that many parallel tasks (see the _MultiHandle warnings), so
+    /// only a few run concurrently.
+    private var pending: [URL] = []
+    private var activeDownloads = 0
+    private static let maxConcurrentDownloads = 4
+
     private let diskDirectory: URL
 
     private init() {
@@ -45,7 +53,7 @@ final class ImageLoader {
         return nil
     }
 
-    /// Starts a download unless the image is cached, in flight, or failed.
+    /// Queues a download unless the image is cached, in flight, or failed.
     func request(_ url: URL?) {
         guard let url,
               memory[url] == nil,
@@ -54,19 +62,33 @@ final class ImageLoader {
               !FileManager.default.fileExists(atPath: diskPath(for: url).path)
         else { return }
         inFlight.insert(url)
-        Task { @MainActor in
-            defer { inFlight.remove(url) }
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    failed.insert(url)
-                    return
+        pending.append(url)
+        pumpDownloads()
+    }
+
+    /// Starts queued downloads while slots are free.
+    private func pumpDownloads() {
+        while activeDownloads < Self.maxConcurrentDownloads, !pending.isEmpty {
+            let url = pending.removeFirst()
+            activeDownloads += 1
+            Task { @MainActor in
+                defer {
+                    activeDownloads -= 1
+                    inFlight.remove(url)
+                    pumpDownloads()
                 }
-                memory[url] = data
-                try? data.write(to: diskPath(for: url))
-                scheduleUpdate()
-            } catch {
-                failed.insert(url)
+                do {
+                    let (data, response) = try await URLSession.shared.data(from: url)
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                        failed.insert(url)
+                        return
+                    }
+                    memory[url] = data
+                    try? data.write(to: diskPath(for: url))
+                    scheduleUpdate()
+                } catch {
+                    failed.insert(url)
+                }
             }
         }
     }

@@ -1,6 +1,9 @@
 import Foundation
 import ATProtoKit
 import Observation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Central service object that owns and manages all ATProtoKit instances.
 /// The SwiftUI app injects it as an `@Environment` object; the Linux app
@@ -161,11 +164,26 @@ public final class ATProtoService {
     /// Builds an `ATProtocolConfiguration` bound to the installed platform's
     /// credential store and the install's stable session UUID, so tokens
     /// stored on a previous launch are found again.
+    ///
+    /// On Linux, requests are routed through one immortal `URLSession`
+    /// (see `LinuxSharedSessionURLProtocol`) — ATProtoKit's session
+    /// methods build throwaway sessions whose deallocation crashes
+    /// corelibs-foundation mid-teardown.
     private func makeConfiguration() -> ATProtocolConfiguration {
-        ATProtocolConfiguration(
+        #if canImport(FoundationNetworking)
+        let sessionConfiguration = URLSessionConfiguration.default
+        sessionConfiguration.protocolClasses = [LinuxSharedSessionURLProtocol.self]
+        return ATProtocolConfiguration(
+            credentialStore: Atmo.platform.makeCredentialStore(),
+            sessionIdentifier: Atmo.platform.secrets.stableSessionUUID(),
+            configuration: sessionConfiguration
+        )
+        #else
+        return ATProtocolConfiguration(
             credentialStore: Atmo.platform.makeCredentialStore(),
             sessionIdentifier: Atmo.platform.secrets.stableSessionUUID()
         )
+        #endif
     }
 
     private func buildStack(config: ATProtocolConfiguration, fallbackHandle: String) async {

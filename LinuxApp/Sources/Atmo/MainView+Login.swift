@@ -70,9 +70,9 @@ extension MainView {
         runCore {
             await AppSession.shared.service.login(handle: handle, appPassword: password)
             if AppSession.shared.service.isAuthenticated {
-                AppSession.shared.buildViewModels()
-                await AppSession.shared.timeline?.loadInitial()
-                await AppSession.shared.notifications?.load()
+                // Shared with the restore path: builds view models, starts
+                // model observation, loads timeline + notifications.
+                startSignedInSession()
             }
         }
     }

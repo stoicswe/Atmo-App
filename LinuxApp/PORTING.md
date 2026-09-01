@@ -129,6 +129,15 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
   snapshots; the models themselves are never `@State`.
 - Keep deviations deliberate and listed — GNOME HIG wins on input
   conventions and chrome, the Apple app wins on feature semantics.
+- **Linux networking hazard:** corelibs-foundation aborts if a
+  `URLSession` is deallocated while its libcurl teardown is in flight,
+  and ATProtoKit's session methods (`authenticate`, `refreshSession`,
+  `removeSession`…) each build a throwaway session — sign-in crashed the
+  app. All ATProtoKit traffic is therefore routed through one immortal
+  session via `LinuxSharedSessionURLProtocol`
+  (`AtmoCore/Sources/AtmoCore/Platform/`), installed by
+  `ATProtoService.makeConfiguration()` on Linux only. Don't remove it
+  unless upstream stops creating ephemeral sessions.
 
 ## 5. Building
 
