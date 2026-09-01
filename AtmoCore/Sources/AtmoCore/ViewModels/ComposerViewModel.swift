@@ -20,6 +20,10 @@ public final class PostSlot: Identifiable {
     /// Fired whenever text changes — wired by ComposerViewModel for draft auto-save.
     public var onTextChanged: (() -> Void)? = nil
 
+    /// Fired whenever attachments change — wired by ComposerViewModel so
+    /// drafts track media edits (drafts persist media references now).
+    public var onMediaChanged: (() -> Void)? = nil
+
     public struct ImageAttachment: Identifiable {
         public let id = UUID()
         public let data: Data
@@ -112,10 +116,12 @@ public final class PostSlot: Identifiable {
     public func addImage(data: Data, fileName: String) {
         guard attachedImages.count < 4, attachedVideo == nil, attachedGIF == nil else { return }
         attachedImages.append(ImageAttachment(data: data, fileName: fileName))
+        onMediaChanged?()
     }
 
     public func removeImage(id: UUID) {
         attachedImages.removeAll { $0.id == id }
+        onMediaChanged?()
     }
 
     /// Sets the alt text on one attached image (no-op when the image was
@@ -123,10 +129,12 @@ public final class PostSlot: Identifiable {
     public func updateImageAltText(id: UUID, altText: String) {
         guard let index = attachedImages.firstIndex(where: { $0.id == id }) else { return }
         attachedImages[index].altText = altText
+        onMediaChanged?()
     }
 
     /// Attaches a video reference, displacing any images (a post carries
-    /// one or the other, never both).
+    /// one or the other, never both). A displaced video reference's file
+    /// is composer-owned — it goes with it.
     public func attachVideo(
         source: VideoAttachment.Source,
         duration: TimeInterval? = nil,
@@ -134,22 +142,35 @@ public final class PostSlot: Identifiable {
     ) {
         attachedImages.removeAll()
         attachedGIF = nil
+        if let previous = attachedVideo {
+            ComposerMediaFiles.delete(path: previous.fileURL.path)
+        }
         attachedVideo = VideoAttachment(source: source, duration: duration, aspectRatio: aspectRatio)
+        onMediaChanged?()
     }
 
     public func removeVideo() {
+        if let previous = attachedVideo {
+            ComposerMediaFiles.delete(path: previous.fileURL.path)
+        }
         attachedVideo = nil
+        onMediaChanged?()
     }
 
     /// Attaches a picked GIF, displacing other media (one embed per post).
     public func attachGIF(_ gif: GIFItem) {
         attachedImages.removeAll()
+        if let previous = attachedVideo {
+            ComposerMediaFiles.delete(path: previous.fileURL.path)
+        }
         attachedVideo = nil
         attachedGIF = gif
+        onMediaChanged?()
     }
 
     public func removeGIF() {
         attachedGIF = nil
+        onMediaChanged?()
     }
 }
 
@@ -212,10 +233,11 @@ public final class ComposerViewModel {
     private let draftStore = DraftStore.shared
     private var draftID: UUID = UUID()
 
-    /// True if any slot has non-whitespace content — used to decide whether
-    /// to show the "discard draft?" prompt when the user cancels.
+    /// True if any slot has content worth keeping — typed text or attached
+    /// media (drafts persist media references now, so an image-only slot
+    /// is a real draft).
     public var hasMeaningfulContent: Bool {
-        slots.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        slots.contains { !$0.isEmpty }
     }
 
     // MARK: Exit policy
@@ -232,23 +254,26 @@ public final class ComposerViewModel {
         case autoSave
     }
 
-    /// Policy for the current slots. Only typed text counts as content —
-    /// drafts persist image *file names*, not the images, so an image-only
-    /// slot would restore to nothing worth keeping.
+    /// Policy for the current slots. Text and media both count as content
+    /// now that drafts persist media references.
     public var exitDraftPolicy: ExitDraftPolicy {
-        Self.exitDraftPolicy(forSlotTexts: slots.map(\.text))
+        Self.exitDraftPolicy(forContentfulSlots: slots.map { !$0.isEmpty })
     }
 
     /// Pure decision core, exposed for the unit tests.
-    static func exitDraftPolicy(forSlotTexts texts: [String]) -> ExitDraftPolicy {
-        let contentful = texts.filter {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }.count
-        switch contentful {
+    static func exitDraftPolicy(forContentfulSlots flags: [Bool]) -> ExitDraftPolicy {
+        switch flags.filter({ $0 }).count {
         case 0:  return .discardSilently
         case 1:  return .promptToSave
         default: return .autoSave
         }
+    }
+
+    /// Text-only convenience kept for the existing unit tests.
+    static func exitDraftPolicy(forSlotTexts texts: [String]) -> ExitDraftPolicy {
+        exitDraftPolicy(forContentfulSlots: texts.map {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
     }
 
     // MARK: Validation
@@ -281,6 +306,7 @@ public final class ComposerViewModel {
     public func addSlot() {
         let slot = PostSlot()
         slot.onTextChanged = { [weak self] in self?.scheduleDraftSave() }
+        slot.onMediaChanged = { [weak self] in self?.scheduleDraftSave() }
         slots.append(slot)
         scheduleDraftSave()
     }
@@ -320,6 +346,7 @@ public final class ComposerViewModel {
     private func wireSlotCallbacks() {
         for slot in slots {
             slot.onTextChanged = { [weak self] in self?.scheduleDraftSave() }
+            slot.onMediaChanged = { [weak self] in self?.scheduleDraftSave() }
         }
     }
 
@@ -342,13 +369,45 @@ public final class ComposerViewModel {
             draftStore.delete(id: draftID)
             return
         }
+
+        // Image data files no longer referenced by the new snapshot
+        // (removed attachments) get cleaned as part of the save.
+        let previousImageIDs = Set(
+            draftStore.drafts.first(where: { $0.id == draftID })?
+                .posts.flatMap { $0.images.map(\.id) } ?? []
+        )
+
         let draftPosts = slots.map { slot in
             DraftPost(
                 id: slot.id,
                 text: slot.text,
-                attachedImageFileNames: slot.attachedImages.map { $0.fileName }
+                attachedImageFileNames: slot.attachedImages.map { $0.fileName },
+                images: slot.attachedImages.map { attachment in
+                    ComposerMediaFiles.saveImage(attachment.data, id: attachment.id)
+                    return DraftImageRef(
+                        id: attachment.id,
+                        fileName: attachment.fileName,
+                        altText: attachment.altText
+                    )
+                },
+                video: slot.attachedVideo.map { video in
+                    DraftVideoRef(
+                        kind: video.isVoiceMemo ? .voiceMemo : .video,
+                        filePath: video.fileURL.path,
+                        duration: video.duration,
+                        aspectWidth: video.aspectRatio?.width,
+                        aspectHeight: video.aspectRatio?.height,
+                        altText: video.altText
+                    )
+                }
             )
         }
+
+        let currentImageIDs = Set(draftPosts.flatMap { $0.images.map(\.id) })
+        for stale in previousImageIDs.subtracting(currentImageIDs) {
+            ComposerMediaFiles.deleteImage(id: stale)
+        }
+
         let draft = ComposerDraft(
             id: draftID,
             posts: draftPosts,
@@ -359,10 +418,15 @@ public final class ComposerViewModel {
         draftStore.save(draft)
     }
 
-    /// Permanently deletes the draft. Called after successful submission or user discard.
-    public func discardDraft() {
+    /// Permanently deletes the draft (and its media files). Called after
+    /// successful submission or user discard.
+    ///
+    /// `preservingVideoFileForPublishing`: the submit path discards the
+    /// draft BEFORE PostPublisher processes the referenced video file —
+    /// the publisher owns that file's cleanup.
+    public func discardDraft(preservingVideoFileForPublishing: Bool = false) {
         draftSaveTask?.cancel()
-        draftStore.delete(id: draftID)
+        draftStore.delete(id: draftID, preservingVideoFile: preservingVideoFileForPublishing)
     }
 
     private func restoreDraft() {
@@ -372,9 +436,7 @@ public final class ComposerViewModel {
         ), !saved.isEmpty else { return }
 
         draftID = saved.id
-        slots = saved.posts.map { draftPost in
-            PostSlot(id: draftPost.id, text: draftPost.text)
-        }
+        slots = Self.slots(restoring: saved)
         wireSlotCallbacks()
     }
 
@@ -385,9 +447,43 @@ public final class ComposerViewModel {
         saveDraft()
         draftSaveTask?.cancel()
         draftID = draft.id
-        slots = draft.posts.map { PostSlot(id: $0.id, text: $0.text) }
+        slots = Self.slots(restoring: draft)
         if slots.isEmpty { slots = [PostSlot()] }
         wireSlotCallbacks()
+    }
+
+    /// Rebuilds composer slots from a draft, re-attaching persisted media.
+    /// References whose backing files have vanished are skipped silently —
+    /// the text always survives. Callbacks are wired AFTER mutation, so
+    /// restoring never churns the autosave.
+    private static func slots(restoring draft: ComposerDraft) -> [PostSlot] {
+        draft.posts.map { draftPost in
+            let slot = PostSlot(id: draftPost.id, text: draftPost.text)
+            for imageRef in draftPost.images {
+                guard let data = ComposerMediaFiles.loadImage(id: imageRef.id) else { continue }
+                slot.addImage(data: data, fileName: imageRef.fileName)
+                if let restored = slot.attachedImages.last, !imageRef.altText.isEmpty {
+                    slot.updateImageAltText(id: restored.id, altText: imageRef.altText)
+                }
+            }
+            if let videoRef = draftPost.video,
+               FileManager.default.fileExists(atPath: videoRef.filePath) {
+                let url = URL(fileURLWithPath: videoRef.filePath)
+                let ratio: (width: Int, height: Int)? =
+                    (videoRef.aspectWidth != nil && videoRef.aspectHeight != nil)
+                    ? (videoRef.aspectWidth!, videoRef.aspectHeight!)
+                    : nil
+                slot.attachVideo(
+                    source: videoRef.kind == .voiceMemo ? .voiceMemo(url) : .video(url),
+                    duration: videoRef.duration,
+                    aspectRatio: ratio
+                )
+                if !videoRef.altText.isEmpty {
+                    slot.attachedVideo?.altText = videoRef.altText
+                }
+            }
+            return slot
+        }
     }
 
     // MARK: - Submit
@@ -451,9 +547,10 @@ public final class ComposerViewModel {
 
         let payload = makePayload()
         // The content now belongs to the publisher; the composer's own
-        // draft would otherwise resurrect on dismissal.
+        // draft would otherwise resurrect on dismissal. The video file
+        // stays — the publisher processes and then cleans it.
         draftsRetired = true
-        discardDraft()
+        discardDraft(preservingVideoFileForPublishing: true)
 
         PostPublisher.shared.enqueue(payload, service: service)
         didSubmitSuccessfully = true

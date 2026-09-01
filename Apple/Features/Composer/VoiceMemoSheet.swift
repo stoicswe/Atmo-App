@@ -261,10 +261,9 @@ struct VoiceMemoSheet: View {
             return
         }
 
-        // Hand the composer its own copy, so this sheet's temp files can
-        // never be cleaned out from under a queued publish.
-        let kept = FileManager.default.temporaryDirectory
-            .appendingPathComponent("atmo-memo-ref-\(UUID().uuidString).\(takeURL.pathExtension)")
+        // Hand the composer its own copy in the composer media store —
+        // draftable, and safe from temp cleanup under a queued publish.
+        let kept = ComposerMediaFiles.newVideoURL(fileExtension: takeURL.pathExtension)
         do {
             try FileManager.default.copyItem(at: takeURL, to: kept)
             onAttach(kept, duration)

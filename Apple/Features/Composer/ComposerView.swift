@@ -722,8 +722,9 @@ private struct SlotComposerRow: View {
             guard let raw = try await item.loadTransferable(type: Data.self) else {
                 throw VideoPreparer.PrepareError.unreadable
             }
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
+            // Composer media store (not tmp): drafts reference this file,
+            // so system temp cleanup must never eat it.
+            let url = ComposerMediaFiles.newVideoURL(fileExtension: "mov")
             try raw.write(to: url)
             await attachVideoReference(at: url)
         } catch {
@@ -777,9 +778,9 @@ private struct SlotComposerRow: View {
 
         case .video(let cameraTempURL):
             // The camera's temp file dies with its UI — copy it NOW,
-            // synchronously, into a composer-owned reference file.
-            let kept = FileManager.default.temporaryDirectory
-                .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
+            // synchronously, into the composer media store (draftable,
+            // safe from temp cleanup).
+            let kept = ComposerMediaFiles.newVideoURL(fileExtension: "mov")
             do {
                 try FileManager.default.copyItem(at: cameraTempURL, to: kept)
             } catch {

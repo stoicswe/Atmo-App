@@ -183,6 +183,23 @@ public protocol PostMediaProcessing: Sendable {
     func prepareVideo(at url: URL) async throws -> PreparedUploadVideo
     /// Renders an audio take into a waveform video.
     func renderVoiceMemo(at url: URL) async throws -> PreparedUploadVideo
+    /// Fits an image into the service's blob budget (~1 MB): downscales
+    /// and re-encodes as needed. Raw picker/camera bytes routinely exceed
+    /// the cap — uploading them unprocessed fails the whole post.
+    func prepareImage(_ data: Data) async throws -> PreparedUploadImage
+}
+
+/// The publish-ready result of fitting one image.
+public struct PreparedUploadImage: Sendable {
+    public let data: Data
+    /// Pixel dimensions when known — sent with the embed so clients
+    /// reserve the right box before the image loads.
+    public let aspectRatio: (width: Int, height: Int)?
+
+    public init(data: Data, aspectRatio: (width: Int, height: Int)?) {
+        self.data = data
+        self.aspectRatio = aspectRatio
+    }
 }
 
 /// The publish-ready result of processing one media reference.
@@ -198,12 +215,17 @@ public struct PreparedUploadVideo: Sendable {
     }
 }
 
-/// Default: media publishing is unavailable on this platform.
+/// Default: media publishing is unavailable on this platform. Images
+/// pass through untouched (small images still post; oversized ones fail
+/// at the server, same as before the seam existed).
 public struct UnsupportedMediaProcessor: PostMediaProcessing {
     public struct Unsupported: Error {}
     public init() {}
     public func prepareVideo(at url: URL) async throws -> PreparedUploadVideo { throw Unsupported() }
     public func renderVoiceMemo(at url: URL) async throws -> PreparedUploadVideo { throw Unsupported() }
+    public func prepareImage(_ data: Data) async throws -> PreparedUploadImage {
+        PreparedUploadImage(data: data, aspectRatio: nil)
+    }
 }
 
 // MARK: - AtmoPlatform

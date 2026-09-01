@@ -179,7 +179,7 @@ public final class PostPublisher {
 
     private func failJob(message: String, savedDraft: Bool) {
         isPublishing = false
-        let full = savedDraft ? message + " Your text was saved to Drafts." : message
+        let full = savedDraft ? message + " Your post was saved to Drafts." : message
         setPhase(.failed(message: full))
     }
 
@@ -217,31 +217,51 @@ public final class PostPublisher {
     }
 
     /// Content must survive a failed background publish — the composer is
-    /// long gone. Text (and reply/quote context) goes back to Drafts;
-    /// media references aren't persisted by the draft store, so they need
-    /// re-attaching, which the failure message calls out.
+    /// long gone. Everything goes back to Drafts: text, reply/quote
+    /// context, image data (written to the composer media store), and the
+    /// video/memo reference (its file was preserved through submission).
     private func saveFailureDraft(_ payload: PostThreadPayload) {
-        let posts = payload.slots.map {
-            DraftPost(id: UUID(), text: $0.text, attachedImageFileNames: $0.images.map(\.fileName))
+        let posts = payload.slots.map { slot in
+            DraftPost(
+                id: UUID(),
+                text: slot.text,
+                attachedImageFileNames: slot.images.map(\.fileName),
+                images: slot.images.map { image in
+                    let id = UUID()
+                    ComposerMediaFiles.saveImage(image.data, id: id)
+                    return DraftImageRef(id: id, fileName: image.fileName, altText: image.altText)
+                },
+                video: slot.video.map { video in
+                    DraftVideoRef(
+                        kind: video.isVoiceMemo ? .voiceMemo : .video,
+                        filePath: video.fileURL.path,
+                        duration: video.duration,
+                        aspectWidth: video.aspectRatio?.width,
+                        aspectHeight: video.aspectRatio?.height,
+                        altText: video.altText
+                    )
+                }
+            )
         }
-        guard posts.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            return
-        }
-        DraftStore.shared.save(ComposerDraft(
+        let draft = ComposerDraft(
             id: UUID(),
             posts: posts,
             replyToURI: payload.replyTo?.uri,
             quotedPostURI: payload.quotedPost?.uri,
             modifiedAt: Date()
-        ))
+        )
+        guard !draft.isEmpty else { return }
+        DraftStore.shared.save(draft)
     }
 
     // MARK: - The publish engine
 
     /// Total progress units for a job: one per slot post, plus one per
-    /// media reference that needs processing first.
+    /// slot whose media (video reference or images) needs processing first.
     private static func totalUnits(of payload: PostThreadPayload) -> Int {
-        payload.slots.reduce(0) { $0 + 1 + ($1.video != nil ? 1 : 0) }
+        payload.slots.reduce(0) {
+            $0 + 1 + (($1.video != nil || !$1.images.isEmpty) ? 1 : 0)
+        }
     }
 
     private func run(_ payload: PostThreadPayload, service: ATProtoService) async throws {
@@ -274,29 +294,41 @@ public final class PostPublisher {
         var threadRootRef: ComAtprotoLexicon.Repository.StrongReference? = nil
 
         for (index, slot) in payload.slots.enumerated() {
-            // ── Resolve the media reference, if any ──
+            // ── Resolve media, if any ──
+            // Videos transcode/render; images fit into the ~1 MB blob cap
+            // (raw picker/camera bytes routinely exceed it, which failed
+            // the whole post before this step existed).
             var preparedVideo: PreparedUploadVideo? = nil
-            if let video = slot.video {
+            var imageQueries: [ATProtoTools.ImageQuery] = []
+            if slot.video != nil || !slot.images.isEmpty {
                 progress = unitsDone / totalUnits
                 setPhase(.preparingMedia(slot: index + 1, of: slotCount))
                 let processor = Atmo.platform.mediaProcessor
-                preparedVideo = video.isVoiceMemo
-                    ? try await processor.renderVoiceMemo(at: video.fileURL)
-                    : try await processor.prepareVideo(at: video.fileURL)
+
+                if let video = slot.video {
+                    preparedVideo = video.isVoiceMemo
+                        ? try await processor.renderVoiceMemo(at: video.fileURL)
+                        : try await processor.prepareVideo(at: video.fileURL)
+                }
+
+                for image in slot.images {
+                    let prepared = try await processor.prepareImage(image.data)
+                    // Re-encoded uploads are JPEG regardless of source.
+                    let stem = image.fileName.split(separator: ".").first.map(String.init) ?? image.fileName
+                    imageQueries.append(ATProtoTools.ImageQuery(
+                        imageData: prepared.data,
+                        fileName: stem + ".jpg",
+                        altText: image.altText.isEmpty ? nil : image.altText,
+                        aspectRatio: prepared.aspectRatio.map {
+                            AppBskyLexicon.Embed.AspectRatioDefinition(width: $0.width, height: $0.height)
+                        }
+                    ))
+                }
                 unitsDone += 1
             }
 
             progress = unitsDone / totalUnits
             setPhase(.posting(slot: index + 1, of: slotCount))
-
-            let imageQueries: [ATProtoTools.ImageQuery] = slot.images.map {
-                ATProtoTools.ImageQuery(
-                    imageData: $0.data,
-                    fileName: $0.fileName,
-                    altText: $0.altText.isEmpty ? nil : $0.altText,
-                    aspectRatio: nil
-                )
-            }
 
             // Embed: quote only on first post; a video or images on any
             // post (mutually exclusive — PostSlot enforces it).

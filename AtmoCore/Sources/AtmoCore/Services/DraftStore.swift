@@ -24,6 +24,25 @@ public final class DraftStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         load()
+        // Composer media files whose draft is long gone (crashes, killed
+        // sessions) get swept — everything still referenced survives.
+        ComposerMediaFiles.pruneOrphans(referencedPaths: referencedMediaPaths())
+    }
+
+    /// Every media file path any current draft references.
+    private func referencedMediaPaths() -> Set<String> {
+        var paths = Set<String>()
+        for draft in drafts {
+            for post in draft.posts {
+                for image in post.images {
+                    paths.insert(ComposerMediaFiles.imageURL(for: image.id).path)
+                }
+                if let video = post.video {
+                    paths.insert(video.filePath)
+                }
+            }
+        }
+        return paths
     }
 
     // MARK: - Public API
@@ -40,8 +59,25 @@ public final class DraftStore {
         persist()
     }
 
-    /// Removes a draft by ID. Call after successful post submission.
-    public func delete(id: UUID) {
+    /// Removes a draft by ID (and its media files). Call after successful
+    /// post submission or user deletion.
+    ///
+    /// `preservingVideoFile`: the submit path discards the draft BEFORE
+    /// PostPublisher processes the referenced video file — the publisher
+    /// owns that file's cleanup, so submission must not delete it here.
+    /// (Draft image files are always safe to remove: the publish payload
+    /// carries the image bytes in memory.)
+    public func delete(id: UUID, preservingVideoFile: Bool = false) {
+        if let draft = drafts.first(where: { $0.id == id }) {
+            for post in draft.posts {
+                for image in post.images {
+                    ComposerMediaFiles.deleteImage(id: image.id)
+                }
+                if !preservingVideoFile, let video = post.video {
+                    ComposerMediaFiles.delete(path: video.filePath)
+                }
+            }
+        }
         drafts.removeAll { $0.id == id }
         persist()
     }
