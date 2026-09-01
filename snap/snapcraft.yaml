@@ -8,7 +8,9 @@
 # That replaces the hand-staged GTK stack, the launcher script's env
 # plumbing, and most of the interface plugs below with the shared GNOME
 # platform snap — smaller snap, better theming.
-name: atmo
+# The store name "atomic-social" is reserved for this app; the binary,
+# launcher, and GTK app id keep the atmo/com.stoicswe.atmo identity.
+name: atomic-social
 base: core26
 adopt-info: atmo
 summary: "Atmo — a Bluesky client"
@@ -29,9 +31,9 @@ platforms:
     build-for: [arm64]
 
 apps:
-  atmo:
+  atomic-social:
     command: usr/bin/atmo-launch
-    desktop: meta/gui/atmo.desktop
+    desktop: meta/gui/atomic-social.desktop
     plugs:
       - desktop
       - desktop-legacy

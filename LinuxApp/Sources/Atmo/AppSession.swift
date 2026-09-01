@@ -20,6 +20,19 @@ final class AppSession {
     let service: ATProtoService
     private(set) var timeline: TimelineViewModel?
     private(set) var notifications: NotificationsViewModel?
+    private(set) var search: SearchViewModel?
+
+    /// One thread page's models: the thread itself plus a seeded
+    /// TimelineViewModel that owns like/repost with optimistic updates —
+    /// the same split as the Apple ThreadView.
+    struct ThreadSession {
+        let thread: ThreadViewModel
+        let interactions: TimelineViewModel
+    }
+
+    /// Loaded threads, keyed by the opened post's URI. Kept for the whole
+    /// signed-in session so re-opening a thread is instant; reset clears it.
+    private var threads: [String: ThreadSession] = [:]
 
     private init() {
         // Swap in a libsecret-backed SecretsStoring implementation when
@@ -38,11 +51,25 @@ final class AppSession {
         guard timeline == nil else { return }
         timeline = TimelineViewModel(service: service)
         notifications = NotificationsViewModel(service: service)
+        search = SearchViewModel(service: service)
+    }
+
+    /// The models behind one thread page, created on first open.
+    func threadSession(for postURI: String) -> ThreadSession {
+        if let existing = threads[postURI] { return existing }
+        let session = ThreadSession(
+            thread: ThreadViewModel(service: service, postURI: postURI),
+            interactions: TimelineViewModel(service: service)
+        )
+        threads[postURI] = session
+        return session
     }
 
     /// Tear down after logout.
     func reset() {
         timeline = nil
         notifications = nil
+        search = nil
+        threads = [:]
     }
 }

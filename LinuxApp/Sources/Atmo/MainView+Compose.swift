@@ -4,11 +4,18 @@ import AtmoCore
 
 extension MainView {
 
-    /// Minimal composer: a single post with the shared 300-character limit.
-    /// Threads, image attachments, replies, and quotes are tracked in
-    /// PORTING.md — they reuse ComposerViewModel when they land.
+    /// Composer dialog: a single post (or reply) through the shared
+    /// ComposerViewModel — facets, reply refs, and publishing come from
+    /// core (PostPublisher). Threads, image attachments, and quotes are
+    /// tracked in PORTING.md.
     @ViewBuilder var composeContent: Body {
         VStack(spacing: 8) {
+            if let replyTo = composeReplyTo {
+                Text("↩ Replying to \(replyTo.authorDisplayName ?? "@" + replyTo.authorHandle)")
+                    .style("dim-label")
+                    .halign(.start)
+                    .padding(8, .horizontal)
+            }
             TextEditor(text: $composeText)
                 .innerPadding(8)
                 .vexpand()
@@ -32,13 +39,15 @@ extension MainView {
 
     func submitPost() {
         let text = composeText
+        let replyTo = composeReplyTo
         composeVisible = false
         runCore {
-            guard let bluesky = AppSession.shared.service.atProtoBluesky else { return }
-            do {
-                _ = try await bluesky.createPostRecord(text: text, locales: [Locale.current])
-                await AppSession.shared.timeline?.checkForNewPosts()
-            } catch {
+            let composer = ComposerViewModel(service: AppSession.shared.service, replyTo: replyTo)
+            composer.slots[0].text = text
+            await composer.submit()
+            if composer.didSubmitSuccessfully {
+                _ = await AppSession.shared.timeline?.checkForNewPosts()
+            } else {
                 self.presentError("The post couldn't be sent. Check your connection and try again.")
             }
         }

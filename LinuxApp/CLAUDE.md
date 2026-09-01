@@ -22,11 +22,17 @@ parity tracker.
   Without it every `await` on AtmoCore hangs. `AtmoSmoke` (headless)
   proves the bridge works: `swift run AtmoSmoke` in the dev container.
 - `AppSession.swift` — owns `ATProtoService` + view models (reference
-  state); `onMain {}` bridges GTK's nonisolated callbacks onto
-  `@MainActor` for synchronous reads.
+  state), including per-thread `ThreadSession`s (core `ThreadViewModel`
+  + a seeded `TimelineViewModel` for like/repost); `onMain {}` bridges
+  GTK's nonisolated callbacks onto `@MainActor` for synchronous reads.
 - `MainView*.swift` — the shell; `@State` holds value snapshots only.
   Async work goes through `runCore { await … }`, which bumps `tick` on
   completion so the body re-reads model snapshots.
+- `ModelObserver.swift` — Swift Observation → GTK bridge: re-renders
+  when core models change on their own schedule (silent timeline
+  refresh, search debounce). Registered once per sign-in.
+- `ImageLoader.swift` — avatar/embed byte cache (memory + XDG disk) with
+  `remoteAvatar` / `remotePicture` helpers; AtmoCore stays UI-free.
 
 ## Build
 

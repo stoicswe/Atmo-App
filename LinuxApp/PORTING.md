@@ -76,20 +76,23 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Session restore / logout | ✅ | `restoreSession()` on launch; primary-menu Sign Out |
 | Credential storage | 🟡 | Core `FileCredentialStore` (0600 JSON under XDG app-support). **TODO:** libsecret-backed `SecretsStoring`/`ATCredentialStore` for keyring-grade storage |
 | Timeline (pages, refresh, like, repost) | ✅ | `MainView+Timeline` on shared `TimelineViewModel` — thread-slice collapse, optimistic updates, and rollback come from core for free |
+| Model-driven re-render | ✅ | `ModelObserver` bridges Swift Observation onto the GTK loop — silent background refresh and search's debounced fetches now repaint without user interaction |
 | Reply context in timeline rows | 🟡 | Core embeds the root/parent as `PostItem.threadAncestors`; Linux shows a "↩ Replying to …" line. **TODO:** render the ancestors as full inline rows with a rail, like the Apple feed |
 | Infinite scroll | 🟡 | **Deviation (for now):** a "Load More" button. adwaita-swift's `edgeReached` fires for *every* edge without saying which, so hooking it would fetch pages whenever the user hits the *top*. Needs a position-aware `edge-reached` connection (via CAdw in `.inspect`) honoring core `FeedPreferences.infiniteScrollEnabled` |
 | New-posts pill + scroll anchoring | ⬜ | Core exposes the full live-draining model (`newPostsCount`, `newPostAuthors`, `newPostsOverflowAuthorCount`, `markNewPostSeen`); needs a GTK overlay + ScrolledWindow adjustment work |
-| Thread view | ⬜ | Core `PostItem` carries reply URIs; needs a `NavigationView` push page |
-| Composer (single post) | ✅ | `.dialog` with `TextEditor`, 300-char counter, `createPostRecord` |
-| Composer (threads, images, reply/quote) | ⬜ | Reuse `ComposerViewModel` + `PostSlot`; image picking via portal `fileImporter` |
+| Thread view | ✅ | `MainView+Thread` push page on `NavigationView`; core `ThreadViewModel` (added for this port) loads + flattens the thread, a seeded `TimelineViewModel` owns like/repost — same split as the Apple `ThreadView` |
+| Reply bar in threads | ✅ | Entry + send through shared `ComposerViewModel`, then thread reload |
+| Composer (single post + replies) | ✅ | `.dialog` with `TextEditor`, 300-char counter; submits through shared `ComposerViewModel`/`PostPublisher` (facets, reply refs). Rows have a ↩ reply button |
+| Composer (threads, images, quote) | ⬜ | Reuse `PostSlot` list + portal `fileImporter` for images |
 | Drafts | ⬜ | `DraftStore` works on Linux already (UserDefaults → XDG plist); needs UI |
-| Search (posts/people/hashtags) | ⬜ | Reuse `SearchViewModel`; GNOME `SearchEntry` in the header bar |
+| Search (posts/people/hashtags) | 🟡 | `MainView+Search` on shared `SearchViewModel` (debounce, fan-out, enrichment from core). **TODO:** Top/Latest sort toggle, like/repost on result rows (needs a core interaction path for search results), people load-more, follow buttons |
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |
 | Profiles (view/edit/follow) | ⬜ | Reuse `ProfileViewModel` |
 | Bookmarks | ⬜ | `BookmarkStore` runs on Linux (synced store falls back to local-only); needs UI |
 | Timeline position sync | 🟡 | `PositionStore` persists locally (no iCloud on Linux — by design, the seam falls back) |
-| Avatars / images in feed | ⬜ | `Avatar` + `Picture` widgets; needs an image loader (AtmoCore stays UI-free, so a small GTK-side cache) |
+| Avatars / images in feed | ✅ | `ImageLoader` (GTK-side memory + XDG-disk cache) feeding `Avatar` (custom image via `.inspect`) and `Picture(data:)` thumbnails |
+| Embeds (link cards, quotes, video stub) | ✅ | Core `PostItem.embedContent` digest (added for this port); `LinkButton` cards, quote cards push their thread, video links out to bsky.app |
 | Rich text facets (links, mentions, tags) | ⬜ | Pango markup from `PostItem.facets` |
 | Spotlight donation | ❌ | Apple-only; the `PostIndexing` seam installs the no-op |
 | Apple Intelligence translation | ❌ | Apple-only (`TranslationHelper` lives in `Apple/`) |
@@ -98,15 +101,17 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 
 ## 3. What's left (ordered)
 
-1. **Avatars and embedded images** in timeline rows (GTK-side async
-   image cache feeding `Avatar`/`Picture`).
-2. **Thread view** (push page on `NavigationView`).
-3. **Full composer** — reuse `ComposerViewModel` (threads, images,
-   reply/quote, drafts).
-4. **Search page** and **profiles**.
-5. **DMs**.
-6. **libsecret credential store** replacing `FileCredentialStore`.
-7. **New-posts pill** with scroll anchoring.
+1. **Profiles** (view/edit/follow — reuse `ProfileViewModel`; people
+   rows in search should link here).
+2. **Full composer** — multi-slot threads, image attachments (portal
+   `fileImporter`), quote posts; drafts UI on `DraftStore`.
+3. **DMs**.
+4. **Search interactions** — Top/Latest toggle; like/repost on result
+   rows (needs a core interaction path for search results).
+5. **libsecret credential store** replacing `FileCredentialStore`.
+6. **New-posts pill** with scroll anchoring.
+7. **Rich text facets** (Pango markup from `PostItem.facets`) and full
+   inline ancestor rows for replies.
 
 ## 4. Engineering conventions (see also `CLAUDE.md` here)
 
@@ -142,3 +147,15 @@ docker run --rm -v "$PWD:/src" -w /src/LinuxApp atmo-linux-dev \
 # snap (on an Ubuntu machine with snapcraft)
 snapcraft
 ```
+
+On an Ubuntu machine with Swift ≥ 6.2 and `libadwaita-1-dev` installed,
+plain `swift build --scratch-path .build-linux` in `LinuxApp/` works
+without the container.
+
+CI: `.github/workflows/linux.yml` runs AtmoCore tests + the app build on
+every PR, and on pushes to `main`/`release/*` builds the snap
+(amd64 + arm64) and publishes it to the store — beta from `main`, stable
+from `release/*` — under the reserved store name **atomic-social**.
+Publishing needs the `SNAPCRAFT_STORE_CREDENTIALS` repository secret
+(export command in the workflow comment); without it the snap still
+builds and uploads as a workflow artifact.
