@@ -16,6 +16,9 @@ struct LikedPostsView: View {
 
     @Environment(ATProtoService.self) private var service
 
+    /// Live scrub state published by the rail — drives the date bubble.
+    @State private var railDragInfo: RailDragInfo? = nil
+
     private var navPath: Binding<NavigationPath> {
         splitNavPath ?? $ownedNavPath
     }
@@ -57,29 +60,60 @@ struct LikedPostsView: View {
                     }
                 }
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.likedPosts) { liked in
-                            LikedPostRow(liked: liked)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    navPath.wrappedValue = NavigationPath([PostNavTarget(uri: liked.uri)])
-                                }
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        withAnimation {
-                                            store.remove(uri: liked.uri)
-                                        }
-                                    } label: {
-                                        Label("Remove from History", systemImage: "heart.slash")
+                let markers = LikedTimelineIndex.markers(for: store.likedPosts)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(store.likedPosts) { liked in
+                                LikedPostRow(liked: liked)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        navPath.wrappedValue = NavigationPath([PostNavTarget(uri: liked.uri)])
                                     }
-                                }
-                            Divider().overlay(Color.secondary.opacity(0.1))
-                        }
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            withAnimation {
+                                                store.remove(uri: liked.uri)
+                                            }
+                                        } label: {
+                                            Label("Remove from History", systemImage: "heart.slash")
+                                        }
+                                    }
+                                Divider().overlay(Color.secondary.opacity(0.1))
+                            }
 
-                        if store.isBackfilling {
-                            syncingFooter
-                                .padding(.vertical, AtmoTheme.Spacing.lg)
+                            if store.isBackfilling {
+                                syncingFooter
+                                    .padding(.vertical, AtmoTheme.Spacing.lg)
+                            }
+                        }
+                    }
+                    // ── Timeline rail ──
+                    // Photos-style date scrubber: tap or drag along the
+                    // trailing edge to jump days/months/years through the
+                    // history (granularity adapts to its span).
+                    .overlay(alignment: .trailing) {
+                        if markers.count >= 3 {
+                            LikedTimelineRail(markers: markers, dragInfo: $railDragInfo) { marker in
+                                proxy.scrollTo(marker.id, anchor: .top)
+                            }
+                            .padding(.vertical, AtmoTheme.Spacing.xl)
+                            .padding(.trailing, 2)
+                        }
+                    }
+                    // Floating date bubble beside the finger while scrubbing.
+                    .overlay(alignment: .topTrailing) {
+                        if let info = railDragInfo {
+                            Text(info.label)
+                                .font(.caption.weight(.semibold))
+                                .monospacedDigit()
+                                .padding(.horizontal, AtmoTheme.Spacing.md)
+                                .padding(.vertical, AtmoTheme.Spacing.sm)
+                                .glassEffect(.regular, in: Capsule())
+                                .padding(.trailing, 44)
+                                .offset(y: info.y + AtmoTheme.Spacing.xl - 14)
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -101,6 +135,87 @@ struct LikedPostsView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Rail Drag Info
+/// What the rail reports while the finger scrubs: the bubble text and its
+/// vertical position within the rail.
+struct RailDragInfo: Equatable {
+    let label: String
+    let y: CGFloat
+}
+
+// MARK: - Liked Timeline Rail
+// The scrubber strip on the list's trailing edge: one slot per timeline
+// marker (period labels; boundaries in accent). A tap jumps; a drag skims
+// through periods with a tick per marker crossed, the active label
+// swelling under the finger.
+private struct LikedTimelineRail: View {
+    let markers: [LikedTimelineMarker]
+    @Binding var dragInfo: RailDragInfo?
+    let onJump: (LikedTimelineMarker) -> Void
+
+    @State private var isDragging = false
+    @State private var activeIndex: Int? = nil
+
+    var body: some View {
+        GeometryReader { geo in
+            let rowHeight = geo.size.height / CGFloat(markers.count)
+
+            VStack(spacing: 0) {
+                ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
+                    Text(marker.label)
+                        .font(.system(size: 9, weight: marker.isMajor ? .bold : .medium))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .foregroundStyle(marker.isMajor
+                                         ? AnyShapeStyle(AtmoColors.accent)
+                                         : AnyShapeStyle(.secondary))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: rowHeight)
+                        .scaleEffect(isDragging && activeIndex == index ? 1.5 : 1)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: activeIndex)
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        let index = min(max(Int(value.location.y / rowHeight), 0), markers.count - 1)
+                        if index != activeIndex {
+                            activeIndex = index
+                            Haptics.slideSelect()
+                            onJump(markers[index])
+                        }
+                        dragInfo = RailDragInfo(
+                            label: markers[index].fullLabel,
+                            y: min(max(value.location.y, 0), geo.size.height)
+                        )
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        activeIndex = nil
+                        dragInfo = nil
+                    }
+            )
+        }
+        .frame(width: 30)
+        .background {
+            // A whisper of glass while scrubbing so the strip reads as a
+            // control; invisible at rest.
+            if isDragging {
+                Capsule().fill(.ultraThinMaterial)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: isDragging)
+        .accessibilityElement()
+        .accessibilityLabel("Timeline")
+        .accessibilityHint("Drag to jump through your liked history by date")
     }
 }
 

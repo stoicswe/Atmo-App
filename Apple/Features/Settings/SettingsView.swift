@@ -286,26 +286,31 @@ private struct AppearanceTab: View {
                 Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
+                // NOTE: no .onChange here — an onChange attached to this
+                // always-mounted Form's Picker sent macOS into an infinite
+                // update-constraints loop at launch (NSGenericException,
+                // "more Update Constraints passes than views"). The store
+                // detects retention changes itself by remembering the last
+                // value it applied (applyRetention).
                 Picker("Keep liked posts", selection: $likedRetentionRaw) {
                     ForEach(LikedPostsRetention.allCases) { option in
                         Text(option.displayName).tag(option.rawValue)
                     }
                 }
-                .onChange(of: likedRetentionRaw) { oldValue, newValue in
-                    LikedPostsStore.shared.retentionChanged(
-                        from: LikedPostsRetention(rawValue: oldValue) ?? .never,
-                        to: LikedPostsRetention(rawValue: newValue) ?? .never
-                    )
-                }
             } header: {
                 Text("Liked History")
             } footer: {
-                Text("How long the ♥ Liked section remembers posts you've liked. The history syncs privately through iCloud without appearing in iCloud Drive. Expired entries leave the history only — your likes on Bluesky are untouched. Extending the window re-syncs older likes from your account.")
+                // NOTE: no "♥" here — an emoji-class glyph in this wrapping
+                // Form footer sent macOS into an infinite update-constraints
+                // loop at launch (NSGenericException crash).
+                Text("How long the Liked section remembers posts you've liked. The history syncs privately through iCloud without appearing in iCloud Drive. Expired entries leave the history only — your likes on Bluesky are untouched. Extending the window re-syncs older likes from your account.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
 
@@ -364,6 +369,7 @@ private struct AppearanceTab: View {
                 Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky. Tinted background also washes the whole app in a muted shade of the accent — pale in Light Mode, deep in Dark Mode — quiet enough that posts and media stay perfectly readable.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // ── Apple Intelligence (only on devices that support it) ──

@@ -179,30 +179,40 @@ public final class LikedPostsStore {
 
     // MARK: - Retention
 
+    /// The retention value last applied — lets the store detect a settings
+    /// change on its own. (No UI hook: an .onChange on the Settings picker
+    /// looped macOS's update-constraints pass at launch and crashed.)
+    private static let lastRetentionKey = "com.atmo.app.likedPosts.lastRetention"
+
     /// Drops entries older than the user's retention window. Persists
     /// only when something expired, so callers can invoke it freely —
-    /// the store runs it on load and on every backfill pass.
+    /// the store runs it on load and on every backfill pass, so a changed
+    /// setting takes effect on the next launch or Liked-view visit.
+    ///
+    /// A LENGTHENED window (or Forever) also restarts the backfill walk
+    /// from the newest like: previously-expired history is welcome again,
+    /// and the dedup pass keeps the re-walk cheap.
     public func applyRetention() {
-        let pruned = Self.pruned(likedPosts, retention: .current)
+        let current = LikedPostsRetention.current
+
+        if let lastRaw = UserDefaults.standard.string(forKey: Self.lastRetentionKey),
+           let last = LikedPostsRetention(rawValue: lastRaw),
+           last != current {
+            let lastAge = last.maxAge ?? .infinity
+            let currentAge = current.maxAge ?? .infinity
+            if currentAge > lastAge {
+                backfillComplete = false
+                UserDefaults.standard.removeObject(forKey: Self.backfillCompleteKey)
+                UserDefaults.standard.removeObject(forKey: Self.backfillCursorKey)
+            }
+        }
+        UserDefaults.standard.set(current.rawValue, forKey: Self.lastRetentionKey)
+
+        let pruned = Self.pruned(likedPosts, retention: current)
         if pruned.count != likedPosts.count {
             likedPosts = pruned
             persist()
         }
-    }
-
-    /// Settings hook for a retention change. Shortening prunes right away.
-    /// Lengthening (or Never) also restarts the backfill walk from the
-    /// newest like: previously-expired history is welcome again, and the
-    /// dedup pass keeps the re-walk cheap.
-    public func retentionChanged(from old: LikedPostsRetention, to new: LikedPostsRetention) {
-        let oldAge = old.maxAge ?? .infinity
-        let newAge = new.maxAge ?? .infinity
-        if newAge > oldAge {
-            backfillComplete = false
-            UserDefaults.standard.removeObject(forKey: Self.backfillCompleteKey)
-            UserDefaults.standard.removeObject(forKey: Self.backfillCursorKey)
-        }
-        applyRetention()
     }
 
     // MARK: - Backfill

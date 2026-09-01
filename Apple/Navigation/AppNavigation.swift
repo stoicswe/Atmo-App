@@ -500,10 +500,17 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .drafts)
                 .navigationTitle(active == .drafts ? "Drafts" : "")
 
-            SettingsView()
-                .opacity(active == .settings ? 1 : 0)
-                .allowsHitTesting(active == .settings)
-                .navigationTitle(active == .settings ? "Settings" : "")
+            // Settings mounts ON DEMAND, breaking the always-alive rule the
+            // other tabs follow: its grouped Form, laid out invisibly at
+            // opacity 0, sent macOS into an infinite update-constraints
+            // loop at launch once the Form outgrew the window
+            // (NSGenericException, "more Update Constraints in Window
+            // passes than there are views"). Settings keeps all state in
+            // @AppStorage, so nothing is lost by recreating it.
+            if active == .settings {
+                SettingsView()
+                    .navigationTitle("Settings")
+            }
         }
     }
 

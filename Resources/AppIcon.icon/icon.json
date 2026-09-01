@@ -1,35 +1,21 @@
 {
+  "features" : [
+    "refractivity"
+  ],
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.75717,0.91587,1.00000,1.00000",
-      "display-p3:0.41247,0.33333,0.96783,1.00000"
+      "display-p3:1.00000,0.95755,0.90645,1.00000",
+      "display-p3:0.81923,0.91068,0.96783,1.00000"
     ]
   },
   "groups" : [
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "fill" : {
-            "linear-gradient" : [
-              "display-p3:1.00000,0.51937,0.58264,0.66000",
-              "display-p3:0.66061,0.30366,1.00000,1.00000"
-            ],
-            "orientation" : {
-              "start" : {
-                "x" : 0.5,
-                "y" : 0
-              },
-              "stop" : {
-                "x" : 0.5000000000000002,
-                "y" : 0.9012009862494944
-              }
-            }
-          },
-          "image-name" : "at_prot.png",
-          "name" : "at_prot",
+          "image-name" : "at_prot 2.png",
+          "name" : "at_prot 2",
           "position" : {
-            "scale" : 0.59,
+            "scale" : 0.64,
             "translation-in-points" : [
               0,
               0
@@ -37,8 +23,13 @@
           }
         }
       ],
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.419375
+      },
       "shadow" : {
-        "kind" : "neutral",
+        "kind" : "layer-color",
         "opacity" : 0.5
       },
       "translucency" : {
@@ -47,12 +38,15 @@
       }
     },
     {
+      "blur-material" : 0.5,
       "layers" : [
         {
+          "hidden" : false,
           "image-name" : "rads.png",
           "name" : "rads",
+          "opacity" : 0.25,
           "position" : {
-            "scale" : 0.97,
+            "scale" : 0.81,
             "translation-in-points" : [
               0,
               0
@@ -60,9 +54,15 @@
           }
         }
       ],
+      "lighting" : "combined",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.5
+      },
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "layer-color",
+        "opacity" : 1.26
       },
       "translucency" : {
         "enabled" : true,
