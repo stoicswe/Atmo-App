@@ -374,6 +374,16 @@ public final class SearchViewModel {
     /// Pre-fills the query with `#<tag>` and immediately runs a search.
     /// Called by the environment `HashtagSearchAction` when a #hashtag is tapped
     /// anywhere in the feed or thread views.
+    /// "Search posts" from a profile's ··· menu: pre-fills the query with
+    /// the `from:` operator for that account and runs a post search.
+    public func activateAuthorSearch(handle: String) {
+        sort = .top
+        let q = "from:\(handle)"
+        query = q
+        selectedCategory = .posts
+        onQueryChanged(q)
+    }
+
     public func activateHashtag(_ tag: String) {
         sort = .top
         let q = "#\(tag)"

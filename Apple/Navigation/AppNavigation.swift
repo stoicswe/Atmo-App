@@ -229,6 +229,11 @@ struct AppNavigation: View {
                 vm.activateHashtag(tag)
                 selectedItem = .search
             })
+            .environment(\.authorSearch, AuthorSearchAction { [self] handle in
+                let vm = getOrCreateSearchViewModel()
+                vm.activateAuthorSearch(handle: handle)
+                selectedItem = .search
+            })
             // Inject the draft-saved notification so ComposerView can trigger the
             // "Draft saved" toast from anywhere in the hierarchy (timeline reply,
             // quote post, FAB) without requiring explicit callback threading.

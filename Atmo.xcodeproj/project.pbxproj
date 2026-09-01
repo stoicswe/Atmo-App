@@ -58,6 +58,7 @@
 		82C2AF0F91C68A4CE333B1EF /* AtmoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C8812C89BCC2BEEB3E008A36 /* AtmoWatch.app */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8390A1B5BDE2DF72B827D98E /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2E5444F50ACEF0FDA98D79 /* CameraCaptureView.swift */; };
 		85D0A273B77BD737EECC6FAA /* VideoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A30966828A3215EB97F9E95 /* VideoPreparer.swift */; };
+		8A87FF65B1281F8A846BA4A5 /* ReportAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CB7DBBA3CB030E81D125CFC /* ReportAccountView.swift */; };
 		9416002A7EAA42E6C11AF351 /* FamilyControlsIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7514C448FB5F66CB177762 /* FamilyControlsIntegration.swift */; };
 		961CF1A3E9B0AF62E5BF2354 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A5F2F77009664EB20C077752 /* AppIcon.icon */; };
 		97D88ED4F32BD89BA0AE5E6A /* VerifiedBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A585053040099E29C26DAB2B /* VerifiedBadge.swift */; };
@@ -82,6 +83,7 @@
 		C3FCC3EC164628B409301EB6 /* ProfileHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62B909A2464E8BE9773B576 /* ProfileHeaderView.swift */; };
 		CCD3FF9032F6926429B85AB8 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60BFCDD1F37B662C607BF339 /* SearchView.swift */; };
 		CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */; };
+		CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA8D74EB6AC8E9B734C1407 /* Pasteboard+Atmo.swift */; };
 		CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */; };
 		D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */; };
 		D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */; };
@@ -155,6 +157,7 @@
 		24D4C752CD2EE12A1600868A /* AtmoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmoTheme.swift; sourceTree = "<group>"; };
 		2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSettings.swift; sourceTree = "<group>"; };
 		29A102F8922C0C58A2E8AFC5 /* WatchNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNotificationsView.swift; sourceTree = "<group>"; };
+		2CB7DBBA3CB030E81D125CFC /* ReportAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportAccountView.swift; sourceTree = "<group>"; };
 		314CED221A493CBD1616999A /* FeedItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedItemView.swift; sourceTree = "<group>"; };
 		31F5CC67B73F5649C235A041 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		35D8ECCAC181EE3791D987A6 /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
@@ -217,6 +220,7 @@
 		E3E8DFAAE13D068BB6E88F6C /* EmbeddedVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedVideoPlayer.swift; sourceTree = "<group>"; };
 		E7364AB0C403D888FADBF61D /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
 		E76232602161DBBA414A3F3F /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		EAA8D74EB6AC8E9B734C1407 /* Pasteboard+Atmo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Pasteboard+Atmo.swift"; sourceTree = "<group>"; };
 		ED383751DFB3B02B9A712C71 /* SensitiveMediaShield.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveMediaShield.swift; sourceTree = "<group>"; };
 		EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LikedPostsView.swift; sourceTree = "<group>"; };
 		EFDAE3CD661558EEAF60A875 /* RichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextView.swift; sourceTree = "<group>"; };
@@ -393,6 +397,7 @@
 				C62B909A2464E8BE9773B576 /* ProfileHeaderView.swift */,
 				C0B733C0076171F15536FD45 /* ProfilePostsView.swift */,
 				B42653DA347F1073FF2A5E5C /* ProfileView.swift */,
+				2CB7DBBA3CB030E81D125CFC /* ReportAccountView.swift */,
 			);
 			path = Profile;
 			sourceTree = "<group>";
@@ -436,6 +441,7 @@
 		A39D4682C480D17C4FC03193 /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
+				EAA8D74EB6AC8E9B734C1407 /* Pasteboard+Atmo.swift */,
 				8B04EE931B31F8F7BFBE70C9 /* View+Atmo.swift */,
 			);
 			path = Extensions;
@@ -752,6 +758,7 @@
 				7314CAAA255AFD978D889749 /* NewConversationView.swift in Sources */,
 				D8955B361EE8532C4AE57E4F /* NotificationRowView.swift in Sources */,
 				9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */,
+				CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */,
 				62289897EBF007549FD8E5A7 /* PostActionsView.swift in Sources */,
 				744CEA9BEE824804F8AEA7FC /* PostEmbedView.swift in Sources */,
 				FAB6AC450F9A9B635B439808 /* PostPublishAttributes.swift in Sources */,
@@ -760,6 +767,7 @@
 				C3FCC3EC164628B409301EB6 /* ProfileHeaderView.swift in Sources */,
 				3D9CBFC5BCDE3483749C5151 /* ProfilePostsView.swift in Sources */,
 				5F3DC0D73743F0A9DC942566 /* ProfileView.swift in Sources */,
+				8A87FF65B1281F8A846BA4A5 /* ReportAccountView.swift in Sources */,
 				BD407337803ED8DE0E6C85CB /* RichTextView.swift in Sources */,
 				CCD3FF9032F6926429B85AB8 /* SearchView.swift in Sources */,
 				51A0257E15391064E3797F9B /* SensitiveMediaShield.swift in Sources */,
@@ -1017,7 +1025,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0901.1007;
+				CURRENT_PROJECT_VERSION = 2026.0901.1548;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1092,7 +1100,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0901.1007;
+				CURRENT_PROJECT_VERSION = 2026.0901.1548;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_NS_ASSERTIONS = NO;

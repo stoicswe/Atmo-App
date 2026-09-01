@@ -36,6 +36,13 @@ struct ProfileHeaderView: View {
     }
 
     @State private var showEditProfile = false
+    @State private var showBlockConfirm = false
+    @State private var showUnblockConfirm = false
+    /// Presented via `.sheet(item:)` so re-renders of the header never
+    /// recreate the report flow mid-way.
+    @State private var reportViewModel: ReportAccountViewModel? = nil
+    @Environment(ATProtoService.self) private var service
+    @Environment(\.authorSearch) private var authorSearch
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -114,16 +121,35 @@ struct ProfileHeaderView: View {
                     .padding(.top, AtmoTheme.Spacing.md)
                 } else {
                     HStack(spacing: AtmoTheme.Spacing.sm) {
-                        Button {
-                            onFollowTap()
-                        } label: {
-                            Text(profile.isFollowing ? "Following" : "Follow")
-                                .fontWeight(.semibold)
-                                .frame(minWidth: 80)
+                        if viewModel != nil {
+                            profileMenu
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(profile.isFollowing ? .secondary : AtmoColors.accent)
-                        .controlSize(.regular)
+
+                        if profile.isBlocking {
+                            // Official-app behavior: a blocked account shows
+                            // "Blocked" where Follow would be; tapping unblocks.
+                            Button {
+                                showUnblockConfirm = true
+                            } label: {
+                                Text("Blocked")
+                                    .fontWeight(.semibold)
+                                    .frame(minWidth: 80)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.regular)
+                        } else {
+                            Button {
+                                onFollowTap()
+                            } label: {
+                                Text(profile.isFollowing ? "Following" : "Follow")
+                                    .fontWeight(.semibold)
+                                    .frame(minWidth: 80)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(profile.isFollowing ? .secondary : AtmoColors.accent)
+                            .controlSize(.regular)
+                        }
 
                         subscriptionBell
                     }
@@ -162,6 +188,26 @@ struct ProfileHeaderView: View {
                     statItem(count: profile.postsCount, label: "Posts")
                 }
                 .padding(.top, AtmoTheme.Spacing.sm)
+
+                // Moderation state chips — mirrors the "Reposts Hidden"
+                // pill on the web app.
+                if !isOwnProfile {
+                    let hidingReposts = viewModel?.isHidingReposts ?? false
+                    if hidingReposts || profile.isMuted || profile.isBlocking {
+                        HStack(spacing: AtmoTheme.Spacing.sm) {
+                            if profile.isBlocking {
+                                statusChip("Blocked", systemImage: "person.crop.circle.badge.xmark")
+                            }
+                            if profile.isMuted {
+                                statusChip("Muted", systemImage: "speaker.slash")
+                            }
+                            if hidingReposts {
+                                statusChip("Reposts hidden", systemImage: "arrow.2.squarepath")
+                            }
+                        }
+                        .padding(.top, AtmoTheme.Spacing.sm)
+                    }
+                }
             }
             .padding(.horizontal, AtmoTheme.Spacing.lg)
             .padding(.bottom, AtmoTheme.Spacing.md)
@@ -172,6 +218,117 @@ struct ProfileHeaderView: View {
                     .themedBackdrop()
             }
         }
+        .sheet(item: $reportViewModel) { reportVM in
+            ReportAccountView(
+                viewModel: reportVM,
+                isBlocking: profile.isBlocking,
+                onBlock: { Task { await viewModel?.toggleBlock() } }
+            )
+            .themedBackdrop()
+        }
+        .alert("Block @\(profile.handle)?", isPresented: $showBlockConfirm) {
+            Button("Block", role: .destructive) {
+                Haptics.thump()
+                Task { await viewModel?.toggleBlock() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Blocked accounts cannot reply in your threads, mention you, or otherwise interact with you. You will not see their content and they will be prevented from seeing yours.")
+        }
+        .alert("Unblock @\(profile.handle)?", isPresented: $showUnblockConfirm) {
+            Button("Unblock") {
+                Haptics.soft()
+                Task { await viewModel?.toggleBlock() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The account will be able to interact with you and see your posts again.")
+        }
+    }
+
+    // MARK: - ··· menu
+    // The web app's profile overflow: link + search up top, then the
+    // moderation actions (hide reposts, mute, block, report).
+    private var profileMenu: some View {
+        let hidingReposts = viewModel?.isHidingReposts ?? false
+
+        return Menu {
+            Button {
+                copyProfileLink()
+            } label: {
+                Label("Copy link to profile", systemImage: "link")
+            }
+            Button {
+                Haptics.tap()
+                authorSearch(profile.handle)
+            } label: {
+                Label("Search posts", systemImage: "magnifyingglass")
+            }
+
+            Divider()
+
+            Button {
+                Haptics.tap()
+                viewModel?.setHidingReposts(!hidingReposts)
+            } label: {
+                Label(hidingReposts ? "Show reposts in feeds" : "Hide reposts in feeds",
+                      systemImage: "arrow.2.squarepath")
+            }
+            Button {
+                Haptics.tap()
+                Task { await viewModel?.toggleMute() }
+            } label: {
+                Label(profile.isMuted ? "Unmute account" : "Mute account",
+                      systemImage: profile.isMuted ? "speaker.wave.2" : "speaker.slash")
+            }
+            if profile.isBlocking {
+                Button {
+                    showUnblockConfirm = true
+                } label: {
+                    Label("Unblock account", systemImage: "person.crop.circle.badge.checkmark")
+                }
+            } else {
+                Button(role: .destructive) {
+                    showBlockConfirm = true
+                } label: {
+                    Label("Block account", systemImage: "person.crop.circle.badge.xmark")
+                }
+            }
+            Button(role: .destructive) {
+                reportViewModel = ReportAccountViewModel(
+                    service: service,
+                    subjectDID: profile.did,
+                    subjectHandle: profile.handle
+                )
+            } label: {
+                Label("Report account", systemImage: "flag")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 34, height: 34)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("More options")
+    }
+
+    private func copyProfileLink() {
+        guard let url = profile.bskyWebURL else { return }
+        AtmoPasteboard.copy(url.absoluteString)
+        Haptics.confirm()
+    }
+
+    private func statusChip(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AtmoTheme.Spacing.sm)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.secondary.opacity(0.12)))
     }
 
     // MARK: - Post-notification subscription bell

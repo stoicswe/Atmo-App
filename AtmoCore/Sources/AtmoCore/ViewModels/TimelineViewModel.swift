@@ -255,7 +255,7 @@ public final class TimelineViewModel {
         do {
             // Fetch one page from the start (no cursor = freshest posts)
             let output = try await fetchPage(kit, cursor: nil)
-            let fetched = output.feed.map { PostItem(feedPost: $0) }
+            let fetched = HiddenRepostsStore.shared.filter(output.feed.map { PostItem(feedPost: $0) })
 
             // Find which items are genuinely new. "Already in the list"
             // must cover everything the list REPRESENTS — the cells AND the
@@ -352,7 +352,7 @@ public final class TimelineViewModel {
         guard let kit = service.atProtoKit else { return }
         do {
             let output = try await fetchPage(kit, cursor: cursor)
-            let newItems = output.feed.map { PostItem(feedPost: $0) }
+            let newItems = HiddenRepostsStore.shared.filter(output.feed.map { PostItem(feedPost: $0) })
             let dedupedItems = Self.collapseThreadSlices(
                 newItems,
                 enforceChronology: feedSource.isFollowing

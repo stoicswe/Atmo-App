@@ -122,7 +122,7 @@ struct ProfileView: View {
                             profile: profile,
                             isOwnProfile: isOwnProfile,
                             onFollowTap: { Task { await vm.toggleFollow() } },
-                            viewModel: isOwnProfile ? vm : nil
+                            viewModel: vm
                         )
 
                         Divider().overlay(AtmoColors.glassDivider)

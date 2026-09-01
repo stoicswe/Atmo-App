@@ -87,6 +87,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |
 | Profiles (view/edit/follow) | ⬜ | Reuse `ProfileViewModel` |
+| Profile ··· menu (copy link, search posts, hide reposts, mute, block, report) | ⬜ | Core has it all: `ProfileModel.bskyWebURL`, `SearchViewModel.activateAuthorSearch`, `HiddenRepostsStore` (feeds already filter), `ProfileViewModel.toggleMute/toggleBlock`, `ReportAccountViewModel` (4-step report → chosen labeler). Needs GTK menu + report dialog |
 | Bookmarks | ⬜ | `BookmarkStore` runs on Linux (synced store falls back to local-only); needs UI |
 | Timeline position sync | 🟡 | `PositionStore` persists locally (no iCloud on Linux — by design, the seam falls back) |
 | Avatars / images in feed | ⬜ | `Avatar` + `Picture` widgets; needs an image loader (AtmoCore stays UI-free, so a small GTK-side cache) |
