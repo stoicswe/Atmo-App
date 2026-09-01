@@ -11,7 +11,11 @@ import AppKit
 /// Inline HLS player for video embeds in feeds and threads, mirroring the
 /// official Bluesky behavior with native iOS 26-style controls:
 ///   • Muted by default; auto-plays once the view has sat mostly on screen
-///     for ~1 s of scroll rest; scrolling again re-arms the timer.
+///     for ~1 s of scroll rest; scrolling again re-arms the timer. The
+///     stream is opened (not started) the moment the cell is mostly on
+///     screen, so the poster's play badge — a real button — and the rest
+///     timer both start playback without a cold connect. A spinner sits
+///     over the frame while the stream buffers its first segments.
 ///   • Pauses and releases the player (stream + decoder) once mostly
 ///     scrolled away, falling back to the poster frame.
 ///   • Loops.
@@ -53,12 +57,12 @@ struct EmbeddedVideoPlayer: View {
                 Color.black.opacity(0.4)
             }
 
-            if let player = model?.player {
+            if let model, model.isActive, let player = model.player {
                 PlayerLayerView(player: player)
             }
         }
         .overlay {
-            if let model, model.player != nil {
+            if let model, model.isActive {
                 // Live player: a tap anywhere off the controls toggles them,
                 // native-player style.
                 Color.clear
@@ -67,15 +71,33 @@ struct EmbeddedVideoPlayer: View {
                         model.toggleControls()
                     }
             } else {
-                // Poster state: non-interactive badge — a tap falls through
-                // to the cell (open thread); autoplay handles playback.
+                // Poster state: the whole video area is the play target, so
+                // a tap anywhere on it plays right away instead of waiting
+                // on the autoplay rest timer. A child tap gesture always
+                // beats the cell's own tap-to-open-thread gesture, so the
+                // post opens only from taps outside the video.
                 playBadge
-                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        Haptics.tap()
+                        ensureModel().playNow()
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Play video")
                     .transition(.opacity)
             }
         }
         .overlay {
-            if let model, model.player != nil, model.controlsVisible {
+            // Stream still buffering its first segments after play: keep
+            // the person informed without putting the full controls up.
+            if let model, model.isActive, model.isBuffering, !model.controlsVisible {
+                bufferingSpinner
+                    .transition(.opacity)
+            }
+        }
+        .overlay {
+            if let model, model.isActive, model.controlsVisible {
                 VideoControlsOverlay(model: model, style: .inline, onCorner: {
                     model.enterFullscreen()
                     showFullscreen = true
@@ -86,7 +108,7 @@ struct EmbeddedVideoPlayer: View {
         .overlay(alignment: .bottomTrailing) {
             // Clean-playback state: a lone mini mute badge keeps sound one
             // tap away without the full control layer.
-            if let model, model.player != nil, !model.controlsVisible {
+            if let model, model.isActive, !model.controlsVisible {
                 Button {
                     Haptics.tap()
                     model.toggleMute()
@@ -106,10 +128,12 @@ struct EmbeddedVideoPlayer: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model?.controlsVisible == true)
-        .animation(.easeInOut(duration: 0.15), value: model?.player == nil)
+        .animation(.easeInOut(duration: 0.15), value: model?.isActive == true)
+        .animation(.easeInOut(duration: 0.2), value: model?.isBuffering == true)
         .onGeometryChange(for: ViewportMetrics.self) { proxy in
             ViewportMetrics(
-                frame: proxy.frame(in: .scrollView),
+                size: proxy.size,
+                scrollOffsetY: proxy.frame(in: .scrollView).minY,
                 container: proxy.bounds(of: .scrollView)
             )
         } action: { metrics in
@@ -139,6 +163,14 @@ struct EmbeddedVideoPlayer: View {
             .font(.system(size: 48))
             .foregroundStyle(.white)
             .atmoShadow(AtmoTheme.Shadow.floating)
+    }
+
+    private var bufferingSpinner: some View {
+        ProgressView()
+            .tint(.white)
+            .frame(width: 48, height: 48)
+            .videoControlGlass(in: Circle(), interactive: false)
+            .allowsHitTesting(false)
     }
 
     /// The model is created lazily on the first geometry event so cells the
@@ -286,11 +318,19 @@ private struct VideoControlsOverlay: View {
             Haptics.tap()
             model.togglePlayPause()
         } label: {
-            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: inline ? 18 : 28, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: inline ? 48 : 72, height: inline ? 48 : 72)
-                .contentShape(Circle())
+            Group {
+                if model.isPlaying, model.isBuffering {
+                    ProgressView()
+                        .tint(.white)
+                        .controlSize(inline ? .regular : .large)
+                } else {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: inline ? 18 : 28, weight: .semibold))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: inline ? 48 : 72, height: inline ? 48 : 72)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .videoControlGlass(in: Circle())
@@ -530,14 +570,24 @@ private extension View {
 }
 
 // MARK: - Viewport Metrics
-/// The view's frame and the enclosing scroll view's visible bounds, both
-/// in the scroll view's coordinate space. `container` is nil outside any
-/// scroll view — treated as fully visible.
+/// What visibility is computed from:
+///   • `size` — the view's own size (its bounds are `(0, 0, size)`).
+///   • `container` — the enclosing scroll view's visible bounds, which
+///     `GeometryProxy.bounds(of:)` returns *converted into this view's
+///     local space* (its origin is the negative of the view's position in
+///     the viewport). Nil outside any scroll view — treated as fully
+///     visible. Intersecting it with the local bounds is the whole
+///     visibility test; intersecting it with a frame in scroll-view space
+///     (the earlier bug) counted the view's offset twice, so anything in
+///     the lower half of the viewport read as off screen.
+///   • `scrollOffsetY` — the view's position in the scroll view's space;
+///     movement here is what distinguishes scrolling from resting.
 ///
 /// `nonisolated`: onGeometryChange compares values off the main actor, so
 /// the synthesized Equatable must not inherit the default MainActor.
 private nonisolated struct ViewportMetrics: Equatable {
-    var frame: CGRect
+    var size: CGSize
+    var scrollOffsetY: CGFloat
     var container: CGRect?
 }
 
@@ -547,8 +597,17 @@ private nonisolated struct ViewportMetrics: Equatable {
 private final class EmbeddedPlayerModel {
     let url: URL
 
+    /// Exists from the first mostly-visible sighting (pre-buffering) until
+    /// teardown; check `isActive` for whether playback has begun.
     private(set) var player: AVPlayer? = nil
+    /// Playback has been started (by autoplay or the play badge) — the
+    /// video layer and controls belong on screen. False while the player
+    /// is merely warming the stream behind the poster.
+    private(set) var isActive = false
     private(set) var isPlaying = false
+    /// The player wants to play but is waiting on the stream (initial
+    /// segments, a stall). Drives the spinner.
+    private(set) var isBuffering = false
     private(set) var isMuted = true
     /// Player-level volume, driven by the fullscreen slider.
     private(set) var volume: Float = 1
@@ -578,6 +637,7 @@ private final class EmbeddedPlayerModel {
     /// Pending controls fade-out.
     @ObservationIgnored private var hideControlsTask: Task<Void, Never>? = nil
     @ObservationIgnored private var loopObserver: NSObjectProtocol? = nil
+    @ObservationIgnored private var statusObserver: NSKeyValueObservation? = nil
     @ObservationIgnored private var timeObserver: Any? = nil
     /// Plain stored copy of the player owning `timeObserver` — deinit is
     /// nonisolated and cannot read the @Observable `player` accessor.
@@ -604,19 +664,17 @@ private final class EmbeddedPlayerModel {
     }
 
     func viewportChanged(_ metrics: ViewportMetrics) {
-        let anchorY: CGFloat
         if let container = metrics.container {
-            let intersection = metrics.frame.intersection(container)
-            visibleFraction = metrics.frame.height > 0 && !intersection.isNull
-                ? intersection.height / metrics.frame.height
+            // Both rects in the view's local space: own bounds vs. viewport.
+            let bounds = CGRect(origin: .zero, size: metrics.size)
+            let intersection = bounds.intersection(container)
+            visibleFraction = bounds.height > 0 && !intersection.isNull
+                ? intersection.height / bounds.height
                 : 0
-            // Position relative to the viewport moves during a scroll no
-            // matter which space the named coordinates resolve to.
-            anchorY = metrics.frame.minY - container.minY
         } else {
             visibleFraction = 1
-            anchorY = metrics.frame.minY
         }
+        let anchorY = metrics.scrollOffsetY
 
         if visibleFraction < Self.teardownThreshold {
             idleTask?.cancel()
@@ -628,11 +686,28 @@ private final class EmbeddedPlayerModel {
         let moved = lastAnchorY.map { abs($0 - anchorY) > 2 } ?? true
         lastAnchorY = anchorY
 
+        // Mostly on screen: open the stream now so the playlist and first
+        // segments are in hand by the time autoplay or a tap asks for
+        // them. Bounded by the teardown above, so it's only ever the
+        // videos actually in view.
+        if visibleFraction >= Self.playThreshold, player == nil {
+            preparePlayer()
+        }
+
         // Re-arm the rest timer on movement; also arm it on the first
         // sighting so videos already on screen at load start on their own.
         if moved || (!isPlaying && idleTask == nil) {
             scheduleRestCheck()
         }
+    }
+
+    /// Immediate playback from the poster's play badge: skips the rest
+    /// timer and any earlier pause.
+    func playNow() {
+        idleTask?.cancel()
+        idleTask = nil
+        userPaused = false
+        startPlayback()
     }
 
     private func scheduleRestCheck() {
@@ -649,47 +724,63 @@ private final class EmbeddedPlayerModel {
         }
     }
 
-    private func startPlayback() {
-        if player == nil {
-            let item = AVPlayerItem(url: url)
-            // Feed cells shouldn't buffer minutes ahead of a muted loop.
-            item.preferredForwardBufferDuration = 5
+    /// Creates the player and attaches the HLS item, which starts loading
+    /// the playlist and initial segments straight away — without playing.
+    private func preparePlayer() {
+        guard player == nil else { return }
+        let item = AVPlayerItem(url: url)
+        // Feed cells shouldn't buffer minutes ahead of a muted loop.
+        item.preferredForwardBufferDuration = 5
 
-            let newPlayer = AVPlayer(playerItem: item)
-            newPlayer.isMuted = isMuted
-            newPlayer.volume = volume
-            newPlayer.preventsDisplaySleepDuringVideoPlayback = false
-            newPlayer.actionAtItemEnd = .none
+        let newPlayer = AVPlayer(playerItem: item)
+        newPlayer.isMuted = isMuted
+        newPlayer.volume = volume
+        newPlayer.preventsDisplaySleepDuringVideoPlayback = false
+        newPlayer.actionAtItemEnd = .none
 
-            loopObserver = NotificationCenter.default.addObserver(
-                forName: AVPlayerItem.didPlayToEndTimeNotification,
-                object: item,
-                queue: .main
-            ) { [weak newPlayer] _ in
-                newPlayer?.seek(to: .zero)
-                newPlayer?.play()
+        // Buffering state for the spinner. KVO fires on AVFoundation's
+        // queue; hop to main before touching observed state.
+        statusObserver = newPlayer.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+            let waiting = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+            Task { @MainActor [weak self] in
+                guard let self, self.player === player else { return }
+                self.isBuffering = waiting
             }
+        }
 
-            // Drives the elapsed label and the scrubber's fill.
-            timeObserver = newPlayer.addPeriodicTimeObserver(
-                forInterval: CMTime(value: 1, timescale: 4),
-                queue: .main
-            ) { [weak self] time in
-                MainActor.assumeIsolated {
-                    guard let self, !self.isScrubbing else { return }
-                    self.currentTime = time.seconds
-                    if let item = self.player?.currentItem {
-                        let length = item.duration.seconds
-                        if length.isFinite, length > 0 { self.duration = length }
-                    }
+        loopObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
+            object: item,
+            queue: .main
+        ) { [weak newPlayer] _ in
+            newPlayer?.seek(to: .zero)
+            newPlayer?.play()
+        }
+
+        // Drives the elapsed label and the scrubber's fill.
+        timeObserver = newPlayer.addPeriodicTimeObserver(
+            forInterval: CMTime(value: 1, timescale: 4),
+            queue: .main
+        ) { [weak self] time in
+            MainActor.assumeIsolated {
+                guard let self, !self.isScrubbing else { return }
+                self.currentTime = time.seconds
+                if let item = self.player?.currentItem {
+                    let length = item.duration.seconds
+                    if length.isFinite, length > 0 { self.duration = length }
                 }
             }
-            timeObserverOwner = newPlayer
-            player = newPlayer
         }
+        timeObserverOwner = newPlayer
+        player = newPlayer
+    }
+
+    private func startPlayback() {
+        preparePlayer()
         configureAudioSession(muted: isMuted)
         player?.play()
         isPlaying = true
+        isActive = true
         // Autoplay starts clean — the glass controls appear on tap, not
         // over every video the scroll happens to rest on.
     }
@@ -857,8 +948,12 @@ private final class EmbeddedPlayerModel {
             NotificationCenter.default.removeObserver(loopObserver)
         }
         loopObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
         self.player = nil
+        isActive = false
         isPlaying = false
+        isBuffering = false
         isScrubbing = false
         userPaused = false
         currentTime = 0

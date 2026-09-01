@@ -98,7 +98,9 @@ struct ThreadReaderView: View {
                 inlineImage(image) {
                     viewerPresenter.present(images, at: index)
                 }
-                .sensitiveMediaShield(post.hasSensitiveMediaLabel)
+                // Keyed like the feed's image grid (first image), so a reveal in
+                // either place covers the post's image set in both.
+                .sensitiveMediaShield(post.hasSensitiveMediaLabel, key: images.first?.thumbnailImageURL.absoluteString ?? post.uri)
             }
 
             if let external {

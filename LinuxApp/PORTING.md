@@ -86,6 +86,9 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Search (posts/people/hashtags) | ⬜ | Reuse `SearchViewModel`; GNOME `SearchEntry` in the header bar |
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |
+| Send post via DM (paperplane in the action row) | ⬜ | Core has it: `SendPostViewModel` (recent conversations + people, per-recipient send state); needs a GTK recipient picker |
+| Shared posts in DMs open the post | ⬜ | Core: `MessageItem.embeddedRecord` / `embeddedPostURI`; Apple renders the quote card and navigates on tap |
+| Action row on thread-context rows | ⬜ | `TimelineViewModel.livePost(uri:)` and like/repost now work for `threadAncestors`; Linux still shows the "↩ Replying to" line |
 | Profiles (view/edit/follow) | ⬜ | Reuse `ProfileViewModel` |
 | Profile ··· menu (copy link, search posts, hide reposts, mute, block, report) | ⬜ | Core has it all: `ProfileModel.bskyWebURL`, `SearchViewModel.activateAuthorSearch`, `HiddenRepostsStore` (feeds already filter), `ProfileViewModel.toggleMute/toggleBlock`, `ReportAccountViewModel` (4-step report → chosen labeler). Needs GTK menu + report dialog |
 | Bookmarks | ⬜ | `BookmarkStore` runs on Linux (synced store falls back to local-only); needs UI |

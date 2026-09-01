@@ -16,6 +16,8 @@ struct PostActionsView: View {
     @State private var showRepostMenu: Bool = false
     @State private var showReplyComposer: Bool = false
     @State private var showQuoteComposer: Bool = false
+    /// "Send post in a message" — the in-app DM recipient picker.
+    @State private var showSendSheet: Bool = false
     /// Tracks whether a quote post was successfully submitted this session so
     /// the repost button can turn green immediately without waiting for a timeline refresh.
     @State private var didQuotePost: Bool = false
@@ -24,7 +26,9 @@ struct PostActionsView: View {
     /// Falls back to the original `post` if it's no longer in the list
     /// (e.g. while a refresh replaces the array).
     private var livePost: PostItem {
-        viewModel.posts.first(where: { $0.uri == post.uri }) ?? post
+        // livePost(uri:) also finds posts the timeline holds only as thread
+        // context above another post (the action row on ancestor rows).
+        viewModel.livePost(uri: post.uri) ?? post
     }
 
     var body: some View {
@@ -100,6 +104,14 @@ struct PostActionsView: View {
                 Task { await viewModel.toggleLike(post: captured) }
             }
 
+            // Send — share the post into a conversation inside the app
+            // (it arrives as a tappable post card, like the official client).
+            ActionButton(icon: "paperplane", count: 0, color: .secondary) {
+                Haptics.tap()
+                showSendSheet = true
+            }
+            .accessibilityLabel("Send post in a message")
+
             Spacer()
 
             // Share — opens the native share sheet on iOS and macOS.
@@ -140,6 +152,9 @@ struct PostActionsView: View {
         }
         .sheet(isPresented: $showReplyComposer) {
             ComposerView(replyTo: livePost)
+        }
+        .sheet(isPresented: $showSendSheet) {
+            SendPostSheet(post: livePost)
         }
         .sheet(isPresented: $showQuoteComposer) {
             // Capture post identity at sheet-open time so the callback uses

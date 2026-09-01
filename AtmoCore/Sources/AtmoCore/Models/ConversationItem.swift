@@ -33,7 +33,7 @@ public struct ConversationItem: Identifiable, Hashable, Sendable {
         // Extract last message text
         if let lastMsg = convo.lastMessage,
            case .messageView(let view) = lastMsg {
-            self.lastMessage = view.text
+            self.lastMessage = MessageItem.previewText(text: view.text, hasEmbed: view.embed != nil)
             self.lastMessageAt = view.sentAt
             self.lastMessageSenderDID = view.sender.authorDID
         } else {

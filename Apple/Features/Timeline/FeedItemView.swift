@@ -58,6 +58,7 @@ struct FeedItemView: View {
                     }
                     AncestorPostRow(
                         post: ancestor,
+                        viewModel: viewModel,
                         isFirst: index == 0,
                         selfThreadPosition: livePost.selfThreadCount.map { (index + 1, $0) },
                         // Gapped self-thread: exact numbering is impossible
@@ -205,11 +206,13 @@ private enum TranslationCheckCache {
 
 // MARK: - Ancestor Post Row
 // A full-size post row for thread context above a reply — same visual weight
-// as the main post (name line, rich text, embeds) minus the action bar, with
-// a rail running from the avatar to the next row. Tapping opens the thread,
-// where the full conversation and all actions live.
+// as the main post (name line, rich text, embeds, and the action row, so a
+// post shown as context can be liked, reposted, or sent like any other),
+// with a rail running from the avatar to the next row. Tapping opens the
+// thread. The view model resolves actions on context posts too.
 private struct AncestorPostRow: View {
     let post: PostItem
+    let viewModel: TimelineViewModel
     /// First row of the feed cell — carries the cell's top breathing room.
     let isFirst: Bool
     /// This row's (position, total) within an author self-thread, when the
@@ -296,6 +299,10 @@ private struct AncestorPostRow: View {
                         .onTapGesture { onTap?() }
                         .padding(.top, AtmoTheme.Spacing.xs)
                 }
+
+                // Action row — each button handles its own tap.
+                PostActionsView(post: post, viewModel: viewModel)
+                    .padding(.top, AtmoTheme.Spacing.sm)
             }
             // Breathing room before the next row lives INSIDE the content
             // column, so the rail beside it runs unbroken to the row's edge.

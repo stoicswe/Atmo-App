@@ -155,7 +155,8 @@ private final class DecodedImageCache: @unchecked Sendable {
 }
 
 // MARK: - URLSession with caching
-private extension URLSession {
+// Internal: the inline GIF loader (AnimatedGIFView) shares this cache.
+extension URLSession {
     static let cachedSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.urlCache = .shared

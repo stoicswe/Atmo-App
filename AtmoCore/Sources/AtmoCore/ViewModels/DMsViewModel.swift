@@ -89,17 +89,40 @@ public final class ConversationDetailViewModel {
         return next.sentAt.timeIntervalSince(current.sentAt) > 60
     }
 
-    public func sendMessage(text: String) async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    /// Sends text, a shared post, or both. A post travels as a record
+    /// embed (`app.bsky.embed.record`), which is how the official client
+    /// shares a post into chat and how it renders back as a tappable card.
+    public func sendMessage(text: String, embeddedPost: PostItem? = nil) async {
+        guard let messageInput = Self.messageInput(text: text, embeddedPost: embeddedPost),
               let chat = service.atProtoChat else { return }
         isSending = true
         do {
-            let messageInput = ChatBskyLexicon.Conversation.MessageInputDefinition(text: text)
             let result = try await chat.sendMessage(to: conversationID, message: messageInput)
             messages.append(MessageItem(messageView: result))
         } catch {
             self.error = error
         }
         isSending = false
+    }
+
+    /// The wire message for `text` plus an optional shared post; nil when
+    /// there is nothing to send (blank text and no post). Pure; unit-tested.
+    nonisolated static func messageInput(
+        text: String,
+        embeddedPost: PostItem?
+    ) -> ChatBskyLexicon.Conversation.MessageInputDefinition? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || embeddedPost != nil else { return nil }
+        let embed = embeddedPost.map { post in
+            ChatBskyLexicon.Conversation.MessageInputDefinition.EmbedUnion.record(
+                AppBskyLexicon.Embed.RecordDefinition(
+                    record: ComAtprotoLexicon.Repository.StrongReference(
+                        recordURI: post.uri,
+                        cidHash: post.cid
+                    )
+                )
+            )
+        }
+        return ChatBskyLexicon.Conversation.MessageInputDefinition(text: trimmed, embed: embed)
     }
 }

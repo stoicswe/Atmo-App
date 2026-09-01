@@ -74,17 +74,19 @@ extension View {
     }
 }
 
-// MARK: - Glass Image Viewer
-/// Borderless popup centered on the window: the photo floats on a Liquid
-/// Glass plate whose rim refracts the blurred app behind it. Chrome —
-/// close, save-to-Photos, pager arrows (macOS), counter, alt text — rides
-/// the photo in the same glass. Click the backdrop, press Esc (macOS), or
-/// flick down (iOS) to dismiss.
+// MARK: - Full-Bleed Image Viewer
+/// The photo fills the space it's given — the whole screen on iOS, the
+/// whole window on macOS — scaled to fit its long edge, never stretched,
+/// on black. Chrome floats over it inside the safe area: save-to-Photos,
+/// close, pager arrows (macOS), counter, alt text.
+///
+/// Dismiss: the X, Esc (macOS), a tap on the letterbox, a flick down
+/// (iOS), or pinching out past the fitted size (iOS) — zooming in never
+/// leaves the photo, only shrinking it below fit does.
 private struct GlassImageViewer: View {
     let presenter: ImageViewerPresenter
 
-    /// Drives the pop-in: the card scales/fades in on appear; removal is
-    /// the host's fade.
+    /// Drives the fade/scale-in on appear; removal is the host's fade.
     @State private var appeared = false
     @State private var saveState: MediaSaveState = .idle
     @State private var showSaveError = false
@@ -92,95 +94,19 @@ private struct GlassImageViewer: View {
 
     var body: some View {
         if let session = presenter.session {
-            GeometryReader { geo in
-                ZStack {
-                    backdrop
-                    card(session: session, container: geo.size)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+            ZStack {
+                backdrop
+                pager(session: session)
+                    .ignoresSafeArea()
             }
+            .overlay { chrome(session: session) }
+            .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.96)
             .onAppear {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                     appeared = true
                 }
             }
-            .alert("Couldn't Save", isPresented: $showSaveError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(saveErrorText)
-            }
-        }
-    }
-
-    // MARK: Backdrop — the app blurred behind glass, click to dismiss
-
-    private var backdrop: some View {
-        Rectangle()
-            .fill(.regularMaterial)
-            .overlay(Color.black.opacity(0.25))
-            .ignoresSafeArea()
-            .contentShape(Rectangle())
-            .onTapGesture { presenter.dismissViewer() }
-    }
-
-    // MARK: Card
-
-    private func card(session: ImageViewerPresenter.Session, container: CGSize) -> some View {
-        let image = session.images[safe: session.index] ?? session.images[0]
-        let size = Self.fittedSize(for: image, in: container)
-
-        return pager(session: session)
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                saveButton(for: image)
-                    .padding(AtmoTheme.Spacing.md)
-            }
-            .overlay(alignment: .topTrailing) {
-                closeButton
-                    .padding(AtmoTheme.Spacing.md)
-            }
-            .overlay(alignment: .bottom) {
-                if session.images.count > 1 {
-                    Text("\(session.index + 1) / \(session.images.count)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .glassEffect(.regular, in: Capsule())
-                        .padding(.bottom, AtmoTheme.Spacing.md)
-                }
-            }
-            .overlay(alignment: .bottomLeading) {
-                if !image.altText.isEmpty {
-                    AltTextBadge(text: image.altText)
-                        .padding(AtmoTheme.Spacing.md)
-                        .padding(.bottom, session.images.count > 1 ? 32 : 0)
-                }
-            }
-#if os(macOS)
-            .overlay(alignment: .leading) {
-                if session.images.count > 1 {
-                    pagerArrow(symbol: "chevron.left", step: -1, session: session)
-                        .padding(AtmoTheme.Spacing.md)
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if session.images.count > 1 {
-                    pagerArrow(symbol: "chevron.right", step: 1, session: session)
-                        .padding(AtmoTheme.Spacing.md)
-                }
-            }
-#endif
-            // The glass rim: the photo sits inset on a glass plate, so a
-            // thin band of Liquid Glass frames it — the "border".
-            .padding(10)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .compositingGroup()
-            .shadow(color: .black.opacity(0.35), radius: 40, y: 18)
-            .scaleEffect(appeared ? 1 : 0.93)
-            .opacity(appeared ? 1 : 0)
-            .animation(.spring(response: 0.34, dampingFraction: 0.85), value: session.index)
 #if os(iOS)
             // Flick down to dismiss. Simultaneous, so it never steals the
             // pager's horizontal swipe or the zoom pan (which claims drags
@@ -210,46 +136,44 @@ private struct GlassImageViewer: View {
                 .opacity(0)
                 .allowsHitTesting(false)
             }
+            .alert("Couldn't Save", isPresented: $showSaveError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorText)
+            }
+        }
     }
 
-    /// Fits the image's reported aspect ratio inside ~86% of the window,
-    /// so the glass frame hugs the photo with no letterbox bars.
-    static func fittedSize(
-        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage,
-        in container: CGSize
-    ) -> CGSize {
-        let aspect: CGFloat
-        if let ratio = image.aspectRatio, ratio.width > 0, ratio.height > 0 {
-            aspect = CGFloat(ratio.width) / CGFloat(ratio.height)
-        } else {
-            aspect = 4.0 / 3.0
-        }
-        let maxWidth = max(220, container.width * 0.86)
-        let maxHeight = max(220, container.height * 0.86)
-        var width = maxWidth
-        var height = width / aspect
-        if height > maxHeight {
-            height = maxHeight
-            width = height * aspect
-        }
-        return CGSize(width: width, height: height)
+    // MARK: Backdrop — black, edge to edge; the letterbox dismisses on tap
+
+    private var backdrop: some View {
+        Color.black
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture { presenter.dismissViewer() }
     }
 
-    // MARK: Pager
+    // MARK: Pager — fills the container; each page fits its photo inside
 
     @ViewBuilder
     private func pager(session: ImageViewerPresenter.Session) -> some View {
 #if os(iOS)
         TabView(selection: indexBinding(fallback: session.index)) {
             ForEach(session.images.indices, id: \.self) { index in
-                ZoomableImageView(url: session.images[index].fullSizeImageURL)
-                    .tag(index)
+                ZoomableImageView(
+                    url: session.images[index].fullSizeImageURL,
+                    onPinchOut: { presenter.dismissViewer() }
+                )
+                .tag(index)
             }
         }
         // The glass counter pill replaces the system dots.
         .tabViewStyle(.page(indexDisplayMode: .never))
 #else
         ZoomableImageView(url: session.images[safe: session.index]?.fullSizeImageURL ?? nil)
+            .id(session.index)
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.18), value: session.index)
 #endif
     }
 
@@ -264,6 +188,50 @@ private struct GlassImageViewer: View {
         let target = session.index + step
         guard session.images.indices.contains(target) else { return }
         presenter.setIndex(target)
+    }
+
+    // MARK: Chrome — floats inside the safe area; empty space passes taps through
+
+    private func chrome(session: ImageViewerPresenter.Session) -> some View {
+        let image = session.images[safe: session.index] ?? session.images[0]
+        return ZStack {
+            saveButton(for: image)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(AtmoTheme.Spacing.md)
+
+            closeButton
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(AtmoTheme.Spacing.md)
+
+            if session.images.count > 1 {
+                Text("\(session.index + 1) / \(session.images.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .glassEffect(.regular, in: Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, AtmoTheme.Spacing.md)
+            }
+
+            if !image.altText.isEmpty {
+                AltTextBadge(text: image.altText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(AtmoTheme.Spacing.md)
+                    .padding(.bottom, session.images.count > 1 ? 32 : 0)
+            }
+
+#if os(macOS)
+            if session.images.count > 1 {
+                pagerArrow(symbol: "chevron.left", step: -1, session: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .padding(AtmoTheme.Spacing.md)
+                pagerArrow(symbol: "chevron.right", step: 1, session: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(AtmoTheme.Spacing.md)
+            }
+#endif
+        }
     }
 
 #if os(macOS)
@@ -286,8 +254,6 @@ private struct GlassImageViewer: View {
         .opacity(session.images.indices.contains(target) ? 1 : 0.3)
     }
 #endif
-
-    // MARK: Chrome
 
     private var closeButton: some View {
         Button {
@@ -373,8 +339,11 @@ struct ImageViewerView: View {
             // iOS: paged TabView with swipe navigation
             TabView(selection: $currentIndex) {
                 ForEach(images.indices, id: \.self) { index in
-                    ZoomableImageView(url: images[index].fullSizeImageURL)
-                        .tag(index)
+                    ZoomableImageView(
+                        url: images[index].fullSizeImageURL,
+                        onPinchOut: { dismiss() }
+                    )
+                    .tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .always : .never))
@@ -482,8 +451,17 @@ struct ImageViewerView: View {
 // MARK: - Zoomable Image View
 // Wraps a single image with pinch-to-zoom (MagnificationGesture) and
 // double-tap-to-zoom. Resets zoom when swiped away in the parent TabView.
+// With `onPinchOut` set, pinching the photo smaller than its fitted size
+// shrinks it live and, released a little past fit, dismisses the viewer;
+// released just under fit it springs back.
 private struct ZoomableImageView: View {
     let url: URL?
+    var onPinchOut: (() -> Void)? = nil
+
+    /// Released below this fraction of fit → dismiss.
+    private let dismissScale: CGFloat = 0.85
+    /// How small the live pinch may render before it stops shrinking.
+    private let pinchFloor: CGFloat = 0.45
 
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
@@ -513,9 +491,15 @@ private struct ZoomableImageView: View {
                             MagnificationGesture()
                                 .onChanged { value in
                                     let proposed = lastScale * value
-                                    scale = min(maxScale, max(minScale, proposed))
+                                    let floor = onPinchOut != nil ? pinchFloor : minScale
+                                    scale = min(maxScale, max(floor, proposed))
                                 }
                                 .onEnded { _ in
+                                    // Pinched out past fit: leave the viewer.
+                                    if scale < dismissScale, let onPinchOut {
+                                        onPinchOut()
+                                        return
+                                    }
                                     lastScale = scale
                                     // Snap back to 1× if pinched below minimum
                                     if scale < minScale {
