@@ -11,10 +11,9 @@ struct ThreadReaderView: View {
     let posts: [PostItem]
     @Environment(\.dismiss) private var dismiss
 
-    // Tap-to-enlarge for inline images.
-    @State private var viewerImages: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage] = []
-    @State private var viewerIndex = 0
-    @State private var showViewer = false
+    // Tap-to-enlarge for inline images: the Reader is itself a sheet, so
+    // it hosts its OWN glass viewer (the root host sits behind the sheet).
+    @State private var viewerPresenter = ImageViewerPresenter()
 
     var body: some View {
         NavigationStack {
@@ -44,14 +43,13 @@ struct ThreadReaderView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showViewer) {
-                ImageViewerView(images: viewerImages, selectedIndex: $viewerIndex)
-            }
             .themedBackdrop()
         }
         // Sheets can't lean on the root's browser host (a covered node
-        // cannot present) — the Reader hosts its own for its link cards.
+        // cannot present) — the Reader hosts its own for its link cards,
+        // and its own glass image viewer for the same reason.
         .hostsInAppBrowser()
+        .hostsImageViewer(viewerPresenter)
 #if os(macOS)
         .frame(minWidth: 520, minHeight: 620)
 #endif
@@ -98,9 +96,7 @@ struct ThreadReaderView: View {
 
             ForEach(Array(images.enumerated()), id: \.element.fullSizeImageURL) { index, image in
                 inlineImage(image) {
-                    viewerImages = images
-                    viewerIndex = index
-                    showViewer = true
+                    viewerPresenter.present(images, at: index)
                 }
                 .sensitiveMediaShield(post.hasSensitiveMediaLabel)
             }

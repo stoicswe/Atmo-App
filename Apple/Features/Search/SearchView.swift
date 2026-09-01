@@ -479,11 +479,19 @@ private struct SearchPostRow: View {
                 }
 
                 // Post text
-                if !post.text.isEmpty {
-                    Text(post.text)
+                if !post.displayText.isEmpty {
+                    Text(post.displayText)
                         .font(.subheadline)
                         .lineLimit(3)
                         .foregroundStyle(.primary)
+                }
+
+                // Media and link embeds render right in the results —
+                // photos, videos, link cards, and quotes at a glance. The
+                // images load asynchronously (cached), so the result rows
+                // land instantly and the media streams in just after.
+                if let embed = post.embed {
+                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel)
                 }
             }
         }

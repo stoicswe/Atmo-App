@@ -2,14 +2,357 @@ import SwiftUI
 import AtmoCore
 import ATProtoKit
 
-// MARK: - ImageViewerView
-// Full-screen image viewer with paging (TabView), pinch-to-zoom, and double-tap-to-zoom.
-// Presented as a sheet from ThreadView when the user taps any image in a post embed.
-//
-// Usage:
-//   .sheet(isPresented: $showImageViewer) {
-//       ImageViewerView(images: images, selectedIndex: $selectedImageIndex)
-//   }
+// MARK: - Image Viewer Presenter
+/// Window-level presenter for the glass image viewer. A host view (the app
+/// root, plus any sheet that shows tappable images — a covered node cannot
+/// float chrome above its cover) owns one via `.hostsImageViewer()`, which
+/// injects it into the environment and renders the centered glass popup
+/// over everything when a session is active.
+@Observable
+@MainActor
+final class ImageViewerPresenter {
+    struct Session: Identifiable {
+        let id = UUID()
+        let images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]
+        var index: Int
+    }
+
+    private(set) var session: Session? = nil
+
+    func present(
+        _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage],
+        at index: Int
+    ) {
+        guard !images.isEmpty else { return }
+        session = Session(images: images, index: min(max(index, 0), images.count - 1))
+    }
+
+    func dismissViewer() {
+        session = nil
+    }
+
+    /// Moves the pager to `index` (clamped to the session's images).
+    func setIndex(_ index: Int) {
+        guard var session else { return }
+        session.index = min(max(index, 0), session.images.count - 1)
+        self.session = session
+    }
+}
+
+// MARK: - Image Viewer Host
+/// Mounts the glass image viewer over this subtree and exposes the
+/// presenter through the environment. Apply at the app root, and ALSO to
+/// the root of any sheet whose content shows tappable images (same rule as
+/// InAppBrowserHost) — pass that sheet's own presenter so its taps target
+/// the local overlay rather than the covered root one.
+struct ImageViewerHost: ViewModifier {
+    @State private var presenter: ImageViewerPresenter
+
+    init(presenter: ImageViewerPresenter? = nil) {
+        _presenter = State(initialValue: presenter ?? ImageViewerPresenter())
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(presenter)
+            .overlay {
+                ZStack {
+                    if presenter.session != nil {
+                        GlassImageViewer(presenter: presenter)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.18), value: presenter.session?.id)
+            }
+    }
+}
+
+extension View {
+    /// Hosts the centered glass image viewer for this subtree.
+    func hostsImageViewer(_ presenter: ImageViewerPresenter? = nil) -> some View {
+        modifier(ImageViewerHost(presenter: presenter))
+    }
+}
+
+// MARK: - Glass Image Viewer
+/// Borderless popup centered on the window: the photo floats on a Liquid
+/// Glass plate whose rim refracts the blurred app behind it. Chrome —
+/// close, save-to-Photos, pager arrows (macOS), counter, alt text — rides
+/// the photo in the same glass. Click the backdrop, press Esc (macOS), or
+/// flick down (iOS) to dismiss.
+private struct GlassImageViewer: View {
+    let presenter: ImageViewerPresenter
+
+    /// Drives the pop-in: the card scales/fades in on appear; removal is
+    /// the host's fade.
+    @State private var appeared = false
+    @State private var saveState: MediaSaveState = .idle
+    @State private var showSaveError = false
+    @State private var saveErrorText = ""
+
+    var body: some View {
+        if let session = presenter.session {
+            GeometryReader { geo in
+                ZStack {
+                    backdrop
+                    card(session: session, container: geo.size)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .onAppear {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    appeared = true
+                }
+            }
+            .alert("Couldn't Save", isPresented: $showSaveError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorText)
+            }
+        }
+    }
+
+    // MARK: Backdrop — the app blurred behind glass, click to dismiss
+
+    private var backdrop: some View {
+        Rectangle()
+            .fill(.regularMaterial)
+            .overlay(Color.black.opacity(0.25))
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture { presenter.dismissViewer() }
+    }
+
+    // MARK: Card
+
+    private func card(session: ImageViewerPresenter.Session, container: CGSize) -> some View {
+        let image = session.images[safe: session.index] ?? session.images[0]
+        let size = Self.fittedSize(for: image, in: container)
+
+        return pager(session: session)
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                saveButton(for: image)
+                    .padding(AtmoTheme.Spacing.md)
+            }
+            .overlay(alignment: .topTrailing) {
+                closeButton
+                    .padding(AtmoTheme.Spacing.md)
+            }
+            .overlay(alignment: .bottom) {
+                if session.images.count > 1 {
+                    Text("\(session.index + 1) / \(session.images.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .glassEffect(.regular, in: Capsule())
+                        .padding(.bottom, AtmoTheme.Spacing.md)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !image.altText.isEmpty {
+                    AltTextBadge(text: image.altText)
+                        .padding(AtmoTheme.Spacing.md)
+                        .padding(.bottom, session.images.count > 1 ? 32 : 0)
+                }
+            }
+#if os(macOS)
+            .overlay(alignment: .leading) {
+                if session.images.count > 1 {
+                    pagerArrow(symbol: "chevron.left", step: -1, session: session)
+                        .padding(AtmoTheme.Spacing.md)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if session.images.count > 1 {
+                    pagerArrow(symbol: "chevron.right", step: 1, session: session)
+                        .padding(AtmoTheme.Spacing.md)
+                }
+            }
+#endif
+            // The glass rim: the photo sits inset on a glass plate, so a
+            // thin band of Liquid Glass frames it — the "border".
+            .padding(10)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .compositingGroup()
+            .shadow(color: .black.opacity(0.35), radius: 40, y: 18)
+            .scaleEffect(appeared ? 1 : 0.93)
+            .opacity(appeared ? 1 : 0)
+            .animation(.spring(response: 0.34, dampingFraction: 0.85), value: session.index)
+#if os(iOS)
+            // Flick down to dismiss. Simultaneous, so it never steals the
+            // pager's horizontal swipe or the zoom pan (which claims drags
+            // while zoomed in).
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onEnded { value in
+                        if value.translation.height > 90,
+                           value.translation.height > abs(value.translation.width) {
+                            presenter.dismissViewer()
+                        }
+                    }
+            )
+#endif
+            .background {
+                // Hidden keyboard handlers: Esc closes, arrows page (macOS).
+                Group {
+                    Button("") { presenter.dismissViewer() }
+                        .keyboardShortcut(.cancelAction)
+#if os(macOS)
+                    Button("") { page(by: -1, in: session) }
+                        .keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("") { page(by: 1, in: session) }
+                        .keyboardShortcut(.rightArrow, modifiers: [])
+#endif
+                }
+                .opacity(0)
+                .allowsHitTesting(false)
+            }
+    }
+
+    /// Fits the image's reported aspect ratio inside ~86% of the window,
+    /// so the glass frame hugs the photo with no letterbox bars.
+    static func fittedSize(
+        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage,
+        in container: CGSize
+    ) -> CGSize {
+        let aspect: CGFloat
+        if let ratio = image.aspectRatio, ratio.width > 0, ratio.height > 0 {
+            aspect = CGFloat(ratio.width) / CGFloat(ratio.height)
+        } else {
+            aspect = 4.0 / 3.0
+        }
+        let maxWidth = max(220, container.width * 0.86)
+        let maxHeight = max(220, container.height * 0.86)
+        var width = maxWidth
+        var height = width / aspect
+        if height > maxHeight {
+            height = maxHeight
+            width = height * aspect
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    // MARK: Pager
+
+    @ViewBuilder
+    private func pager(session: ImageViewerPresenter.Session) -> some View {
+#if os(iOS)
+        TabView(selection: indexBinding(fallback: session.index)) {
+            ForEach(session.images.indices, id: \.self) { index in
+                ZoomableImageView(url: session.images[index].fullSizeImageURL)
+                    .tag(index)
+            }
+        }
+        // The glass counter pill replaces the system dots.
+        .tabViewStyle(.page(indexDisplayMode: .never))
+#else
+        ZoomableImageView(url: session.images[safe: session.index]?.fullSizeImageURL ?? nil)
+#endif
+    }
+
+    private func indexBinding(fallback: Int) -> Binding<Int> {
+        Binding(
+            get: { presenter.session?.index ?? fallback },
+            set: { presenter.setIndex($0) }
+        )
+    }
+
+    private func page(by step: Int, in session: ImageViewerPresenter.Session) {
+        let target = session.index + step
+        guard session.images.indices.contains(target) else { return }
+        presenter.setIndex(target)
+    }
+
+#if os(macOS)
+    private func pagerArrow(
+        symbol: String, step: Int, session: ImageViewerPresenter.Session
+    ) -> some View {
+        let target = session.index + step
+        return Button {
+            page(by: step, in: session)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .disabled(!session.images.indices.contains(target))
+        .opacity(session.images.indices.contains(target) ? 1 : 0.3)
+    }
+#endif
+
+    // MARK: Chrome
+
+    private var closeButton: some View {
+        Button {
+            presenter.dismissViewer()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .accessibilityLabel("Close image viewer")
+    }
+
+    private func saveButton(
+        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage
+    ) -> some View {
+        Button {
+            guard saveState == .idle else { return }
+            let url = image.fullSizeImageURL
+            Haptics.tap()
+            Task {
+                saveState = .saving
+                do {
+                    try await MediaSaver.saveImage(from: url)
+                    Haptics.confirm()
+                    saveState = .saved
+                    try? await Task.sleep(for: .seconds(1.6))
+                } catch {
+                    saveErrorText = error.localizedDescription
+                    showSaveError = true
+                }
+                saveState = .idle
+            }
+        } label: {
+            Group {
+                switch saveState {
+                case .idle:
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .semibold))
+                case .saving:
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                case .saved:
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: 34, height: 34)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .accessibilityLabel("Save image to Photos")
+    }
+}
+
+// MARK: - ImageViewerView (legacy sheet)
+// Full-screen sheet viewer, kept as the fallback for contexts without a
+// `hostsImageViewer()` ancestor. New code should present through
+// ImageViewerPresenter instead — that's the centered glass popup.
 struct ImageViewerView: View {
     let images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]
     @Binding var selectedIndex: Int

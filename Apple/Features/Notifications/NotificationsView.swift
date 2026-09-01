@@ -10,6 +10,8 @@ import AtmoCore
 struct NotificationsView: View {
     @Environment(ATProtoService.self) private var service
     @State private var viewModel: NotificationsViewModel?
+    /// Path for the standalone-stack fallback below; unused when embedded.
+    @State private var ownedNavPath = NavigationPath()
 
     /// Set to true when embedded in AppNavigation's shared NavigationStack (iPad/macOS).
     /// When false (iPhone), this view wraps itself in its own NavigationStack.
@@ -33,9 +35,20 @@ struct NotificationsView: View {
         if embeddedInSplitView {
             content
         } else {
-            NavigationStack {
+            NavigationStack(path: $ownedNavPath) {
                 content
                     .navigationTitle("Activity")
+                    // Row links (avatar → profile) need destinations on
+                    // THIS stack when the view owns one.
+                    .navigationDestination(for: PostNavTarget.self) { target in
+                        ThreadView(postURI: target.uri)
+                            .themedBackdrop()
+                    }
+                    .navigationDestination(for: String.self) { did in
+                        ProfileView(actorDID: did, splitNavPath: $ownedNavPath)
+                            .themedBackdrop()
+                    }
+                    .themedBackdrop()
             }
         }
     }

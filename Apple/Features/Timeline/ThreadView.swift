@@ -76,7 +76,10 @@ struct ThreadView: View {
     /// Tracks whether the root post is visible — used to show/hide the scroll-to-top FAB.
     @State private var isAtTop: Bool = true
 
-    // ── Image viewer sheet ──
+    // ── Image viewer ──
+    // Presents through the window-level glass viewer when hosted (the app
+    // root mounts one); the sheet state below is the unhosted fallback.
+    @Environment(ImageViewerPresenter.self) private var viewerPresenter: ImageViewerPresenter?
     @State private var viewerImages: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage] = []
     @State private var viewerStartIndex: Int = 0
     @State private var showImageViewer: Bool = false
@@ -224,9 +227,7 @@ struct ThreadView: View {
                                 mentionedHandle = handle
                             },
                             onImageTap: { images, index in
-                                viewerImages = images
-                                viewerStartIndex = index
-                                showImageViewer = true
+                                showImages(images, at: index)
                             },
                             selfThreadPosition: chain.count >= 2 ? (1, chain.count) : nil
                         )
@@ -274,9 +275,7 @@ struct ThreadView: View {
                                     mentionedHandle = handle
                                 },
                                 onImageTap: { images, index in
-                                    viewerImages = images
-                                    viewerStartIndex = index
-                                    showImageViewer = true
+                                    showImages(images, at: index)
                                 },
                                 selfThreadPosition: chainPositions[reply.post.uri].map { ($0, chain.count) }
                             )
@@ -399,6 +398,20 @@ struct ThreadView: View {
         .task {
             threadViewModel = TimelineViewModel(service: service)
             await loadThread()
+        }
+    }
+
+    /// Routes an image tap to the window-level glass viewer, falling back
+    /// to the legacy sheet when no host is mounted above this view.
+    private func showImages(
+        _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage], at index: Int
+    ) {
+        if let viewerPresenter {
+            viewerPresenter.present(images, at: index)
+        } else {
+            viewerImages = images
+            viewerStartIndex = index
+            showImageViewer = true
         }
     }
 

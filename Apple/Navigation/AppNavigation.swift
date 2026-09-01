@@ -155,6 +155,9 @@ struct AppNavigation: View {
     /// dismiss-keyboard circle can clear it through SwiftUI (a raw
     /// resignFirstResponder fought the FocusState and needed two taps).
     @FocusState private var phoneSearchFocused: Bool
+    /// iPhone: where the user was before switching to Search — the search
+    /// circle's back caret (keyboard down) returns here.
+    @State private var phoneSearchReturnItem: SidebarItem? = nil
     /// iPhone: shared bar-minimize state, written by scrolling views.
     private let phoneChrome = PhoneChromeState.shared
 
@@ -301,6 +304,11 @@ struct AppNavigation: View {
             // web links to the in-app browser on iOS. (Sheets containing
             // links still host their own copy; see InAppBrowserHost.)
             .hostsInAppBrowser()
+            // Window-level glass image viewer: image taps anywhere in the
+            // main hierarchy pop the centered glass popup over everything.
+            // (Sheets showing images host their own — a covered node can't
+            // float chrome above its cover; see ThreadReaderView.)
+            .hostsImageViewer()
             // Declared Age Range probe + PermissionKit response listener.
             .integratesFamilyControls()
             .task {
@@ -666,6 +674,14 @@ struct AppNavigation: View {
         NavigationStack(path: $phoneTimelineNavPath) {
             phonePersistentContent
                 .toolbarTitleDisplayMode(.inline)
+                // Remember where the user came from whenever they land on
+                // Search, from ANY entry point (tab pill, drawer, corner
+                // menu) — the search circle's back caret returns there.
+                .onChange(of: selectedItem) { old, new in
+                    if new == .search, old != .search {
+                        phoneSearchReturnItem = old
+                    }
+                }
                 // No nav-bar glass: content passes to the very top edge.
                 // Only the status bar keeps a blur (overlay below).
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -885,11 +901,17 @@ struct AppNavigation: View {
                     Spacer(minLength: 0)
                 }
 
-                // Right circle: Search gets a dismiss-keyboard control (the
-                // field lives in this bar); everywhere else composes.
+                // Right circle: Search gets the dismiss-keyboard / back
+                // control (the field lives in this bar); elsewhere composes.
                 if active == .search {
-                    DismissKeyboardFAB { phoneSearchFocused = false }
-                        .transition(.blurReplace)
+                    DismissKeyboardFAB(
+                        keyboardVisible: phoneSearchFocused,
+                        dismissKeyboard: { phoneSearchFocused = false },
+                        goBack: {
+                            selectedItem = phoneSearchReturnItem ?? .timeline
+                        }
+                    )
+                    .transition(.blurReplace)
                 } else {
                     ComposeFAB { showComposer = true }
                         .transition(.blurReplace)
@@ -1263,24 +1285,35 @@ private struct PhoneSearchField: View {
 
 // MARK: - Dismiss Keyboard FAB
 // Takes compose's slot on the Search page only — the search field lives in
-// the bottom bar there, so the circle acts as its "done" control.
+// the bottom bar there. Two-mode circle: while the keyboard is up it's the
+// field's "done" control; once dismissed it becomes a back caret that
+// returns to wherever the user was before opening Search.
 private struct DismissKeyboardFAB: View {
-    let action: () -> Void
+    let keyboardVisible: Bool
+    let dismissKeyboard: () -> Void
+    let goBack: () -> Void
 
     var body: some View {
         Button {
             Haptics.tap()
-            action()
+            if keyboardVisible {
+                dismissKeyboard()
+            } else {
+                goBack()
+            }
         } label: {
-            Image(systemName: "keyboard.chevron.compact.down")
+            Image(systemName: keyboardVisible ? "keyboard.chevron.compact.down" : "chevron.left")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
+                // The two glyphs cross-fade in place as focus changes.
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 64, height: 64)
                 .glassEffect(.regular.interactive(), in: Circle())
                 .contentShape(Circle().inset(by: -10))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: keyboardVisible)
         }
         .buttonStyle(FABButtonStyle())
-        .accessibilityLabel("Dismiss Keyboard")
+        .accessibilityLabel(keyboardVisible ? "Dismiss Keyboard" : "Back")
     }
 }
 

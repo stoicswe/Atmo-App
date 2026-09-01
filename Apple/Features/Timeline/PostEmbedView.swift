@@ -78,7 +78,11 @@ struct ImageGridView: View {
 
     /// Carousel page currently snapped into view (drives the dots).
     @State private var carouselPage: Int? = 0
-    /// Fallback viewer state, used when no onImageTap delegate is provided.
+    /// Window-level glass viewer, mounted by the app root (and by sheets
+    /// that host their own). Preferred over the sheet fallback below.
+    @Environment(ImageViewerPresenter.self) private var viewerPresenter: ImageViewerPresenter?
+    /// Fallback viewer state, used when no onImageTap delegate is provided
+    /// and no glass-viewer host sits above this view.
     @State private var showViewer = false
     @State private var viewerIndex = 0
 
@@ -189,10 +193,12 @@ struct ImageGridView: View {
     }
 
     /// Delegate to the owner's viewer when one is wired (ThreadView), else
-    /// present our own.
+    /// the window-level glass viewer, else our own fallback sheet.
     private func handleTap(_ index: Int) {
         if let onImageTap {
             onImageTap(images, index)
+        } else if let viewerPresenter {
+            viewerPresenter.present(images, at: index)
         } else {
             viewerIndex = index
             showViewer = true

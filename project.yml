@@ -31,7 +31,13 @@ settings:
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    CURRENT_PROJECT_VERSION: 1
+    # Date-serial build number (YYYY.MMDD.HHMM): always ascending, no
+    # state to track across machines. Stamp a fresh one before each
+    # archive with Scripts/set-build-number.sh (it rewrites this line and
+    # regenerates the project). Applies to every target — app, watch app,
+    # and widget extension all inherit it, keeping their CFBundleVersions
+    # matched (App Store validation requires it).
+    CURRENT_PROJECT_VERSION: "2026.0901.1007"
     MARKETING_VERSION: "1.0.0"
 
 packages:
@@ -117,9 +123,10 @@ targets:
         # In-app camera: the composer's camera button shoots photos and
         # videos straight into a post…
         INFOPLIST_KEY_NSCameraUsageDescription: "@omic uses the camera to shoot photos and videos you attach to posts."
-        # …and each capture is also kept in the user's photo library
-        # (add-only access; nothing is read back).
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "@omic saves photos and videos you shoot in the composer to your photo library."
+        # …and each capture is also kept in the user's photo library.
+        # Save-to-Photos from posts (image viewer / video player) uses the
+        # same permission (add-only access; nothing is read back).
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "@omic saves photos and videos you shoot in the composer, and media you save from posts, to your photo library."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": YES
