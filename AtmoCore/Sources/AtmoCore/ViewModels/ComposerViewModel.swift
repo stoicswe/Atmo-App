@@ -33,19 +33,49 @@ public final class PostSlot: Identifiable {
         }
     }
 
-    public struct VideoAttachment: Identifiable {
+    /// A video attachment held as a *reference* — nothing is transcoded or
+    /// rendered while composing. PostPublisher resolves the reference into
+    /// upload bytes (via the platform media-processing seam) at publish
+    /// time, so hitting Post can return immediately.
+    public struct VideoAttachment: Identifiable, Sendable {
+        public enum Source: Sendable, Equatable {
+            /// A picked video file, unprocessed — transcoded when publishing.
+            case video(URL)
+            /// A recorded/imported audio take — rendered into a waveform
+            /// video when publishing.
+            case voiceMemo(URL)
+        }
+
         public let id = UUID()
-        public let data: Data
-        public let fileName: String
+        public let source: Source
         public var altText: String = ""
-        /// Display dimensions of the (transcoded) video, when known — sent
-        /// with the embed so clients reserve the right box before playback.
+        /// Clip length, when known at attach time — drives composer badges.
+        public let duration: TimeInterval?
+        /// Display dimensions hint, when known before processing (memo
+        /// renders are a fixed canvas; picked videos read their track).
         public let aspectRatio: (width: Int, height: Int)?
 
-        public init(data: Data, fileName: String, altText: String = "", aspectRatio: (width: Int, height: Int)? = nil) {
-            self.data = data
-            self.fileName = fileName
+        public var isVoiceMemo: Bool {
+            if case .voiceMemo = source { return true }
+            return false
+        }
+
+        /// The referenced file on disk.
+        public var fileURL: URL {
+            switch source {
+            case .video(let url), .voiceMemo(let url): return url
+            }
+        }
+
+        public init(
+            source: Source,
+            altText: String = "",
+            duration: TimeInterval? = nil,
+            aspectRatio: (width: Int, height: Int)? = nil
+        ) {
+            self.source = source
             self.altText = altText
+            self.duration = duration
             self.aspectRatio = aspectRatio
         }
     }
@@ -95,12 +125,16 @@ public final class PostSlot: Identifiable {
         attachedImages[index].altText = altText
     }
 
-    /// Attaches a video, displacing any images (a post carries one or the
-    /// other, never both).
-    public func attachVideo(data: Data, fileName: String, aspectRatio: (width: Int, height: Int)? = nil) {
+    /// Attaches a video reference, displacing any images (a post carries
+    /// one or the other, never both).
+    public func attachVideo(
+        source: VideoAttachment.Source,
+        duration: TimeInterval? = nil,
+        aspectRatio: (width: Int, height: Int)? = nil
+    ) {
         attachedImages.removeAll()
         attachedGIF = nil
-        attachedVideo = VideoAttachment(data: data, fileName: fileName, aspectRatio: aspectRatio)
+        attachedVideo = VideoAttachment(source: source, duration: duration, aspectRatio: aspectRatio)
     }
 
     public func removeVideo() {
@@ -358,144 +392,42 @@ public final class ComposerViewModel {
 
     // MARK: - Submit
 
+    /// Value snapshot of the thread for PostPublisher — taken at Post time
+    /// so publishing works from a copy while the composer goes away.
+    public func makePayload() -> PostThreadPayload {
+        PostThreadPayload(
+            slots: slots.map { slot in
+                PostThreadPayload.Slot(
+                    text: slot.text,
+                    images: slot.attachedImages.map {
+                        PostThreadPayload.Slot.Image(
+                            data: $0.data,
+                            fileName: $0.fileName,
+                            altText: $0.altText
+                        )
+                    },
+                    video: slot.attachedVideo,
+                    gif: slot.attachedGIF
+                )
+            },
+            replyTo: replyTo,
+            quotedPost: quotedPost,
+            interactionSettings: interactionSettings,
+            includeTranslationDisclosure: includeTranslationDisclosure
+        )
+    }
+
+    /// Inline publish (macOS, and any caller that wants to await): the
+    /// composer stays up with its spinner until the thread is out, and
+    /// errors surface in the sheet.
     public func submit() async {
-        guard canSubmitThread,
-              let bluesky = service.atProtoBluesky,
-              let kit = service.atProtoKit else { return }
+        guard canSubmitThread else { return }
 
         isSubmitting = true
         submissionError = nil
 
         do {
-            // Build the reply reference for the first post in the thread
-            var firstReplyRef: AppBskyLexicon.Feed.PostRecord.ReplyReference? = nil
-            if let replyPost = replyTo,
-               let session = try? await kit.getUserSession() {
-                let strongRef = ComAtprotoLexicon.Repository.StrongReference(
-                    recordURI: replyPost.uri,
-                    cidHash: replyPost.cid
-                )
-                firstReplyRef = try await ATProtoTools().createReplyReference(
-                    from: strongRef,
-                    session: session
-                )
-            }
-
-            // Post each slot in sequence. After the first, each post replies to the
-            // previous one to form a proper AT Protocol thread.
-            var previousRef: ComAtprotoLexicon.Repository.StrongReference? = nil
-            var threadRootRef: ComAtprotoLexicon.Repository.StrongReference? = nil
-
-            for (index, slot) in slots.enumerated() {
-                // Images for this slot
-                let imageQueries: [ATProtoTools.ImageQuery] = slot.attachedImages.map {
-                    ATProtoTools.ImageQuery(
-                        imageData: $0.data,
-                        fileName: $0.fileName,
-                        altText: $0.altText.isEmpty ? nil : $0.altText,
-                        aspectRatio: nil
-                    )
-                }
-
-                // Embed: quote only on first post; a video or images on any
-                // post (mutually exclusive — PostSlot enforces it).
-                let embed: ATProtoBluesky.EmbedIdentifier?
-                if index == 0, let quoted = quotedPost {
-                    let quoteRef = ComAtprotoLexicon.Repository.StrongReference(
-                        recordURI: quoted.uri,
-                        cidHash: quoted.cid
-                    )
-                    embed = .record(strongReference: quoteRef)
-                } else if let video = slot.attachedVideo {
-                    embed = .video(
-                        video: video.data,
-                        captions: nil,
-                        altText: video.altText.isEmpty ? nil : video.altText,
-                        aspectoRatio: video.aspectRatio.map {
-                            AppBskyLexicon.Embed.AspectRatioDefinition(width: $0.width, height: $0.height)
-                        }
-                    )
-                } else if let gif = slot.attachedGIF {
-                    // GIFs travel as external embeds pointing at the media
-                    // URL with ww/hh dimensions — the Bluesky convention.
-                    embed = .external(
-                        url: gif.embedURL,
-                        title: gif.title,
-                        description: "Animated GIF",
-                        thumbnailURL: gif.previewURL
-                    )
-                } else if !imageQueries.isEmpty {
-                    embed = .images(images: imageQueries)
-                } else {
-                    embed = nil
-                }
-
-                // Translation disclosure only on the first post
-                let postText = (index == 0 && includeTranslationDisclosure)
-                    ? slot.text + ComposerViewModel.translationDisclosureSuffix
-                    : slot.text
-
-                // Reply reference: first post uses the incoming replyRef;
-                // subsequent posts reply to the previous slot's result.
-                let replyRef: AppBskyLexicon.Feed.PostRecord.ReplyReference?
-                if index == 0 {
-                    replyRef = firstReplyRef
-                } else if let prev = previousRef, let root = threadRootRef {
-                    replyRef = AppBskyLexicon.Feed.PostRecord.ReplyReference(
-                        root: root,
-                        parent: prev
-                    )
-                } else {
-                    replyRef = nil
-                }
-
-                let result = try await bluesky.createPostRecord(
-                    text: postText,
-                    locales: [Locale.current],
-                    replyTo: replyRef,
-                    embed: embed
-                )
-
-                let thisRef = ComAtprotoLexicon.Repository.StrongReference(
-                    recordURI: result.recordURI,
-                    cidHash: result.recordCID
-                )
-                previousRef = thisRef
-
-                // The root of this thread is:
-                //   • the replyRef's root (if replying to an existing thread), OR
-                //   • this very first post (if starting a new thread)
-                if index == 0 {
-                    threadRootRef = firstReplyRef?.root ?? thisRef
-
-                    // ── Interaction gates ──
-                    // Applied best-effort (try?): the post already exists at
-                    // this point, and failing a gate must not surface an
-                    // error that would tempt a duplicate resubmission.
-                    //
-                    // Threadgate (who can reply) — only meaningful on a NEW
-                    // thread's root; a reply can't gate someone else's thread.
-                    if replyTo == nil, interactionSettings.needsThreadgate {
-                        var rules: [ATProtoBluesky.ThreadgateAllowRule] = []
-                        if interactionSettings.mentionedCanReply { rules.append(.allowMentions) }
-                        if interactionSettings.followingCanReply { rules.append(.allowFollowing) }
-                        if interactionSettings.followersCanReply { rules.append(.allowFollowers) }
-                        // Empty rules == nobody can reply.
-                        _ = try? await bluesky.createThreadgateRecord(
-                            postURI: thisRef.recordURI,
-                            replyControls: rules
-                        )
-                    }
-
-                    // Postgate (quote control) — applies to any post.
-                    if !interactionSettings.allowQuotePosts {
-                        _ = try? await bluesky.createPostgateRecord(
-                            postURI: thisRef.recordURI,
-                            embeddingRules: [.disable]
-                        )
-                    }
-                }
-            }
+            try await PostPublisher.shared.publishNow(makePayload(), service: service)
 
             // Retire drafting BEFORE deleting: any in-flight debounce or
             // later dismissal policy becomes a no-op, so a sent post can
@@ -503,15 +435,27 @@ public final class ComposerViewModel {
             draftsRetired = true
             discardDraft()
             didSubmitSuccessfully = true
-
-            // Notify observers (e.g. ProfileViewModel) that a new post was submitted
-            // so they can refresh their feed without requiring a full app reload.
-            NotificationCenter.default.post(name: .atmoDidSubmitPost, object: nil)
-
         } catch {
             submissionError = error
         }
 
         isSubmitting = false
+    }
+
+    /// Background publish (iOS): hands the snapshot to PostPublisher and
+    /// returns immediately so the composer can dismiss. Progress shows in
+    /// the status pill and the Live Activity; a failure saves the text
+    /// back to Drafts (the publisher owns that — the composer is gone).
+    public func submitInBackground() {
+        guard canSubmitThread else { return }
+
+        let payload = makePayload()
+        // The content now belongs to the publisher; the composer's own
+        // draft would otherwise resurrect on dismissal.
+        draftsRetired = true
+        discardDraft()
+
+        PostPublisher.shared.enqueue(payload, service: service)
+        didSubmitSuccessfully = true
     }
 }

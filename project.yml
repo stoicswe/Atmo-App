@@ -62,6 +62,10 @@ targets:
       - path: Apple
         excludes:
           - Watch/**
+          # Widget-extension-only sources (the @main WidgetBundle would
+          # clash with the app's). The shared Live Activity attributes
+          # live in Apple/LiveActivity, compiled into both targets.
+          - Widgets/**
       - path: Resources/Assets.xcassets
     settings:
       base:
@@ -119,6 +123,35 @@ targets:
       # Apple Watch. iOS only — the macOS destination has no watch.
       - target: AtmoWatch
         destinationFilters: [iOS]
+      # Widget extension hosting the post-publish Live Activity UI.
+      # iOS only — macOS has no Live Activities.
+      - target: AtmoWidgets
+        destinationFilters: [iOS]
+
+  # ── Widget Extension (iOS) ─────────────────────────────────────────────
+  # Renders the post-publish Live Activity (Lock Screen + Dynamic Island).
+  # The app starts and drives the activity (PostPublishBridge); this
+  # target only draws it — it needs no AtmoCore dependency, just the
+  # shared attributes type in Apple/LiveActivity.
+  AtmoWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Apple/Widgets
+      - path: Apple/LiveActivity
+    info:
+      path: Resources/AtmoWidgets-Info.plist
+      properties:
+        CFBundleDisplayName: "@omic"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: stoicswe.com-atmin-app.widgets
+        PRODUCT_NAME: AtmoWidgets
+        SKIP_INSTALL: YES
+        # Same export-compliance answer as every other target in the app.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 
   # ── Apple Watch ────────────────────────────────────────────────────────
   # Companion watch app embedded in the iOS build (runs independently of

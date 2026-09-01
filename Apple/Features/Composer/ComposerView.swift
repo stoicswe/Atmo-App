@@ -2,6 +2,7 @@ import SwiftUI
 import AtmoCore
 import PhotosUI
 import Translation
+import AVFoundation
 
 // MARK: - ComposerView
 // Threads-style composer sheet for a new post, a reply, or a quote post —
@@ -520,11 +521,13 @@ private struct SlotComposerRow: View {
             }
         }
         .sheet(isPresented: $showVoiceMemo) {
-            VoiceMemoSheet { data, aspectRatio in
+            // The take attaches as an audio REFERENCE — the waveform video
+            // renders at publish time (PostPublisher), not here.
+            VoiceMemoSheet { audioURL, duration in
                 slot.attachVideo(
-                    data: data,
-                    fileName: "voice-\(UUID().uuidString).mp4",
-                    aspectRatio: aspectRatio
+                    source: .voiceMemo(audioURL),
+                    duration: duration,
+                    aspectRatio: WaveformVideoRenderer.canvasSize
                 )
             }
         }
@@ -666,9 +669,12 @@ private struct SlotComposerRow: View {
         }
     }
 
-    /// Loads movie data from the picker, transcodes it to an H.264 MP4
-    /// (Bluesky's video service rejects raw QuickTime/HEVC picker output),
-    /// and attaches the result — or a clear reason it can't be posted.
+    /// Copies the picked movie to a composer-owned temp file and attaches
+    /// it as a REFERENCE — no transcoding happens here. PostPublisher
+    /// resolves the reference (H.264 MP4 transcode) at publish time, so
+    /// picking is fast and Post can return immediately. Only the length
+    /// is validated now: no amount of publish-time compression fixes an
+    /// overlong clip, and that feedback belongs in the composer.
     @MainActor
     private func loadVideo(from item: PhotosPickerItem?) async {
         guard let item else { return }
@@ -682,16 +688,25 @@ private struct SlotComposerRow: View {
             guard let raw = try await item.loadTransferable(type: Data.self) else {
                 throw VideoPreparer.PrepareError.unreadable
             }
-            let prepared = try await VideoPreparer.prepareForUpload(raw)
-            slot.attachVideo(
-                data: prepared.data,
-                fileName: prepared.fileName,
-                aspectRatio: prepared.aspectRatio
-            )
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
+            try raw.write(to: url)
+
+            let asset = AVURLAsset(url: url)
+            guard let duration = try? await asset.load(.duration).seconds, duration.isFinite else {
+                try? FileManager.default.removeItem(at: url)
+                throw VideoPreparer.PrepareError.unreadable
+            }
+            if let violation = VideoConstraints.validate(byteCount: 0, duration: duration) {
+                try? FileManager.default.removeItem(at: url)
+                throw violation
+            }
+            let ratio = await VideoPreparer.dimensions(ofVideoAt: url)
+            slot.attachVideo(source: .video(url), duration: duration, aspectRatio: ratio)
         } catch let violation as VideoConstraints.Violation {
             videoError = violation.userMessage
         } catch {
-            videoError = "Couldn't process that video. Try a different clip."
+            videoError = "Couldn't read that video. Try a different clip."
         }
     }
 

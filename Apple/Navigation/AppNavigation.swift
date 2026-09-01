@@ -264,6 +264,16 @@ struct AppNavigation: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: showDraftSavedToast)
+#if os(iOS)
+            // Background-publish status: progress while PostPublisher works
+            // through a queued post, then the posted/failed receipt. The
+            // Live Activity mirrors the same state outside the app.
+            .overlay(alignment: .top) {
+                PostPublishStatusPill()
+                    .padding(.top, AtmoTheme.Spacing.sm)
+                    .zIndex(99)
+            }
+#endif
             // Navigate to a bookmarked post opened via Spotlight search.
             // Switches to the Timeline tab (so Back works) then pushes the thread
             // onto whichever navigation stack is active for the current platform.
@@ -395,17 +405,25 @@ struct AppNavigation: View {
                         .padding(.trailing, AtmoTheme.Spacing.xxl)
                         .padding(.bottom, AtmoTheme.Spacing.xxl)
                 }
-                // All destinations for every tab registered once here
+                // All destinations for every tab registered once here.
+                // Each carries the tinted backdrop itself — pushed hosting
+                // views paint their own background, so the shell-level wash
+                // alone wouldn't reach them.
                 .navigationDestination(for: PostNavTarget.self) { target in
                     ThreadView(postURI: target.uri)
+                        .themedBackdrop()
                 }
                 .navigationDestination(for: String.self) { did in
                     ProfileView(actorDID: did, splitNavPath: $splitNavPath)
+                        .themedBackdrop()
                 }
                 .navigationDestination(for: ConversationItem.self) { convo in
                     ConversationDetailView(conversation: convo)
+                        .themedBackdrop()
                 }
             }
+            // Accent-derived wash behind every tab (Settings → Appearance).
+            .themedBackdrop()
         }
     }
 
@@ -641,18 +659,25 @@ struct AppNavigation: View {
                     }
                 }
                 // All destinations registered once on the single stack.
+                // Each carries the tinted backdrop itself (pushed hosting
+                // views paint their own background).
                 .navigationDestination(for: PostNavTarget.self) { target in
                     ThreadView(postURI: target.uri)
+                        .themedBackdrop()
                 }
                 .navigationDestination(for: String.self) { did in
                     // Flat mode (shared path) — a pushed profile must NOT
                     // own a nested NavigationStack.
                     ProfileView(actorDID: did, splitNavPath: $phoneTimelineNavPath)
+                        .themedBackdrop()
                 }
                 .navigationDestination(for: ConversationItem.self) { convo in
                     ConversationDetailView(conversation: convo)
+                        .themedBackdrop()
                 }
         }
+        // Accent-derived wash behind every tab (Settings → Appearance).
+        .themedBackdrop()
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
         .safeAreaInset(edge: .bottom, spacing: 0) {

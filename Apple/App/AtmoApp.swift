@@ -15,6 +15,15 @@ struct AtmoApp: App {
         // (Keychain, iCloud KVS, Spotlight, lifecycle notifications) before
         // any AtmoCore service singleton is touched.
         Atmo.platform = .apple
+        // Publish-time media processing (video transcode, memo waveform
+        // render) — lives outside `.apple` because the watch target shares
+        // that platform bundle but not the AVFoundation preparers.
+        Atmo.platform.mediaProcessor = AppleMediaProcessor()
+#if os(iOS)
+        // Background posting: UIKit background time + the Live Activity
+        // mirroring PostPublisher's progress.
+        PostPublishBridge.install()
+#endif
 
         // Configure the shared URLCache before any image loading begins.
         // Must happen here (not in a .task or .onAppear) so the static

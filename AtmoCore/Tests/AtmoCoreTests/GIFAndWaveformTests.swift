@@ -91,9 +91,14 @@ struct GIFAndWaveformTests {
         // Images can't join a GIF; a video displaces it.
         slot.addImage(data: Data([2]), fileName: "b.jpg")
         #expect(slot.attachedImages.isEmpty)
-        slot.attachVideo(data: Data([3]), fileName: "v.mp4")
+        slot.attachVideo(source: .video(URL(fileURLWithPath: "/tmp/v.mov")), duration: 3)
         #expect(slot.attachedGIF == nil)
         #expect(slot.attachedVideo != nil)
+        #expect(slot.attachedVideo?.isVoiceMemo == false)
+
+        // A memo reference reports its kind (drives the composer badge).
+        slot.attachVideo(source: .voiceMemo(URL(fileURLWithPath: "/tmp/take.m4a")), aspectRatio: (1080, 540))
+        #expect(slot.attachedVideo?.isVoiceMemo == true)
     }
 
     @MainActor

@@ -133,6 +133,44 @@ public struct NoopAlertPresenter: AlertPresenting {
     public func present(_ alerts: [FeedAlert]) async {}
 }
 
+// MARK: - PostMediaProcessing
+
+/// Turns composer media references into upload-ready video bytes at
+/// publish time. The composer holds only references (file URLs); nothing
+/// is transcoded or rendered until the user hits Post — PostPublisher
+/// resolves each reference through this seam.
+///
+/// The Apple app installs an AVFoundation-backed implementation; the
+/// default refuses, which keeps AtmoCore portable (Linux, tests).
+public protocol PostMediaProcessing: Sendable {
+    /// Transcodes a picked video file into the format Bluesky's video
+    /// service accepts (H.264 MP4 within the size/length limits).
+    func prepareVideo(at url: URL) async throws -> PreparedUploadVideo
+    /// Renders an audio take into a waveform video.
+    func renderVoiceMemo(at url: URL) async throws -> PreparedUploadVideo
+}
+
+/// The publish-ready result of processing one media reference.
+public struct PreparedUploadVideo: Sendable {
+    public let data: Data
+    public let fileName: String
+    public let aspectRatio: (width: Int, height: Int)?
+
+    public init(data: Data, fileName: String, aspectRatio: (width: Int, height: Int)?) {
+        self.data = data
+        self.fileName = fileName
+        self.aspectRatio = aspectRatio
+    }
+}
+
+/// Default: media publishing is unavailable on this platform.
+public struct UnsupportedMediaProcessor: PostMediaProcessing {
+    public struct Unsupported: Error {}
+    public init() {}
+    public func prepareVideo(at url: URL) async throws -> PreparedUploadVideo { throw Unsupported() }
+    public func renderVoiceMemo(at url: URL) async throws -> PreparedUploadVideo { throw Unsupported() }
+}
+
 // MARK: - AtmoPlatform
 
 /// The bundle of platform implementations AtmoCore's services use.
@@ -158,6 +196,9 @@ public struct AtmoPlatform: Sendable {
     public var messagesRefreshInterval: TimeInterval
     /// Presents background-sync alerts to the user.
     public var alertPresenter: any AlertPresenting
+    /// Resolves composer media references (video files, voice-memo audio)
+    /// into upload-ready bytes at publish time.
+    public var mediaProcessor: any PostMediaProcessing
 
     public init(
         secrets: any SecretsStoring = UserDefaultsSecretsStore(),
@@ -168,7 +209,8 @@ public struct AtmoPlatform: Sendable {
         backgroundNotification: Notification.Name? = nil,
         timelineRefreshInterval: TimeInterval = 3 * 60,
         messagesRefreshInterval: TimeInterval = 45,
-        alertPresenter: any AlertPresenting = NoopAlertPresenter()
+        alertPresenter: any AlertPresenting = NoopAlertPresenter(),
+        mediaProcessor: any PostMediaProcessing = UnsupportedMediaProcessor()
     ) {
         self.secrets = secrets
         self.syncedKeyValue = syncedKeyValue
@@ -179,6 +221,7 @@ public struct AtmoPlatform: Sendable {
         self.timelineRefreshInterval = timelineRefreshInterval
         self.messagesRefreshInterval = messagesRefreshInterval
         self.alertPresenter = alertPresenter
+        self.mediaProcessor = mediaProcessor
     }
 
     /// Portable default: file-backed credential storage next to the other

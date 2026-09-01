@@ -6,9 +6,11 @@ import AtmoCore
 // MARK: - Voice Memo Sheet
 /// Record a clip (or pick an audio file), preview it, and attach it as a
 /// waveform video — Bluesky hosts video, so voice memos travel as one.
+/// Attaching hands over an audio *reference*; the waveform video renders
+/// at publish time (PostPublisher), so this sheet closes instantly.
 struct VoiceMemoSheet: View {
-    /// Called with the rendered MP4 and its dimensions.
-    let onAttach: (Data, (width: Int, height: Int)) -> Void
+    /// Called with the audio take's file URL and its duration.
+    let onAttach: (URL, TimeInterval) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -92,7 +94,7 @@ struct VoiceMemoSheet: View {
                     if isRendering {
                         HStack(spacing: 8) {
                             ProgressView().scaleEffect(0.8)
-                            Text("Rendering waveform…")
+                            Text("Attaching…")
                         }
                         .frame(maxWidth: .infinity)
                     } else {
@@ -241,15 +243,34 @@ struct VoiceMemoSheet: View {
         stopPlayback()
         isRendering = true
         errorText = nil
+
+        // Validate the take is a readable clip inside the length cap —
+        // publish-time rendering can't fix either, and that feedback
+        // belongs here, not in a failed background upload later.
+        let asset = AVURLAsset(url: takeURL)
+        guard let duration = try? await asset.load(.duration).seconds,
+              duration.isFinite, duration > 0.2 else {
+            errorText = "Couldn't read that audio. Try re-recording."
+            isRendering = false
+            return
+        }
+        if let violation = VideoConstraints.validate(byteCount: 0, duration: duration) {
+            errorText = violation.userMessage
+            isRendering = false
+            return
+        }
+
+        // Hand the composer its own copy, so this sheet's temp files can
+        // never be cleaned out from under a queued publish.
+        let kept = FileManager.default.temporaryDirectory
+            .appendingPathComponent("atmo-memo-ref-\(UUID().uuidString).\(takeURL.pathExtension)")
         do {
-            let rendered = try await WaveformVideoRenderer.render(audioURL: takeURL)
-            onAttach(rendered.data, rendered.aspectRatio)
+            try FileManager.default.copyItem(at: takeURL, to: kept)
+            onAttach(kept, duration)
             Haptics.confirm()
             dismiss()
-        } catch let violation as VideoConstraints.Violation {
-            errorText = violation.userMessage
         } catch {
-            errorText = "Couldn't render that audio into a video. Try re-recording."
+            errorText = "Couldn't attach that audio. Try re-recording."
         }
         isRendering = false
     }

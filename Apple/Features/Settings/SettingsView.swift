@@ -268,6 +268,7 @@ private struct FamilyTab: View {
 private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
+    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
     @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
 #if os(iOS)
@@ -335,10 +336,11 @@ private struct AppearanceTab: View {
                         .tag(preset.id)
                     }
                 }
+                Toggle("Tinted background", isOn: $tintedBackground)
             } header: {
                 Text("Accent color")
             } footer: {
-                Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky.")
+                Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky. Tinted background also washes the whole app in a muted shade of the accent — pale in Light Mode, deep in Dark Mode — quiet enough that posts and media stay perfectly readable.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

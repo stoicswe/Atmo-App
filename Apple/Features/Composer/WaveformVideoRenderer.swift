@@ -30,6 +30,10 @@ nonisolated enum WaveformVideoRenderer {
     private static let width = 1080
     private static let height = 540
     private static let barCount = 64
+
+    /// Output canvas dimensions — the composer uses this as the aspect
+    /// hint for memo references before anything is rendered.
+    static var canvasSize: (width: Int, height: Int) { (width, height) }
     /// Timescale for video presentation timestamps.
     private static let timescale: CMTimeScale = 600
 

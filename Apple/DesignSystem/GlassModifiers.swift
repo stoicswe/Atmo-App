@@ -13,12 +13,23 @@ struct GlassCardModifier: ViewModifier {
 
     // Accessibility: "Solid surfaces" swaps the glass for an opaque fill.
     @AppStorage(ThemeKeys.solidSurfaces) private var solidSurfaces: Bool = false
+    // With Tinted background on, opaque cards take the accent-derived
+    // surface shade so they match the wash materials sample for free.
+    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
+    @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var solidFill: Color {
+        tintedBackground
+            ? AccentPresets.preset(forID: accentID).surfaceColor(for: colorScheme)
+            : AtmoColors.solidSurface
+    }
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if solidSurfaces {
             content
-                .background(AtmoColors.solidSurface, in: shape)
+                .background(solidFill, in: shape)
                 .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
         } else {
             content
@@ -70,6 +81,16 @@ struct NeumorphicGlassCardModifier: ViewModifier {
     // fill — which is in fact the *classic* neumorphic look; the rim and
     // dual shadows below still apply.
     @AppStorage(ThemeKeys.solidSurfaces) private var solidSurfaces: Bool = false
+    // Tinted background: opaque cards take the accent-derived surface
+    // shade (see GlassCardModifier).
+    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
+    @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
+
+    private var solidFill: Color {
+        tintedBackground
+            ? AccentPresets.preset(forID: accentID).surfaceColor(for: colorScheme)
+            : AtmoColors.solidSurface
+    }
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -78,7 +99,7 @@ struct NeumorphicGlassCardModifier: ViewModifier {
         content
             .background {
                 if solidSurfaces {
-                    shape.fill(AtmoColors.solidSurface)
+                    shape.fill(solidFill)
                 } else {
                     shape.fill(.thinMaterial)
                 }

@@ -8,7 +8,10 @@ import AtmoCore
 /// an H.264 MP4 under the 100 MB cap. Raw picker bytes uploaded with an
 /// .mp4 filename were the reason video posts failed — the container and
 /// codec never matched the name.
-enum VideoPreparer {
+/// `nonisolated`: transcoding runs off the main actor (the app target
+/// defaults to MainActor isolation) — publish-time processing must never
+/// stall the UI.
+nonisolated enum VideoPreparer {
 
     struct Prepared {
         let data: Data
@@ -23,12 +26,8 @@ enum VideoPreparer {
 
     /// Validates the clip length, then transcodes stepping down the
     /// resolution ladder until the result fits the size limit.
-    static func prepareForUpload(_ raw: Data) async throws -> Prepared {
+    static func prepareForUpload(at inputURL: URL) async throws -> Prepared {
         let directory = FileManager.default.temporaryDirectory
-        let inputURL = directory.appendingPathComponent("atmo-video-in-\(UUID().uuidString).mov")
-        try raw.write(to: inputURL)
-        defer { try? FileManager.default.removeItem(at: inputURL) }
-
         let asset = AVURLAsset(url: inputURL)
         guard let duration = try? await asset.load(.duration).seconds, duration.isFinite else {
             throw PrepareError.unreadable
@@ -46,7 +45,7 @@ enum VideoPreparer {
             AVAssetExportPreset960x540,
         ]
 
-        var lastByteCount = raw.count
+        var lastByteCount = (try? FileManager.default.attributesOfItem(atPath: inputURL.path)[.size] as? Int) ?? 0
         var exportedAny = false
         for preset in presets {
             guard let session = AVAssetExportSession(asset: asset, presetName: preset) else { continue }
@@ -80,8 +79,10 @@ enum VideoPreparer {
         throw PrepareError.exportFailed
     }
 
-    /// Orientation-corrected pixel dimensions of the exported video.
-    private static func dimensions(ofVideoAt url: URL) async -> (width: Int, height: Int)? {
+    /// Orientation-corrected pixel dimensions of a video file. Internal:
+    /// the composer also uses this at pick time for the preview tile's
+    /// aspect hint (no transcode happens until publish).
+    static func dimensions(ofVideoAt url: URL) async -> (width: Int, height: Int)? {
         let asset = AVURLAsset(url: url)
         guard let track = try? await asset.loadTracks(withMediaType: .video).first,
               let size = try? await track.load(.naturalSize),

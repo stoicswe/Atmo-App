@@ -67,8 +67,16 @@ struct ComposerToolbar: View {
             // ── Post pill ──
             // Prominent Liquid Glass button: the system supplies the
             // capsule, tint, pressed states, and disabled dimming.
+            //
+            // iOS hands the thread to PostPublisher and dismisses at once —
+            // progress lives in the status pill and the Live Activity.
+            // macOS keeps the in-sheet spinner (no Live Activity there).
             Button {
+#if os(iOS)
+                viewModel.submitInBackground()
+#else
                 Task { await viewModel.submit() }
+#endif
             } label: {
                 Group {
                     if viewModel.isSubmitting {

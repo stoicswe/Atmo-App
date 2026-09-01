@@ -12,6 +12,9 @@ enum ThemeKeys {
     static let colorScheme = "atmo.pref.colorScheme"
     /// Selected AccentPreset id.
     static let accentPresetID = "atmo.pref.accentPresetID"
+    /// On/off — wash the app background (and opaque card surfaces) with a
+    /// muted shade of the accent: pale in light mode, deep in dark mode.
+    static let tintedBackground = "atmo.pref.tintedBackground"
 
     // Accessibility
     /// On/off — replace translucent glass card surfaces with opaque fills.
@@ -138,6 +141,99 @@ enum AccentPresets {
             cachedPreset = preset(forID: id)
         }
         return cachedPreset
+    }
+}
+
+// MARK: - Tinted backdrop shades
+// The "Tinted background" option derives every shade from the selected
+// accent preset, deliberately de-vibranced: the accent is first pulled
+// toward its own gray (so a vivid Sky washes out to the same quiet level
+// as a muted Sumi), then mixed almost entirely into white (light mode) or
+// near-black (dark mode). Content — text, media, cards — stays readable;
+// the color reads as atmosphere, not paint.
+extension AccentPreset {
+    /// The accent pulled 40% toward its own luminance (gray).
+    private var softened: (r: Double, g: Double, b: Double) {
+        let luma = 0.299 * red + 0.587 * green + 0.114 * blue
+        return (
+            red * 0.6 + luma * 0.4,
+            green * 0.6 + luma * 0.4,
+            blue * 0.6 + luma * 0.4
+        )
+    }
+
+    /// Muted app-background wash: a pale tint of the accent in light mode,
+    /// a deep shade of it in dark mode.
+    func backdropColor(for scheme: ColorScheme) -> Color {
+        let s = softened
+        if scheme == .dark {
+            return Color(
+                red: s.r * 0.22 + 0.035,
+                green: s.g * 0.22 + 0.035,
+                blue: s.b * 0.22 + 0.045
+            )
+        }
+        return Color(
+            red: 0.88 + s.r * 0.115,
+            green: 0.88 + s.g * 0.115,
+            blue: 0.88 + s.b * 0.115
+        )
+    }
+
+    /// Companion card surface for the backdrop — one step lighter than the
+    /// backdrop in both modes, so opaque cards ("Solid surfaces") still
+    /// read as raised when translucent materials are off.
+    func surfaceColor(for scheme: ColorScheme) -> Color {
+        let s = softened
+        if scheme == .dark {
+            return Color(
+                red: s.r * 0.26 + 0.06,
+                green: s.g * 0.26 + 0.06,
+                blue: s.b * 0.26 + 0.07
+            )
+        }
+        return Color(
+            red: 0.93 + s.r * 0.07,
+            green: 0.93 + s.g * 0.07,
+            blue: 0.93 + s.b * 0.07
+        )
+    }
+}
+
+// MARK: - Themed backdrop application
+/// Paints the accent-derived wash behind a navigation shell's content and
+/// lets scrollable containers (List, Form) show it through. Applied to
+/// each platform shell's NavigationStack and to its pushed destinations —
+/// sheets deliberately keep the system presentation background.
+///
+/// The app's translucent materials (glass cards, bars, the neumorphic
+/// content cards) sample whatever sits behind them, so the wash carries
+/// into those surfaces automatically — no per-element tinting needed.
+struct ThemedBackdropModifier: ViewModifier {
+    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
+    @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        if tintedBackground {
+            content
+                .scrollContentBackground(.hidden)
+                .background {
+                    AccentPresets.preset(forID: accentID)
+                        .backdropColor(for: colorScheme)
+                        .ignoresSafeArea()
+                }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Applies the user's tinted-background wash (Settings → Appearance),
+    /// when enabled. No-op otherwise.
+    func themedBackdrop() -> some View {
+        modifier(ThemedBackdropModifier())
     }
 }
 
