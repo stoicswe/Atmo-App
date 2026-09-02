@@ -10,6 +10,7 @@ struct ConversationDetailView: View {
     /// The "+" attachment menu (iOS), springing up from the plus button.
     @State private var showAttachmentMenu = false
     @State private var showGIFPicker = false
+    @State private var showBookmarkPicker = false
 
     var otherParticipant: ConversationItem.ParticipantInfo? {
         conversation.participants.first { $0.did != service.currentUserDID }
@@ -80,7 +81,6 @@ struct ConversationDetailView: View {
                         .onTapGesture { closeAttachmentMenu() }
                     AttachmentMenuPanel(
                         items: attachmentItems,
-                        footer: "Bluesky messages can carry text, GIFs, and posts. Photos and videos aren't supported by Bluesky's chat yet.",
                         onSelect: { closeAttachmentMenu() }
                     )
                     .padding(.leading, AtmoTheme.Spacing.md)
@@ -94,6 +94,11 @@ struct ConversationDetailView: View {
             GIFPickerSheet { gif in
                 // Chat carries the GIF as its link; bubbles play it inline.
                 Task { await viewModel?.sendMessage(text: gif.embedURL.absoluteString) }
+            }
+        }
+        .sheet(isPresented: $showBookmarkPicker) {
+            BookmarkPickerSheet { bookmark in
+                Task { await viewModel?.sendPost(uri: bookmark.uri, cid: bookmark.cid) }
             }
         }
         // iMessage header: avatar over the name, tapping through to the
@@ -162,13 +167,16 @@ struct ConversationDetailView: View {
                 Haptics.tap()
                 showAttachmentMenu.toggle()
             } label: {
+                // The glyph rotates into an X while the menu is open; the
+                // rotation sits under the glass so the disc stays put
+                // (transforms after glassEffect displace the glass layer).
                 Image(systemName: "plus")
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 40, height: 40)
-                    .glassEffect(.regular.interactive(), in: Circle())
                     .rotationEffect(.degrees(showAttachmentMenu ? 45 : 0))
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showAttachmentMenu)
+                    .frame(width: 40, height: 40)
+                    .glassEffect(.regular.interactive(), in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(showAttachmentMenu ? "Close attachments" : "Attachments")
@@ -225,13 +233,31 @@ struct ConversationDetailView: View {
         if showAttachmentMenu { showAttachmentMenu = false }
     }
 
-    /// What Bluesky chat can actually carry today.
+    /// The menu lists what Bluesky chat can carry. Media rows are declared
+    /// but gated on ChatCapabilities.supportsMedia, so they appear on
+    /// their own once the chat lexicon accepts media embeds.
     private var attachmentItems: [AttachmentMenuItem] {
-        [
-            AttachmentMenuItem(id: "gif", title: "GIF", systemImage: "play.rectangle.fill", tint: .pink) {
+        var items: [AttachmentMenuItem] = []
+        if ChatCapabilities.supportsMedia {
+            items += [
+                AttachmentMenuItem(id: "camera", title: "Camera", systemImage: "camera.fill", tint: .gray) {},
+                AttachmentMenuItem(id: "photos", title: "Photos", systemImage: "photo.on.rectangle.angled", tint: .blue) {},
+                AttachmentMenuItem(id: "video", title: "Video", systemImage: "video.fill", tint: .indigo) {},
+                AttachmentMenuItem(id: "voice", title: "Voice Memo", systemImage: "waveform", tint: .red) {},
+                AttachmentMenuItem(id: "drawing", title: "Drawing", systemImage: "pencil.and.outline", tint: .orange) {},
+            ]
+        }
+        if ChatCapabilities.supportsGIFLinks {
+            items.append(AttachmentMenuItem(id: "gif", title: "GIF", systemImage: "play.rectangle.fill", tint: .pink) {
                 showGIFPicker = true
-            },
-        ]
+            })
+        }
+        if ChatCapabilities.supportsPostEmbeds {
+            items.append(AttachmentMenuItem(id: "bookmark", title: "Bookmarked Post", systemImage: "bookmark.fill", tint: AtmoColors.accent) {
+                showBookmarkPicker = true
+            })
+        }
+        return items
     }
 #else
     private var inlineInputBar: some View {

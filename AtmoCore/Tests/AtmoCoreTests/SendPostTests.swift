@@ -29,6 +29,24 @@ struct SendPostTests {
         #expect(input.embed == nil)
     }
 
+    @Test func postByReferenceEmbedsAndRejectsBlankReference() throws {
+        let input = try #require(ConversationDetailViewModel.messageInput(text: "", postURI: "at://x/app.bsky.feed.post/1", postCID: "bafy"))
+        guard case .record(let record) = try #require(input.embed) else {
+            Issue.record("expected a record embed")
+            return
+        }
+        #expect(record.record.recordURI == "at://x/app.bsky.feed.post/1")
+        #expect(ConversationDetailViewModel.messageInput(text: "", postURI: "", postCID: "bafy") == nil)
+        #expect(ConversationDetailViewModel.messageInput(text: "hi", postURI: nil, postCID: nil)?.embed == nil)
+    }
+
+    @Test func chatCapabilitiesReflectTheLexicon() {
+        // chat.bsky.convo.defs#messageInput embeds: record and join link only.
+        #expect(!ChatCapabilities.supportsMedia)
+        #expect(ChatCapabilities.supportsPostEmbeds)
+        #expect(ChatCapabilities.supportsGIFLinks)
+    }
+
     @Test func nothingToSendIsNil() {
         #expect(ConversationDetailViewModel.messageInput(text: "   ", embeddedPost: nil) == nil)
     }

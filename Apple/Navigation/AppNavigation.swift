@@ -726,11 +726,31 @@ struct AppNavigation: View {
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            phoneBottomBar
-                // Sit lower, hugging the home-indicator region like the
-                // native tab bar — except while the search keyboard is up,
-                // where sinking would clip the field into the keyboard.
-                .offset(y: phoneSearchFocused ? 0 : 22)
+            VStack(spacing: 0) {
+                // Recent searches rise out of the search field while its
+                // keyboard is up and sink back into it when dismissed
+                // (opt-in, Settings → Search).
+                if let searchVm = searchViewModel, (selectedItem ?? .timeline) == .search {
+                    SearchHistoryPills(
+                        entries: SearchHistoryStore.shared.recent,
+                        visible: phoneHistoryPillsVisible(searchVm),
+                        barEdge: .bottom,
+                        onSelect: { entry in
+                            Haptics.tap()
+                            SearchHistoryStore.shared.record(entry)
+                            searchVm.query = entry
+                            searchVm.onQueryChanged(entry)
+                            phoneSearchFocused = false
+                        }
+                    )
+                    .padding(.horizontal, AtmoTheme.Spacing.lg)
+                }
+                phoneBottomBar
+                    // Sit lower, hugging the home-indicator region like the
+                    // native tab bar — except while the search keyboard is up,
+                    // where sinking would clip the field into the keyboard.
+                    .offset(y: phoneSearchFocused ? 0 : 22)
+            }
         }
         // Status-bar blur: with the toolbar glass hidden, this is the only
         // chrome above the content. The material runs a little past the
@@ -756,6 +776,13 @@ struct AppNavigation: View {
             }
             .allowsHitTesting(false)
         }
+    }
+
+    /// Pills show while the search keyboard is up and nothing is typed —
+    /// arriving on Search focuses the field, so they rise on arrival too.
+    private func phoneHistoryPillsVisible(_ vm: SearchViewModel) -> Bool {
+        let store = SearchHistoryStore.shared
+        return store.isEnabled && !store.recent.isEmpty && phoneSearchFocused && vm.query.isEmpty
     }
 
     /// The three pill tabs stay alive (opacity toggle) so their scroll
@@ -1257,6 +1284,7 @@ private struct PhoneSearchField: View {
                 .textFieldStyle(.plain)
                 .focused($focused)
                 .submitLabel(.search)
+                .onSubmit { SearchHistoryStore.shared.record(viewModel.query) }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 // Debounced fetch — same contract as SearchView's own bar:

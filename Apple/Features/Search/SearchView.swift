@@ -458,9 +458,13 @@ private struct SearchBar: View {
 // after another. Hide: they slide back under the bar and fade, in reverse
 // order. The container's height follows so the results below make room
 // and take it back. Reduce Motion crossfades instead.
-private struct SearchHistoryPills: View {
+struct SearchHistoryPills: View {
     let entries: [String]
     let visible: Bool
+    /// Which edge the search bar sits on. `.top`: pills hang below it and
+    /// tuck up into it. `.bottom` (iPhone): pills rise above it and tuck
+    /// down into it, the most recent search nearest the bar.
+    var barEdge: Edge = .top
     let onSelect: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -470,16 +474,30 @@ private struct SearchHistoryPills: View {
     private static let stagger = 0.06
     private static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)
 
+    /// Pills in display order: nearest the bar first for a top bar; for
+    /// a bottom bar the newest sits last, right above the bar.
+    private var ordered: [String] {
+        barEdge == .bottom ? entries.reversed() : entries
+    }
+
+    /// Steps between a pill and the bar (0 = adjacent).
+    private func distance(_ index: Int) -> Int {
+        barEdge == .bottom ? max(0, ordered.count - 1 - index) : index
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AtmoTheme.Spacing.sm) {
-            ForEach(Array(entries.enumerated()), id: \.element) { index, entry in
+            ForEach(Array(ordered.enumerated()), id: \.element) { index, entry in
+                let steps = CGFloat(distance(index) + 1)
                 pill(entry)
-                    // Tucked under the bar when hidden: further pills sit
-                    // further up so the whole stack rises out of one point.
-                    .offset(y: visible || reduceMotion ? 0 : -CGFloat(index + 1) * 28)
-                    .scaleEffect(visible || reduceMotion ? 1 : 0.92, anchor: .topLeading)
+                    // Tucked into the bar when hidden: pills further from
+                    // it start further away, so the stack emerges from one
+                    // point at the bar's edge.
+                    .offset(y: visible || reduceMotion ? 0 : (barEdge == .bottom ? steps : -steps) * 28)
+                    .scaleEffect(visible || reduceMotion ? 1 : 0.92,
+                                 anchor: barEdge == .bottom ? .bottomLeading : .topLeading)
                     .opacity(visible ? 1 : 0)
-                    .animation(animation(for: index), value: visible)
+                    .animation(animation(forDistance: distance(index)), value: visible)
             }
         }
         .padding(.top, AtmoTheme.Spacing.xs)
@@ -489,17 +507,17 @@ private struct SearchHistoryPills: View {
         // outer frame can animate between that and zero.
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackHeight = $0 }
-        .frame(height: visible ? stackHeight : 0, alignment: .top)
+        .frame(height: visible ? stackHeight : 0, alignment: barEdge == .bottom ? .bottom : .top)
         .clipped()
         .allowsHitTesting(visible)
         .animation(Self.spring.delay(visible ? 0 : Self.stagger * Double(entries.count)), value: visible)
         .accessibilityHidden(!visible)
     }
 
-    private func animation(for index: Int) -> Animation {
+    private func animation(forDistance distance: Int) -> Animation {
         if reduceMotion { return .easeInOut(duration: 0.2) }
-        // Sweep out bottom-up from the bar's edge; tuck back top-down.
-        let order = visible ? index : max(0, entries.count - 1 - index)
+        // Sweep out from the bar nearest-first; tuck back farthest-first.
+        let order = visible ? distance : max(0, entries.count - 1 - distance)
         return Self.spring.delay(Double(order) * Self.stagger)
     }
 

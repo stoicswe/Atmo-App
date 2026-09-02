@@ -11,25 +11,13 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            // Sky gradient background
-            AtmoColors.skyGradient
+            // Floating welcome posts over the plain grouped ground — the
+            // background layers are siblings of the form (not inside
+            // .background) so their tasks reliably run on device.
+            Color.loginGround
                 .ignoresSafeArea()
-
-            // Subtle animated blobs for depth
-            GeometryReader { geo in
-                Circle()
-                    .fill(AtmoColors.accent.opacity(0.18))
-                    .frame(width: geo.size.width * 0.7)
-                    .blur(radius: 80)
-                    .offset(x: -geo.size.width * 0.2, y: -geo.size.height * 0.1)
-
-                Circle()
-                    .fill(Color.purple.opacity(0.12))
-                    .frame(width: geo.size.width * 0.6)
-                    .blur(radius: 60)
-                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.5)
-            }
-            .ignoresSafeArea()
+            WelcomePostsBackground()
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: AtmoTheme.Spacing.xxxl) {
@@ -37,16 +25,7 @@ struct LoginView: View {
 
                     // App Icon + Name
                     VStack(spacing: AtmoTheme.Spacing.md) {
-                        Image(systemName: "cloud.fill")
-                            .font(.system(size: 64, weight: .light))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AtmoColors.accent, .white.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing)
+                        SpecularLogoView(size: 104)
 
                         Text("@omic")
                             .font(AtmoFonts.appTitle)
