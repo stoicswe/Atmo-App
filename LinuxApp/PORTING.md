@@ -83,7 +83,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Composer (single post) | ✅ | `.dialog` with `TextEditor`, 300-char counter, `createPostRecord` |
 | Composer (threads, images, reply/quote) | ⬜ | Reuse `ComposerViewModel` + `PostSlot`; image picking via portal `fileImporter` |
 | Drafts | ⬜ | `DraftStore` works on Linux already (UserDefaults → XDG plist); needs UI |
-| Search (posts/people/hashtags) | ⬜ | Reuse `SearchViewModel`; GNOME `SearchEntry` in the header bar |
+| Search (posts/people/hashtags/feeds) | ⬜ | Reuse `SearchViewModel` (`feedResults` + `loadMoreFeeds` for public feeds by name); GNOME `SearchEntry` in the header bar |
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
 | Search history suggestions (opt-in, Settings → Search) | ⬜ | Core: `SearchHistoryStore` (record on submit/result tap, `recent` for the pills); Linux needs the toggle + a pill row under the search entry |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |

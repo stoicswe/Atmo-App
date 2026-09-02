@@ -36,6 +36,9 @@ struct BookmarksView: View {
     /// The folder currently opened in place; nil = top level.
     @State private var openFolderID: UUID? = nil
 
+    /// The Vault opened in place of the bookmark list.
+    @State private var vaultOpen = false
+
     // Folder management dialogs
     @State private var showNewFolderAlert = false
     @State private var renameTarget: BookmarkFolder? = nil
@@ -71,11 +74,14 @@ struct BookmarksView: View {
         // Top level shows the unfiled bookmarks; a folder shows its own.
         let visible = state.bookmarks(in: openFolder?.id, from: store.bookmarks)
 
+        if vaultOpen {
+            VaultView(navPath: navPath, onClose: { vaultOpen = false })
+        } else {
         VStack(spacing: 0) {
             headerBar(openFolder: openFolder)
             Divider().overlay(Color.secondary.opacity(0.1))
 
-            if openFolder == nil && store.bookmarks.isEmpty && state.folders.isEmpty {
+            if openFolder == nil && store.bookmarks.isEmpty && state.folders.isEmpty && !VaultLock.shared.isAvailable {
                 emptyState
             } else {
                 ScrollView {
@@ -142,6 +148,7 @@ struct BookmarksView: View {
             Button("Cancel", role: .cancel) { deleteTarget = nil }
         } message: {
             Text("Its bookmarks move back to the top level. Nothing is unsaved.")
+        }
         }
     }
 
@@ -233,6 +240,10 @@ struct BookmarksView: View {
         all: [BookmarkedPost]
     ) -> some View {
         LazyVStack(spacing: 0) {
+            if openFolder == nil, VaultLock.shared.isAvailable {
+                VaultEntryRow(onOpen: { vaultOpen = true })
+                Divider().overlay(Color.secondary.opacity(0.1))
+            }
             if openFolder == nil, !state.folders.isEmpty {
                 sectionHeader("Folders")
                 ForEach(state.sortedFolders) { folder in
@@ -279,6 +290,9 @@ struct BookmarksView: View {
     ) -> some View {
         let columns = [GridItem(.adaptive(minimum: 160, maximum: 260), spacing: AtmoTheme.Spacing.md)]
         LazyVGrid(columns: columns, spacing: AtmoTheme.Spacing.md) {
+            if openFolder == nil, VaultLock.shared.isAvailable {
+                VaultEntryCard(onOpen: { vaultOpen = true })
+            }
             if openFolder == nil {
                 ForEach(state.sortedFolders) { folder in
                     FolderGridCard(
@@ -347,6 +361,18 @@ struct BookmarksView: View {
                 }
             } label: {
                 Label("Move To", systemImage: "folder")
+            }
+        }
+        if VaultLock.shared.isAvailable {
+            Button {
+                // Into the private section: leaves the list and the
+                // search index. No unlock needed to put things IN.
+                Haptics.confirm()
+                withAnimation {
+                    VaultStore.shared.moveIntoVault(bookmark)
+                }
+            } label: {
+                Label("Move to Vault", systemImage: "lock.fill")
             }
         }
         Button(role: .destructive) {
@@ -552,7 +578,7 @@ private struct BookmarkGridCard: View {
 
 // MARK: - BookmarkRowView
 // Compact row showing author info, post text snippet, and bookmark date.
-private struct BookmarkRowView: View {
+struct BookmarkRowView: View {
     let bookmark: BookmarkedPost
 
     var body: some View {
@@ -598,5 +624,64 @@ private struct BookmarkRowView: View {
         }
         .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
         .padding(.vertical, AtmoTheme.Feed.verticalPadding)
+    }
+}
+
+
+// MARK: - Vault Entry
+// The locked door at the top of Bookmarks. Tapping opens the Vault
+// screen, which handles unlocking.
+private struct VaultEntryRow: View {
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: AtmoTheme.Spacing.md) {
+                Image(systemName: VaultLock.shared.isUnlocked ? "lock.open.fill" : "lock.fill")
+                    .foregroundStyle(AtmoColors.accent)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Vault")
+                    Text(VaultLock.shared.isUnlocked ? "Unlocked" : "Face ID, Touch ID, or passcode")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+            .padding(.vertical, AtmoTheme.Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Vault, private bookmarks")
+    }
+}
+
+private struct VaultEntryCard: View {
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: AtmoTheme.Spacing.sm) {
+                Image(systemName: VaultLock.shared.isUnlocked ? "lock.open.fill" : "lock.fill")
+                    .font(.title2)
+                    .foregroundStyle(AtmoColors.accent)
+                Spacer(minLength: 0)
+                Text("Vault")
+                    .font(.subheadline.weight(.semibold))
+                Text("Private")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(AtmoTheme.Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+            .glassCard(cornerRadius: AtmoTheme.CornerRadius.medium, interactive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Vault, private bookmarks")
     }
 }

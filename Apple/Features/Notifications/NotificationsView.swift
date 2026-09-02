@@ -137,16 +137,15 @@ struct NotificationsView: View {
 }
 
 // MARK: - Activity Pill
-// iOS: Mail-style category chip — a compact icon circle that expands into
-// a tinted capsule with its label when selected (matches Settings' top
-// bar). macOS keeps the always-labeled capsule tabs.
+// Mail-style category chip on every platform (matches Settings and
+// Search): a compact icon circle that expands into a labeled accent
+// capsule when selected. Labels never wrap thanks to fixedSize.
 private struct ActivityPill: View {
     let category: ActivityCategory
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
-#if os(iOS)
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
@@ -168,23 +167,6 @@ private struct ActivityPill: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-#else
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: category.icon)
-                    .font(.caption.weight(.medium))
-                Text(category.rawValue)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? .white : .secondary)
-            .padding(.horizontal, AtmoTheme.Spacing.md)
-            .padding(.vertical, AtmoTheme.Spacing.xs)
-            .background {
-                Capsule()
-                    .fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.1))
-            }
-        }
-        .buttonStyle(.plain)
-#endif
+        .accessibilityLabel(category.rawValue)
     }
 }

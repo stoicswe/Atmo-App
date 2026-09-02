@@ -137,6 +137,12 @@ struct AppNavigation: View {
     /// the one presentation point verified to work everywhere.
     @State private var showNewConversation: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// iPad / macOS with the sidebar collapsed: the drawer slides in when
+    /// the pointer rests at the leading edge and slides out once it leaves.
+    @State private var hoverDrawerOpen = false
+    @State private var hoverDrawerCloseTask: Task<Void, Never>? = nil
+    /// Same width as the iPhone drawer.
+    private static let hoverDrawerWidth: CGFloat = 290
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
@@ -243,7 +249,34 @@ struct AppNavigation: View {
                 }
             })
             .sheet(isPresented: $showComposer, onDismiss: handleComposerDismiss) {
-                ComposerView()
+                ComposerView(initialText: consumeComposerSeed())
+            }
+            // Requests from Siri / Shortcuts (AppRouter): switch section,
+            // open a post, run a search, or open the composer — consumed
+            // once handled so they don't fire again.
+            .onChange(of: AppRouter.shared.pendingItem) { _, item in
+                guard let item else { return }
+                selectedItem = item
+                AppRouter.shared.pendingItem = nil
+            }
+            .onChange(of: AppRouter.shared.pendingPostURI) { _, uri in
+                guard let uri else { return }
+                // Same path a Spotlight result takes.
+                spotlightPostURI = uri
+                AppRouter.shared.pendingPostURI = nil
+            }
+            .onChange(of: AppRouter.shared.pendingSearchQuery) { _, query in
+                guard let query else { return }
+                let vm = getOrCreateSearchViewModel()
+                selectedItem = .search
+                vm.selectedCategory = .posts
+                vm.query = query
+                vm.onQueryChanged(query)
+                AppRouter.shared.pendingSearchQuery = nil
+            }
+            .onChange(of: AppRouter.shared.pendingComposerText) { _, text in
+                guard text != nil else { return }
+                showComposer = true
             }
             // New-DM recipient picker; opening a person pushes their
             // conversation onto the phone stack.
@@ -285,25 +318,24 @@ struct AppNavigation: View {
                     .zIndex(99)
             }
 #endif
+            // "Vault locked" notice when the Vault re-locks on its own.
+            .overlay(alignment: .top) {
+                VaultLockToast()
+                    .padding(.top, AtmoTheme.Spacing.sm)
+                    .zIndex(98)
+            }
             // Navigate to a bookmarked post opened via Spotlight search.
             // Switches to the Timeline tab (so Back works) then pushes the thread
             // onto whichever navigation stack is active for the current platform.
             .onChange(of: spotlightPostURI) { _, uri in
                 guard let uri else { return }
-                selectedItem = .timeline
-                let target = NavigationPath([PostNavTarget(uri: uri)])
-                // Split view (iPad / macOS) uses splitNavPath.
-                // Phone TabView uses the owned phoneTimelineNavPath.
-#if os(iOS)
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    phoneTimelineNavPath = target
-                } else {
-                    splitNavPath = target
-                }
-#else
-                splitNavPath = target
-#endif
+                route(NavigationPath([PostNavTarget(uri: uri)]))
                 spotlightPostURI = nil   // consume — prevents re-triggering on redraw
+            }
+            .onChange(of: AppRouter.shared.pendingProfileDID) { _, did in
+                guard let did else { return }
+                route(NavigationPath([did]))
+                AppRouter.shared.pendingProfileDID = nil
             }
             // Applied outermost so every subtree — sheets included — resolves
             // web links to the in-app browser on iOS. (Sheets containing
@@ -365,6 +397,109 @@ struct AppNavigation: View {
     // MARK: - iPad / macOS Split View
     // Custom sidebar: scrollable primary items at top, Profile + Settings pinned at bottom.
     private var splitView: some View {
+        splitViewBody
+            .overlay(alignment: .leading) { hoverDrawer }
+    }
+
+    /// Only a deliberately collapsed sidebar gets the hover drawer — while
+    /// the sidebar is on screen there's nothing to slide in.
+    private var sidebarCollapsed: Bool { columnVisibility == .detailOnly }
+
+    /// The iPhone drawer, driven by pointer hover: a thin hot zone along
+    /// the leading edge opens it; leaving the panel (with a short grace
+    /// period, so crossing the gap doesn't snap it shut) closes it.
+    @ViewBuilder
+    private var hoverDrawer: some View {
+        if sidebarCollapsed {
+            ZStack(alignment: .leading) {
+                if hoverDrawerOpen {
+                    Color.black.opacity(0.18)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeHoverDrawer() }
+                        .transition(.opacity)
+                }
+
+                PhoneSideMenu(
+                    active: selectedItem,
+                    items: primaryItems.filter { $0 != .timeline } + bottomItems,
+                    activeFeedURI: currentCustomFeedURI,
+                    onSelect: { item in
+                        if item == .timeline { switchTimelineFeed(nil) }
+                        selectedItem = item
+                        closeHoverDrawer()
+                    },
+                    onSelectFeed: { feed in
+                        switchTimelineFeed(feed)
+                        selectedItem = .timeline
+                        closeHoverDrawer()
+                    }
+                )
+                .frame(width: Self.hoverDrawerWidth)
+                .offset(x: hoverDrawerOpen ? 0 : -Self.hoverDrawerWidth - 24)
+                .shadow(color: .black.opacity(hoverDrawerOpen ? 0.22 : 0), radius: 24, x: 8)
+                .allowsHitTesting(hoverDrawerOpen)
+                .onHover { inside in
+                    if inside { cancelHoverDrawerClose() } else { scheduleHoverDrawerClose() }
+                }
+
+                // The hot zone: resting the pointer here opens the drawer.
+                Color.clear
+                    .frame(width: 10)
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onHover { inside in
+                        if inside { openHoverDrawer() }
+                    }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: hoverDrawerOpen)
+        }
+    }
+
+    private func openHoverDrawer() {
+        cancelHoverDrawerClose()
+        guard !hoverDrawerOpen else { return }
+        hoverDrawerOpen = true
+    }
+
+    private func closeHoverDrawer() {
+        cancelHoverDrawerClose()
+        hoverDrawerOpen = false
+    }
+
+    private func cancelHoverDrawerClose() {
+        hoverDrawerCloseTask?.cancel()
+        hoverDrawerCloseTask = nil
+    }
+
+    private func scheduleHoverDrawerClose() {
+        cancelHoverDrawerClose()
+        hoverDrawerCloseTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            hoverDrawerOpen = false
+        }
+    }
+
+    private var sidebarToggleButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                columnVisibility = sidebarCollapsed ? .all : .detailOnly
+            }
+            closeHoverDrawer()
+        } label: {
+            Image(systemName: "sidebar.leading")
+        }
+        .keyboardShortcut("s", modifiers: [.command, .control])
+        .help(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar")
+        .accessibilityLabel(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar")
+        .onHover { inside in
+            guard sidebarCollapsed else { return }
+            if inside { openHoverDrawer() } else { scheduleHoverDrawerClose() }
+        }
+    }
+
+    private var splitViewBody: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // One native sidebar List, sectioned like Mail/Notes: every row
             // gets the system selection highlight, hover states, spacing,
@@ -403,6 +538,10 @@ struct AppNavigation: View {
                 }
             }
             .listStyle(.sidebar)
+            // The system toggle can't be hovered; sidebarToggleButton in
+            // the detail toolbar replaces it. The removal has to sit on the
+            // sidebar column's content to take effect on macOS.
+            .toolbar(removing: .sidebarToggle)
             // Accent wash behind the sidebar too, so the whole window
             // carries the theme (replaces the sidebar material while on).
             .themedBackdrop()
@@ -423,6 +562,15 @@ struct AppNavigation: View {
                     ComposeFAB { showComposer = true }
                         .padding(.trailing, AtmoTheme.Spacing.xxl)
                         .padding(.bottom, AtmoTheme.Spacing.xxl)
+                }
+                // Our own sidebar toggle in place of the system one (removed
+                // below): clicking toggles the column as before, and while
+                // the sidebar is collapsed, hovering it slides the drawer in
+                // just like the leading-edge hot zone.
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        sidebarToggleButton
+                    }
                 }
                 // All destinations for every tab registered once here.
                 // Each carries the tinted backdrop itself — pushed hosting
@@ -467,7 +615,7 @@ struct AppNavigation: View {
         // internally — from bleeding their title preference through the ZStack
         // onto the nav bar of a different active tab.
         ZStack {
-            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath)
+            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath, showsToolbar: active == .timeline)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
                 .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
@@ -1022,6 +1170,29 @@ struct AppNavigation: View {
     /// within the last 2 seconds. If so, the environment action already fired and
     /// we don't need to show the toast again. If not, and the draft store grew, we
     /// show the toast here.
+    /// Pushes a destination from outside the view tree (Spotlight, Siri):
+    /// switches to the Timeline tab so Back works, then sets whichever
+    /// navigation stack the platform is using.
+    private func route(_ target: NavigationPath) {
+        selectedItem = .timeline
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            phoneTimelineNavPath = target
+        } else {
+            splitNavPath = target
+        }
+#else
+        splitNavPath = target
+#endif
+    }
+
+    /// The composer seed from an intent, taken exactly once.
+    private func consumeComposerSeed() -> String? {
+        let text = AppRouter.shared.pendingComposerText
+        AppRouter.shared.pendingComposerText = nil
+        return text
+    }
+
     private func handleComposerDismiss() {
         let store = DraftStore.shared
         guard !store.drafts.isEmpty else { return }
@@ -1116,9 +1287,11 @@ struct AppNavigation: View {
 }
 
 // MARK: - Liquid Glass Compose FAB
-#if os(iOS)
-// MARK: - Phone Side Menu
-// The left drawer holding everything that isn't one of the three pill tabs.
+// MARK: - Side Menu (drawer)
+// The left drawer holding everything that isn't one of the three pill
+// tabs on iPhone. Shared with iPad / macOS: when the split view's sidebar
+// is collapsed, the same panel slides in on pointer hover at the leading
+// edge, so the drawer looks and behaves the same everywhere.
 private struct PhoneSideMenu: View {
     let active: SidebarItem?
     /// Everything the user did NOT place in the bottom bar.
@@ -1267,6 +1440,7 @@ private struct PhoneSideMenu: View {
     }
 }
 
+#if os(iOS)
 // MARK: - Phone Search Field
 // Notes-style bottom search bar. Backed by the same persistent
 // SearchViewModel as SearchView, so typing here drives the page directly.

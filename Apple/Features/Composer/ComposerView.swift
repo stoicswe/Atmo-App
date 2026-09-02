@@ -35,6 +35,8 @@ struct ComposerView: View {
     var replyTo: PostItem? = nil
     /// When set, the composer will embed this post as a quote post.
     var quotedPost: PostItem? = nil
+    /// Text to start the first post with (Siri / Shortcuts "New Post").
+    var initialText: String? = nil
     /// Optional callback fired on the main actor immediately after a successful submission,
     /// before the sheet is dismissed. Used by callers that need to react to success
     /// (e.g. PostActionsView marking a post as quoted for optimistic UI).
@@ -209,6 +211,10 @@ struct ComposerView: View {
                         replyTo: replyTo,
                         quotedPost: quotedPost
                     )
+                    if let initialText, !initialText.isEmpty,
+                       let vm = viewModel, vm.slots.first?.text.isEmpty == true {
+                        vm.slots[0].text = initialText
+                    }
                 }
                 // Auto-focus the first slot
                 if let firstID = viewModel?.slots.first?.id {
@@ -427,6 +433,10 @@ private struct SlotComposerRow: View {
     /// Apple's Image Playground, when this device offers it.
     @Environment(\.supportsImagePlayground) private var supportsImagePlayground
     @State private var showImagePlayground = false
+    /// True from the tap until the Image Playground sheet reports back —
+    /// the system takes a moment to bring it up, and a silent button
+    /// reads as broken.
+    @State private var imagePlaygroundLaunching = false
 #endif
     /// Why the last picked video couldn't be attached (limit or transcode
     /// failure) — shown under the toolbar until the next attempt.
@@ -514,6 +524,20 @@ private struct SlotComposerRow: View {
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
+#if canImport(ImagePlayground)
+                    if imagePlaygroundLaunching {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Opening Image Playground…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, AtmoTheme.Spacing.xs)
+                        .transition(.opacity)
+                    }
+#endif
+
                     // Media icon row — the Bluesky-supported subset of
                     // Threads' attachment icons.
                     mediaIconRow
@@ -553,10 +577,18 @@ private struct SlotComposerRow: View {
         }
 #endif
 #if canImport(ImagePlayground)
-        .imagePlaygroundSheet(isPresented: $showImagePlayground) { url in
+        .imagePlaygroundSheet(isPresented: $showImagePlayground, onCompletion: { url in
+            imagePlaygroundLaunching = false
             if let data = try? Data(contentsOf: url) {
                 slot.addImage(data: data, fileName: "playground-\(UUID().uuidString).png")
             }
+        }, onCancellation: {
+            imagePlaygroundLaunching = false
+        })
+        // Belt and braces: whatever way the sheet goes away, the
+        // indicator goes with it.
+        .onChange(of: showImagePlayground) { _, presented in
+            if !presented { imagePlaygroundLaunching = false }
         }
 #endif
         .sheet(isPresented: $showVoiceMemo) {
@@ -702,16 +734,24 @@ private struct SlotComposerRow: View {
             if supportsImagePlayground {
                 Button {
                     Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) { imagePlaygroundLaunching = true }
                     showImagePlayground = true
                 } label: {
-                    Image(systemName: "apple.image.playground")
-                        .font(.body)
-                        .foregroundStyle(imageCount >= 4 || hasVideo
-                                         ? Color.secondary.opacity(0.4) : Color.secondary)
+                    if imagePlaygroundLaunching {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "apple.image.playground")
+                            .font(.body)
+                            .foregroundStyle(imageCount >= 4 || hasVideo
+                                             ? Color.secondary.opacity(0.4) : Color.secondary)
+                    }
                 }
                 .buttonStyle(.plain)
-                .disabled(imageCount >= 4 || hasVideo)
-                .accessibilityLabel("Create an image with Image Playground")
+                .disabled(imageCount >= 4 || hasVideo || imagePlaygroundLaunching)
+                .accessibilityLabel(imagePlaygroundLaunching
+                                    ? "Opening Image Playground"
+                                    : "Create an image with Image Playground")
             }
 #endif
 

@@ -37,6 +37,14 @@ import AppKit
 struct EmbeddedVideoPlayer: View {
     let playlistURL: URL
     let thumbnailURL: URL?
+    /// Feed behaviour: play on scroll rest. Off for grid tiles, which only
+    /// play when tapped.
+    var autoplays: Bool = true
+    /// Grid tiles: a tap on the running video toggles play/pause instead
+    /// of showing the control layer.
+    var tapTogglesPlayback: Bool = false
+    /// Bump to open full screen from outside (a tile's context menu).
+    var fullscreenRequest: Int = 0
 
     @State private var model: EmbeddedPlayerModel? = nil
     @State private var showFullscreen = false
@@ -68,7 +76,11 @@ struct EmbeddedVideoPlayer: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        model.toggleControls()
+                        if tapTogglesPlayback {
+                            model.togglePlayPause(showingControls: false)
+                        } else {
+                            model.toggleControls()
+                        }
                     }
             } else {
                 // Poster state: the whole video area is the play target, so
@@ -142,6 +154,13 @@ struct EmbeddedVideoPlayer: View {
         .onDisappear {
             model?.teardown()
         }
+        .onChange(of: fullscreenRequest) { _, request in
+            guard request > 0 else { return }
+            let model = ensureModel()
+            if !model.isActive { model.playNow() }
+            model.enterFullscreen()
+            showFullscreen = true
+        }
 #if os(iOS)
         .fullScreenCover(isPresented: $showFullscreen) {
             if let model {
@@ -177,7 +196,7 @@ struct EmbeddedVideoPlayer: View {
     /// user flies past never allocate playback machinery.
     private func ensureModel() -> EmbeddedPlayerModel {
         if let model { return model }
-        let created = EmbeddedPlayerModel(url: playlistURL)
+        let created = EmbeddedPlayerModel(url: playlistURL, autoplays: autoplays)
         model = created
         return created
     }
@@ -659,8 +678,12 @@ private final class EmbeddedPlayerModel {
     /// How long the controls linger after playback starts or a touch.
     private static let controlsLinger: Duration = .seconds(3)
 
-    init(url: URL) {
+    /// Whether scroll rest starts playback (feeds) or only a tap does (grid).
+    let autoplays: Bool
+
+    init(url: URL, autoplays: Bool = true) {
         self.url = url
+        self.autoplays = autoplays
     }
 
     func viewportChanged(_ metrics: ViewportMetrics) {
@@ -711,7 +734,7 @@ private final class EmbeddedPlayerModel {
     }
 
     private func scheduleRestCheck() {
-        guard !userPaused else { return }
+        guard autoplays, !userPaused else { return }
         idleTask?.cancel()
         idleTask = Task { [weak self] in
             try? await Task.sleep(for: Self.restDelay)
@@ -785,7 +808,7 @@ private final class EmbeddedPlayerModel {
         // over every video the scroll happens to rest on.
     }
 
-    func togglePlayPause() {
+    func togglePlayPause(showingControls: Bool = true) {
         guard let player else { return }
         if isPlaying {
             player.pause()
@@ -794,14 +817,20 @@ private final class EmbeddedPlayerModel {
             idleTask?.cancel()
             idleTask = nil
             // Paused controls stay up — the fade guard checks isPlaying.
-            showControls()
+            if showingControls { showControls() } else { hideControls() }
         } else {
             userPaused = false
             configureAudioSession(muted: isMuted)
             player.play()
             isPlaying = true
-            showControls()
+            if showingControls { showControls() } else { hideControls() }
         }
+    }
+
+    func hideControls() {
+        hideControlsTask?.cancel()
+        hideControlsTask = nil
+        controlsVisible = false
     }
 
     func toggleMute() {

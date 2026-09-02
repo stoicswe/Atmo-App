@@ -36,6 +36,8 @@ struct AtmoApp: App {
         let service = ATProtoService()
         _atProtoService = State(initialValue: service)
         BackgroundSync.configure(service: service)
+        // App Intents run in-process but outside the view tree.
+        AppRouter.shared.service = service
     }
 
     var body: some Scene {
@@ -109,6 +111,8 @@ struct ContentView: View {
         // on the splash forever. Kick another attempt whenever the scene
         // becomes active while still in `.restoring` with none in flight.
         .onChange(of: scenePhase) { _, phase in
+            // The Vault never survives leaving the app, whatever its timer.
+            if phase != .active { VaultLock.shared.lockForLeavingApp() }
             guard phase == .active,
                   case .restoring = service.authPhase,
                   !service.isLoading else { return }

@@ -15,6 +15,10 @@ struct TimelineView: View {
     /// NavigationStack in AppNavigation and this view renders as flat content.
     /// When nil (iPhone), this view owns its own NavigationStack.
     var splitNavPath: Binding<NavigationPath>? = nil
+    /// Split view keeps every tab alive; toolbar items would bleed onto
+    /// the other tabs' bars, so the owner passes whether this is the tab
+    /// on screen.
+    var showsToolbar: Bool = true
 
     @State private var ownedNavPath = NavigationPath()
 
@@ -77,7 +81,9 @@ struct TimelineView: View {
                 // pull gesture is disabled there.
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        if viewModel.isRefreshing {
+                        if !showsToolbar {
+                            EmptyView()
+                        } else if viewModel.isRefreshing {
                             ProgressView()
                                 .controlSize(.small)
                         } else {

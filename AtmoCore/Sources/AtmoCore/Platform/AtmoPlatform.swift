@@ -259,6 +259,9 @@ public struct AtmoPlatform: Sendable {
     /// Cloud-synced file storage for data beyond the KVS size budget
     /// (the Liked history). Hidden from user-visible cloud storage.
     public var syncedFiles: any SyncedFileStore
+    /// Owner verification (Face ID / Touch ID / passcode) guarding the
+    /// bookmarks Vault. Unavailable by default.
+    public var vaultAuthenticator: any VaultAuthenticating
 
     public init(
         secrets: any SecretsStoring = UserDefaultsSecretsStore(),
@@ -271,7 +274,8 @@ public struct AtmoPlatform: Sendable {
         messagesRefreshInterval: TimeInterval = 45,
         alertPresenter: any AlertPresenting = NoopAlertPresenter(),
         mediaProcessor: any PostMediaProcessing = UnsupportedMediaProcessor(),
-        syncedFiles: any SyncedFileStore = NoopSyncedFileStore()
+        syncedFiles: any SyncedFileStore = NoopSyncedFileStore(),
+        vaultAuthenticator: any VaultAuthenticating = UnavailableVaultAuthenticator()
     ) {
         self.secrets = secrets
         self.syncedKeyValue = syncedKeyValue
@@ -284,6 +288,7 @@ public struct AtmoPlatform: Sendable {
         self.alertPresenter = alertPresenter
         self.mediaProcessor = mediaProcessor
         self.syncedFiles = syncedFiles
+        self.vaultAuthenticator = vaultAuthenticator
     }
 
     /// Portable default: file-backed credential storage next to the other

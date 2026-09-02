@@ -129,6 +129,7 @@ private struct FamilyTab: View {
                     .id(matureRefresh)
             }
             familySection
+            vaultSection
             disclaimerSection
         }
 #if os(macOS)
@@ -248,6 +249,37 @@ private struct FamilyTab: View {
             Text(store.isManagedMinor
                  ? "These controls are managed through Apple Family settings and parent approvals — they can't be changed here."
                  : "When a parent shares an age range for this device's account (Settings → Family), managed controls apply automatically for teens; accounts under 13 don't get social features at all.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Vault
+    // How long the bookmarks Vault stays open after Face ID / Touch ID /
+    // passcode. Leaving the app locks it regardless.
+    private var vaultSection: some View {
+        let lock = VaultLock.shared
+        return Section {
+            Picker("Keep Vault unlocked for", selection: Binding(
+                get: { lock.duration },
+                set: { lock.setDuration($0) }
+            )) {
+                ForEach(VaultUnlockDuration.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            if lock.isUnlocked {
+                Button("Lock Vault Now") {
+                    Haptics.soft()
+                    lock.lock()
+                }
+            }
+        } header: {
+            Text("Vault")
+        } footer: {
+            Text(lock.isAvailable
+                 ? "The Vault is the private part of Bookmarks: it opens with Face ID, Touch ID, or your passcode, syncs privately through iCloud, and is never indexed for Spotlight or Siri. Ordinary bookmarks are still searchable. \"Every time\" asks again on each visit; other choices keep it open for that long. Leaving the app always locks it."
+                 : "The Vault needs Face ID, Touch ID, or a passcode set up on this device.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

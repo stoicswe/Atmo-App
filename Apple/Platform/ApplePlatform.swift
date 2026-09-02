@@ -29,7 +29,8 @@ extension AtmoPlatform {
             backgroundNotification: backgroundNotification,
             timelineRefreshInterval: timelineRefreshInterval,
             alertPresenter: UserNotificationsPresenter(),
-            syncedFiles: syncedFileStore
+            syncedFiles: syncedFileStore,
+            vaultAuthenticator: LocalVaultAuthenticator()
         )
     }
 
