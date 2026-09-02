@@ -33,11 +33,17 @@ struct AuthViewModelTests {
         #expect(!vm.canSubmit)
     }
 
-    @Test func twoFactorCodeMustBeSixDigits() {
+    /// Bluesky emails XXXXX-XXXXX codes; older authenticator-style codes
+    /// are six digits. Anything shorter than five characters is a typo.
+    @Test func twoFactorCodeNeedsAPlausibleLength() {
         let vm = AuthViewModel()
-        vm.twoFactorCode = "12345"
+        vm.twoFactorCode = "1234"
+        #expect(!vm.canSubmitTwoFactor)
+        vm.twoFactorCode = "   "
         #expect(!vm.canSubmitTwoFactor)
         vm.twoFactorCode = "123456"
+        #expect(vm.canSubmitTwoFactor)
+        vm.twoFactorCode = "ABCDE-FGHIJ"
         #expect(vm.canSubmitTwoFactor)
     }
 }

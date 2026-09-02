@@ -372,6 +372,28 @@ private struct AppearanceTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // ── Search history (opt-in; off wipes what was kept) ──
+            Section {
+                let history = SearchHistoryStore.shared
+                Toggle("Search history", isOn: Binding(
+                    get: { history.isEnabled },
+                    set: { history.setEnabled($0) }
+                ))
+                if history.isEnabled, !history.entries.isEmpty {
+                    Button("Clear search history", role: .destructive) {
+                        Haptics.soft()
+                        history.clear()
+                    }
+                }
+            } header: {
+                Text("Search")
+            } footer: {
+                Text("On: your last few searches appear above the search bar as quick suggestions. Kept only on this device; turning it off forgets them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // ── Apple Intelligence (only on devices that support it) ──
             if TopicSummarizer.isSupported {
                 Section {

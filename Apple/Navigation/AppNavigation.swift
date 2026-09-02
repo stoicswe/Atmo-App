@@ -1312,9 +1312,11 @@ private struct DismissKeyboardFAB: View {
                 .foregroundStyle(AtmoColors.accent)
                 // The two glyphs cross-fade in place as focus changes.
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 64, height: 64)
+                // Sized to the 48 pt search field beside it, a hair larger
+                // so the circle reads as a button rather than a bar end.
+                .frame(width: 52, height: 52)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .contentShape(Circle().inset(by: -10))
+                .contentShape(Circle().inset(by: -12))
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: keyboardVisible)
         }
         .buttonStyle(FABButtonStyle())

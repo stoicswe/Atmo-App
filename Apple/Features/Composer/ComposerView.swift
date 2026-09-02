@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(ImagePlayground)
+import ImagePlayground
+#endif
 import AtmoCore
 import PhotosUI
 import Translation
@@ -417,6 +420,13 @@ private struct SlotComposerRow: View {
 #if os(iOS)
     /// In-app camera (photo/video capture straight into the slot).
     @State private var showCamera = false
+    /// PencilKit sketch, attached as a photo.
+    @State private var showDrawing = false
+#endif
+#if canImport(ImagePlayground)
+    /// Apple's Image Playground, when this device offers it.
+    @Environment(\.supportsImagePlayground) private var supportsImagePlayground
+    @State private var showImagePlayground = false
 #endif
     /// Why the last picked video couldn't be attached (limit or transcode
     /// failure) — shown under the toolbar until the next attempt.
@@ -533,6 +543,20 @@ private struct SlotComposerRow: View {
                 handleCameraCapture(capture)
             }
             .ignoresSafeArea()
+        }
+#endif
+#if os(iOS)
+        .sheet(isPresented: $showDrawing) {
+            DrawingSheet { data in
+                slot.addImage(data: data, fileName: "drawing-\(UUID().uuidString).png")
+            }
+        }
+#endif
+#if canImport(ImagePlayground)
+        .imagePlaygroundSheet(isPresented: $showImagePlayground) { url in
+            if let data = try? Data(contentsOf: url) {
+                slot.addImage(data: data, fileName: "playground-\(UUID().uuidString).png")
+            }
         }
 #endif
         .sheet(isPresented: $showVoiceMemo) {
@@ -656,6 +680,40 @@ private struct SlotComposerRow: View {
             .buttonStyle(.plain)
             .disabled(hasVideo)
             .accessibilityLabel("Record voice memo")
+
+#if os(iOS)
+            // Drawing — a PencilKit sketch, attached as a photo.
+            Button {
+                Haptics.tap()
+                showDrawing = true
+            } label: {
+                Image(systemName: "pencil.and.outline")
+                    .font(.body)
+                    .foregroundStyle(imageCount >= 4 || hasVideo
+                                     ? Color.secondary.opacity(0.4) : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(imageCount >= 4 || hasVideo)
+            .accessibilityLabel("Add a drawing")
+#endif
+
+#if canImport(ImagePlayground)
+            // Image Playground — only where Apple Intelligence offers it.
+            if supportsImagePlayground {
+                Button {
+                    Haptics.tap()
+                    showImagePlayground = true
+                } label: {
+                    Image(systemName: "apple.image.playground")
+                        .font(.body)
+                        .foregroundStyle(imageCount >= 4 || hasVideo
+                                         ? Color.secondary.opacity(0.4) : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(imageCount >= 4 || hasVideo)
+                .accessibilityLabel("Create an image with Image Playground")
+            }
+#endif
 
             if isLoadingVideo {
                 ProgressView()

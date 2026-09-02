@@ -22,43 +22,61 @@ struct TwoFactorView: View {
                     VStack(spacing: AtmoTheme.Spacing.sm) {
                         Text("Two-Factor Authentication")
                             .font(.title2.weight(.bold))
-                        Text("Enter the code from your authenticator app or email.")
+                        Text("Bluesky emailed you a sign-in code. Enter it to finish signing in.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
 
                     // Code field
-                    TextField("000000", text: $viewModel.twoFactorCode)
+                    TextField("XXXXX-XXXXX", text: $viewModel.twoFactorCode)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
                         .multilineTextAlignment(.center)
+                        .autocorrectionDisabled()
 #if os(iOS)
-                        .keyboardType(.numberPad)
+                        .keyboardType(.asciiCapable)
+                        .textInputAutocapitalization(.characters)
+                        .textContentType(.oneTimeCode)
 #endif
                         .focused($isFocused)
                         .padding(AtmoTheme.Spacing.xl)
                         .glassCard()
                         .padding(.horizontal, AtmoTheme.Spacing.xxl)
                         .onChange(of: viewModel.twoFactorCode) { _, new in
-                            // Limit to 6 characters
-                            if new.count > 6 {
-                                viewModel.twoFactorCode = String(new.prefix(6))
-                            }
+                            // Bluesky's emailed codes are XXXXX-XXXXX; keep
+                            // the field to that shape's length.
+                            let cleaned = new.uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" }
+                            let limited = String(cleaned.prefix(11))
+                            if limited != new { viewModel.twoFactorCode = limited }
                         }
 
-                    Button {
-                        service.submitTwoFactorCode(viewModel.twoFactorCode)
-                        dismiss()
-                    } label: {
-                        Text("Verify")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(AtmoColors.accent)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.large, style: .continuous))
+                    // A rejected code lands here; the sheet stays up for a retry.
+                    if let error = service.authError {
+                        Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, AtmoTheme.Spacing.xxl)
                     }
-                    .disabled(!viewModel.canSubmitTwoFactor)
+
+                    Button {
+                        Task { await service.verifyTwoFactorCode(viewModel.twoFactorCode) }
+                    } label: {
+                        HStack {
+                            if service.isLoading {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Verify")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(AtmoColors.accent)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.large, style: .continuous))
+                    }
+                    .disabled(!viewModel.canSubmitTwoFactor || service.isLoading)
                     .padding(.horizontal, AtmoTheme.Spacing.xxl)
                 }
                 .padding()
@@ -69,10 +87,18 @@ struct TwoFactorView: View {
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        service.cancelTwoFactor()
+                        dismiss()
+                    }
                 }
             }
         }
         .onAppear { Task { @MainActor in isFocused = true } }
+        // Signed in: the login screen goes away underneath; close the sheet too.
+        .onChange(of: service.isAuthenticated) { _, signedIn in
+            if signedIn { dismiss() }
+        }
+        .interactiveDismissDisabled()
     }
 }

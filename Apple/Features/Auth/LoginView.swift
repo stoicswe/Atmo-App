@@ -75,15 +75,20 @@ struct LoginView: View {
                         }
                         .padding(AtmoTheme.Spacing.lg)
 
+                        // Hosting service, resolved from the handle as it's typed.
+                        hostingServiceLine
+                            .padding(.horizontal, AtmoTheme.Spacing.lg)
+                            .padding(.bottom, AtmoTheme.Spacing.sm)
+
                         Divider()
                             .overlay(AtmoColors.glassDivider)
 
-                        // Password field
+                        // Password field — the account password or an App Password.
                         HStack {
                             Image(systemName: "lock")
                                 .foregroundStyle(.tertiary)
                                 .frame(width: 20)
-                            SecureField("App Password", text: $viewModel.appPassword)
+                            SecureField("Password or App Password", text: $viewModel.appPassword)
                                 .textFieldStyle(.plain)
                                 .focused($focusedField, equals: .password)
                                 .submitLabel(.go)
@@ -133,10 +138,13 @@ struct LoginView: View {
                         .disabled(!viewModel.canSubmit || service.isLoading)
                         .animation(.easeInOut(duration: 0.2), value: viewModel.canSubmit)
 
-                        Text("Use an App Password from\nSettings → Privacy → App Passwords")
+                        Text(viewModel.isAppPassword
+                             ? "App Passwords sign in without a two-factor code."
+                             : "Your account password works too. If two-factor is on,\nBluesky emails you a code to finish signing in.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+                            .animation(.easeInOut(duration: 0.2), value: viewModel.isAppPassword)
                     }
                     .padding(.horizontal, AtmoTheme.Spacing.xxl)
 
@@ -148,14 +156,45 @@ struct LoginView: View {
             TwoFactorView()
         }
         .onChange(of: service.requiresTwoFactor) { _, needs in
-            if needs { showTwoFactor = true }
+            showTwoFactor = needs
         }
+        .onChange(of: viewModel.handle) { _, _ in
+            viewModel.handleDidChange()
+        }
+    }
+
+    /// "Signs in through bsky.social" — the resolved host, a spinner while
+    /// resolving, or a note that the default host will be tried.
+    @ViewBuilder
+    private var hostingServiceLine: some View {
+        HStack(spacing: 6) {
+            if viewModel.isResolvingPDS {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Finding hosting service…")
+            } else if viewModel.resolvedPDS != nil {
+                Image(systemName: "server.rack")
+                Text("Signs in through \(viewModel.pdsDisplayHost)")
+            } else if viewModel.pdsResolutionFailed {
+                Image(systemName: "questionmark.circle")
+                Text("Handle not found — will try \(viewModel.pdsDisplayHost)")
+            } else {
+                Image(systemName: "server.rack")
+                Text("Signs in through \(viewModel.pdsDisplayHost)")
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 20 + AtmoTheme.Spacing.sm)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isResolvingPDS)
     }
 
     private func performLogin() async {
         await service.login(
             handle: viewModel.normalizedHandle,
-            appPassword: viewModel.appPassword
+            password: viewModel.appPassword,
+            pdsURL: viewModel.resolvedPDS
         )
     }
 }

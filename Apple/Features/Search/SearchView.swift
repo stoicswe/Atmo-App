@@ -17,6 +17,12 @@ struct SearchView: View {
     /// one is hidden there (the category chips stay).
     var hidesSearchField: Bool = false
     @State private var ownedNavPath = NavigationPath()
+    /// Search field focus, lifted out of SearchBar so the history pills
+    /// can follow the keyboard: up while it's up, gone when it's dismissed.
+    @FocusState private var searchFocused: Bool
+    /// Arriving on the page shows the pills once before the field is ever
+    /// focused; the first keyboard dismissal (or a search) ends that.
+    @State private var showHistoryOnArrival = false
 
     private var navPath: Binding<NavigationPath> {
         splitNavPath ?? $ownedNavPath
@@ -56,12 +62,25 @@ struct SearchView: View {
                 VStack(spacing: 0) {
                     // ── Search bar ──
                     if !hidesSearchField {
-                        SearchBar(query: $viewModel.query) { newValue in
-                            vm.onQueryChanged(newValue)
-                        }
+                        SearchBar(
+                            query: $viewModel.query,
+                            isFocused: $searchFocused,
+                            onCommit: { newValue in vm.onQueryChanged(newValue) },
+                            onSubmit: { SearchHistoryStore.shared.record(vm.query) }
+                        )
                         .padding(.horizontal, AtmoTheme.Spacing.md)
                         .padding(.top, AtmoTheme.Spacing.sm)
                         .padding(.bottom, AtmoTheme.Spacing.xs)
+
+                        // Recent searches sweep out from under the bar
+                        // while the keyboard is up and tuck back when it
+                        // goes (opt-in, Settings → Search).
+                        SearchHistoryPills(
+                            entries: SearchHistoryStore.shared.recent,
+                            visible: historyPillsVisible,
+                            onSelect: { entry in runHistorySearch(entry, vm: vm) }
+                        )
+                        .padding(.horizontal, AtmoTheme.Spacing.md)
                     }
 
                     // ── Category picker ──
@@ -73,8 +92,39 @@ struct SearchView: View {
                 }
                 .background(.bar)
             }
-            .onAppear  { vm.onAppear()  }
-            .onDisappear { vm.onDisappear() }
+            .onAppear {
+                vm.onAppear()
+                showHistoryOnArrival = true
+            }
+            .onDisappear {
+                vm.onDisappear()
+                showHistoryOnArrival = false
+            }
+            .onChange(of: searchFocused) { was, now in
+                // Keyboard dismissed: the arrival showing is over too.
+                if was, !now { showHistoryOnArrival = false }
+            }
+            .onChange(of: vm.query) { _, query in
+                if !query.isEmpty { showHistoryOnArrival = false }
+            }
+            // Touching the results/explore content counts as moving on.
+            .simultaneousGesture(TapGesture().onEnded { showHistoryOnArrival = false })
+    }
+
+    /// Pills show while the field is focused, or right after arriving on
+    /// the page — only with history on and something recorded.
+    private var historyPillsVisible: Bool {
+        let store = SearchHistoryStore.shared
+        return store.isEnabled && !store.recent.isEmpty && (searchFocused || showHistoryOnArrival)
+    }
+
+    private func runHistorySearch(_ entry: String, vm: SearchViewModel) {
+        Haptics.tap()
+        SearchHistoryStore.shared.record(entry)
+        viewModel.query = entry
+        vm.onQueryChanged(entry)
+        showHistoryOnArrival = false
+        searchFocused = false
     }
 
     // MARK: - Category Picker
@@ -234,6 +284,7 @@ struct SearchView: View {
                         SearchPostRow(post: post)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                SearchHistoryStore.shared.record(vm.query)
                                 navPath.wrappedValue = NavigationPath([PostNavTarget(uri: post.uri)])
                             }
                             // Infinite scroll: any of the last few rows
@@ -269,6 +320,7 @@ struct SearchView: View {
                         SearchPersonRow(person: person)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                SearchHistoryStore.shared.record(vm.query)
                                 navPath.wrappedValue = NavigationPath([person.did])
                             }
                             // Infinite scroll, same as the posts list.
@@ -350,9 +402,12 @@ struct SearchView: View {
 
 private struct SearchBar: View {
     @Binding var query: String
+    /// Owned by SearchView so the history pills can track the keyboard.
+    var isFocused: FocusState<Bool>.Binding
     /// Called after every debounce-eligible keystroke with the new value.
     var onCommit: ((String) -> Void)? = nil
-    @FocusState private var isFocused: Bool
+    /// Return key — the moment a search is deliberately run.
+    var onSubmit: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
@@ -362,8 +417,9 @@ private struct SearchBar: View {
 
             TextField("Search Bluesky…", text: $query)
                 .textFieldStyle(.plain)
-                .focused($isFocused)
+                .focused(isFocused)
                 .submitLabel(.search)
+                .onSubmit { onSubmit?() }
                 .autocorrectionDisabled()
 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -392,6 +448,89 @@ private struct SearchBar: View {
         .padding(.vertical, AtmoTheme.Spacing.sm)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: query.isEmpty)
+    }
+}
+
+// MARK: - Search History Pills
+// The last few searches as left-aligned glass pills under the search bar
+// — the Photos "describe a memory" structure, in the app's own glass.
+// Show: each pill starts tucked under the bar and sweeps into place, one
+// after another. Hide: they slide back under the bar and fade, in reverse
+// order. The container's height follows so the results below make room
+// and take it back. Reduce Motion crossfades instead.
+private struct SearchHistoryPills: View {
+    let entries: [String]
+    let visible: Bool
+    let onSelect: (String) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Natural height of the pill stack, measured so the collapse animates.
+    @State private var stackHeight: CGFloat = 0
+
+    private static let stagger = 0.06
+    private static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AtmoTheme.Spacing.sm) {
+            ForEach(Array(entries.enumerated()), id: \.element) { index, entry in
+                pill(entry)
+                    // Tucked under the bar when hidden: further pills sit
+                    // further up so the whole stack rises out of one point.
+                    .offset(y: visible || reduceMotion ? 0 : -CGFloat(index + 1) * 28)
+                    .scaleEffect(visible || reduceMotion ? 1 : 0.92, anchor: .topLeading)
+                    .opacity(visible ? 1 : 0)
+                    .animation(animation(for: index), value: visible)
+            }
+        }
+        .padding(.top, AtmoTheme.Spacing.xs)
+        .padding(.bottom, AtmoTheme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Always laid out at its natural height (measured below) so the
+        // outer frame can animate between that and zero.
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackHeight = $0 }
+        .frame(height: visible ? stackHeight : 0, alignment: .top)
+        .clipped()
+        .allowsHitTesting(visible)
+        .animation(Self.spring.delay(visible ? 0 : Self.stagger * Double(entries.count)), value: visible)
+        .accessibilityHidden(!visible)
+    }
+
+    private func animation(for index: Int) -> Animation {
+        if reduceMotion { return .easeInOut(duration: 0.2) }
+        // Sweep out bottom-up from the bar's edge; tuck back top-down.
+        let order = visible ? index : max(0, entries.count - 1 - index)
+        return Self.spring.delay(Double(order) * Self.stagger)
+    }
+
+    private func pill(_ entry: String) -> some View {
+        Button {
+            onSelect(entry)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(entry)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .contextMenu {
+            Button("Remove", systemImage: "xmark", role: .destructive) {
+                SearchHistoryStore.shared.remove(entry)
+            }
+            Button("Clear search history", systemImage: "trash", role: .destructive) {
+                SearchHistoryStore.shared.clear()
+            }
+        }
+        .accessibilityLabel("Recent search: \(entry)")
     }
 }
 

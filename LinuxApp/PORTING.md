@@ -85,6 +85,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Drafts | ⬜ | `DraftStore` works on Linux already (UserDefaults → XDG plist); needs UI |
 | Search (posts/people/hashtags) | ⬜ | Reuse `SearchViewModel`; GNOME `SearchEntry` in the header bar |
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
+| Search history suggestions (opt-in, Settings → Search) | ⬜ | Core: `SearchHistoryStore` (record on submit/result tap, `recent` for the pills); Linux needs the toggle + a pill row under the search entry |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |
 | Send post via DM (paperplane in the action row) | ⬜ | Core has it: `SendPostViewModel` (recent conversations + people, per-recipient send state); needs a GTK recipient picker |
 | Shared posts in DMs open the post | ⬜ | Core: `MessageItem.embeddedRecord` / `embeddedPostURI`; Apple renders the quote card and navigates on tap |
