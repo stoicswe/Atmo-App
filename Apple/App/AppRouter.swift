@@ -19,6 +19,8 @@ final class AppRouter {
     var pendingPostURI: String? = nil
     /// Open a profile.
     var pendingProfileDID: String? = nil
+    /// Open a conversation (Reply privately on a ghost post).
+    var pendingConversation: ConversationItem? = nil
     /// Open Search and run this query.
     var pendingSearchQuery: String? = nil
     /// Open the composer, seeded with this text (may be empty).

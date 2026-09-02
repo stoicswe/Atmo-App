@@ -221,6 +221,9 @@ public final class ComposerViewModel {
     /// Who can reply / whether quoting is allowed — applied as threadgate
     /// and postgate records alongside the post at submit time.
     public var interactionSettings = PostInteractionSettings()
+    /// Ghost Post (opt-in feature): replies and quotes closed, taken down
+    /// by the app after 24 hours. New threads only.
+    public var isGhost: Bool = false
 
     // MARK: Translation (applies to the first post only)
     public var includeTranslationDisclosure: Bool = false
@@ -509,7 +512,8 @@ public final class ComposerViewModel {
             replyTo: replyTo,
             quotedPost: quotedPost,
             interactionSettings: interactionSettings,
-            includeTranslationDisclosure: includeTranslationDisclosure
+            includeTranslationDisclosure: includeTranslationDisclosure,
+            isGhost: isGhost && replyTo == nil
         )
     }
 

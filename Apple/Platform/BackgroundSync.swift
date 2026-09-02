@@ -65,6 +65,9 @@ enum BackgroundSync {
             await service.restoreSession()
         }
         guard service.isAuthenticated else { return }
+        // Ghost posts due for deletion — the background pass is one of
+        // the chances to take them down without the app open.
+        await GhostPostStore.shared.cleanup(service: service)
         let alerts = await engine.performSyncPass()
         guard !alerts.isEmpty else { return }
         await Atmo.platform.alertPresenter.present(alerts)

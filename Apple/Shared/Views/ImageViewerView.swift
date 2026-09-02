@@ -112,6 +112,8 @@ private struct GlassImageViewer: View {
                     .ignoresSafeArea()
             }
             .overlay { chrome(session: session) }
+            // The photo may turn sideways; the rest of the app stays portrait.
+            .allowsLandscapeWhileVisible()
             .onGeometryChange(for: CGSize.self) { $0.size } action: { containerSize = $0 }
             .task(id: "lum|\(session.id)|\(session.index)") {
                 let image = session.images[safe: session.index] ?? session.images[0]
@@ -581,6 +583,7 @@ struct ImageViewerView: View {
                     .padding(.leading, 20)
             }
         }
+        .allowsLandscapeWhileVisible()
         // Sync currentIndex from the incoming binding on first appear,
         // then keep it up to date as the TabView selection changes.
         .onAppear { currentIndex = selectedIndex }

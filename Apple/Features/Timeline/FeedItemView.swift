@@ -105,7 +105,8 @@ struct FeedItemView: View {
                         if let count = livePost.selfThreadCount {
                             SelfThreadPill(index: count, count: count, glass: true)
                         }
-                        Text(livePost.indexedAt.atmoFormatted())
+                        GhostBadge(post: livePost)
+                    Text(livePost.indexedAt.atmoFormatted())
                             .font(AtmoFonts.timestamp)
                             .foregroundStyle(.tertiary)
                     }
@@ -263,6 +264,7 @@ private struct AncestorPostRow: View {
                     if let position = selfThreadPosition, !isFirst {
                         SelfThreadPill(index: position.index, count: position.count, glass: true)
                     }
+                    GhostBadge(post: post)
                     Text(post.indexedAt.atmoFormatted())
                         .font(AtmoFonts.timestamp)
                         .foregroundStyle(.tertiary)

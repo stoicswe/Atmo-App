@@ -38,19 +38,24 @@ public struct PostThreadPayload: Sendable {
     public let quotedPost: PostItem?
     public let interactionSettings: PostInteractionSettings
     public let includeTranslationDisclosure: Bool
+    /// Ghost Post: self-label marker, replies and quotes closed, and the
+    /// app takes it down after 24 hours (GhostPostStore).
+    public let isGhost: Bool
 
     public init(
         slots: [Slot],
         replyTo: PostItem?,
         quotedPost: PostItem?,
         interactionSettings: PostInteractionSettings,
-        includeTranslationDisclosure: Bool
+        includeTranslationDisclosure: Bool,
+        isGhost: Bool = false
     ) {
         self.slots = slots
         self.replyTo = replyTo
         self.quotedPost = quotedPost
         self.interactionSettings = interactionSettings
         self.includeTranslationDisclosure = includeTranslationDisclosure
+        self.isGhost = isGhost
     }
 
     /// Short first-slot preview for status surfaces (pill, Live Activity).
@@ -383,13 +388,25 @@ public final class PostPublisher {
                 replyRef = nil
             }
 
+            // Ghost marker: a self-label only Atmo reads, on every post of
+            // the thread so each one wears the badge and the clock.
+            let ghostLabels: ComAtprotoLexicon.Label.SelfLabelsDefinition? = payload.isGhost
+                ? ComAtprotoLexicon.Label.SelfLabelsDefinition(values: [
+                    ComAtprotoLexicon.Label.SelfLabelDefinition(value: GhostPostPolicy.label)
+                ])
+                : nil
+
             let result = try await bluesky.createPostRecord(
                 text: postText,
                 locales: [Locale.current],
                 replyTo: replyRef,
-                embed: embed
+                embed: embed,
+                labels: ghostLabels
             )
             unitsDone += 1
+            if payload.isGhost {
+                GhostPostStore.shared.record(uri: result.recordURI, text: postText)
+            }
             progress = unitsDone / totalUnits
 
             let thisRef = ComAtprotoLexicon.Repository.StrongReference(
@@ -411,11 +428,15 @@ public final class PostPublisher {
                 //
                 // Threadgate (who can reply) — only meaningful on a NEW
                 // thread's root; a reply can't gate someone else's thread.
-                if payload.replyTo == nil, payload.interactionSettings.needsThreadgate {
+                // A ghost post closes replies and quotes outright, whatever
+                // the interaction settings say.
+                if payload.replyTo == nil, payload.interactionSettings.needsThreadgate || payload.isGhost {
                     var rules: [ATProtoBluesky.ThreadgateAllowRule] = []
-                    if payload.interactionSettings.mentionedCanReply { rules.append(.allowMentions) }
-                    if payload.interactionSettings.followingCanReply { rules.append(.allowFollowing) }
-                    if payload.interactionSettings.followersCanReply { rules.append(.allowFollowers) }
+                    if !payload.isGhost {
+                        if payload.interactionSettings.mentionedCanReply { rules.append(.allowMentions) }
+                        if payload.interactionSettings.followingCanReply { rules.append(.allowFollowing) }
+                        if payload.interactionSettings.followersCanReply { rules.append(.allowFollowers) }
+                    }
                     // Empty rules == nobody can reply.
                     _ = try? await bluesky.createThreadgateRecord(
                         postURI: thisRef.recordURI,
@@ -424,7 +445,7 @@ public final class PostPublisher {
                 }
 
                 // Postgate (quote control) — applies to any post.
-                if !payload.interactionSettings.allowQuotePosts {
+                if !payload.interactionSettings.allowQuotePosts || payload.isGhost {
                     _ = try? await bluesky.createPostgateRecord(
                         postURI: thisRef.recordURI,
                         embeddingRules: [.disable]

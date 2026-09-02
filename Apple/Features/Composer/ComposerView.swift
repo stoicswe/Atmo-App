@@ -72,6 +72,7 @@ struct ComposerView: View {
     private var composerTitle: String {
         if quotedPost != nil { return "Quote Post" }
         if replyTo != nil { return "Reply" }
+        if viewModel?.isGhost == true { return "New Ghost" }
         return (viewModel?.slots.count ?? 1) > 1 ? "New Thread" : "New Post"
     }
 
@@ -96,6 +97,14 @@ struct ComposerView: View {
                                 replyTranslationBanner(post: replyPost, vm: vm)
                             }
 
+                            // ── Ghost Post banner ──
+                            if vm.isGhost {
+                                GhostComposerBanner()
+                                    .padding(.horizontal, AtmoTheme.Spacing.lg)
+                                    .padding(.top, AtmoTheme.Spacing.sm)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+
                             // ── Thread slots ──
                             ForEach(Array(vm.slots.enumerated()), id: \.element.id) { index, slot in
                                 SlotComposerRow(
@@ -106,6 +115,7 @@ struct ComposerView: View {
                                     isLast: index == vm.slots.count - 1,
                                     canRemove: vm.slots.count > 1,
                                     showQuotedPost: index == 0 ? vm.quotedPost : nil,
+                                    isGhost: vm.isGhost,
                                     onRemove: { vm.removeSlot(id: slot.id) }
                                 )
                                 .focused($focusedSlotID, equals: slot.id)
@@ -129,12 +139,21 @@ struct ComposerView: View {
                     .safeAreaInset(edge: .bottom) {
                         ComposerToolbar(viewModel: vm, showTranslationDisclosureOption: didUseTranslation)
                     }
+#if os(macOS)
+                    // macOS sheets push toolbar items into a bottom action
+                    // bar; the composer draws its own header instead so the
+                    // title sits top-left and Cancel / Drafts top-right,
+                    // matching the iOS navigation bar.
+                    .safeAreaInset(edge: .top) {
+                        composerHeader(vm: vm)
+                    }
+#endif
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.isGhost)
                 }
             }
-            .navigationTitle(composerTitle)
 #if os(iOS)
+            .navigationTitle(composerTitle)
             .navigationBarTitleDisplayMode(.inline)
-#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { handleCancel() }
@@ -177,6 +196,7 @@ struct ComposerView: View {
                     }
                 }
             }
+#endif
             .confirmationDialog(
                 "What would you like to do?",
                 isPresented: $showDiscardAlert,
@@ -266,6 +286,66 @@ struct ComposerView: View {
             .themedBackdrop()
         }
     }
+
+#if os(macOS)
+    // MARK: - macOS header
+    /// Title on the left; Cancel, Drafts, and the draft menu on the right
+    /// as Liquid Glass pills — the same actions the iOS toolbar carries.
+    @ViewBuilder
+    private func composerHeader(vm: ComposerViewModel) -> some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Text(composerTitle)
+                .font(.title3.weight(.semibold))
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.2), value: composerTitle)
+            Spacer()
+            Button("Cancel") { handleCancel() }
+                .font(.subheadline)
+                .buttonStyle(.glassPill)
+                .keyboardShortcut(.cancelAction)
+            Button {
+                showDraftsSheet = true
+            } label: {
+                Image(systemName: "doc.text")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.glassPill)
+            .accessibilityLabel("Drafts")
+            .help("Drafts")
+            Menu {
+                Button {
+                    dismissedExplicitly = true
+                    vm.saveDraft()
+                    onDraftSaved?()
+                    draftSavedAction()
+                    dismiss()
+                } label: {
+                    Label("Save Draft", systemImage: "square.and.arrow.down")
+                }
+                .disabled(!vm.hasMeaningfulContent)
+
+                Button(role: .destructive) {
+                    dismissedExplicitly = true
+                    vm.discardDraft()
+                    dismiss()
+                } label: {
+                    Label("Discard Draft", systemImage: "trash")
+                }
+                .disabled(!vm.hasMeaningfulContent)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.glassPill)
+            .accessibilityLabel("Draft options")
+        }
+        .padding(.horizontal, AtmoTheme.Spacing.lg)
+        .padding(.top, AtmoTheme.Spacing.lg)
+        .padding(.bottom, AtmoTheme.Spacing.sm)
+    }
+#endif
 
     // MARK: - Cancel handling
 
@@ -415,6 +495,9 @@ private struct SlotComposerRow: View {
     let canRemove: Bool
     /// Non-nil for the first slot when composing a quote post
     let showQuotedPost: PostItem?
+    /// Ghost Post mode: the field wears a dashed speech bubble and asks
+    /// for "a thought", Threads-style.
+    var isGhost: Bool = false
     let onRemove: () -> Void
 
     // Photo picking is per-slot (each Threads slot owns its media).
@@ -430,8 +513,10 @@ private struct SlotComposerRow: View {
     @State private var showDrawing = false
 #endif
 #if canImport(ImagePlayground)
-    /// Apple's Image Playground, when this device offers it.
+    /// Apple's Image Playground, when this device offers it and the
+    /// person turned the button on (Settings → Features; off by default).
     @Environment(\.supportsImagePlayground) private var supportsImagePlayground
+    @AppStorage(ComposerFeatures.imagePlaygroundKey) private var imagePlaygroundEnabled = false
     @State private var showImagePlayground = false
     /// True from the tap until the Image Playground sheet reports back —
     /// the system takes a moment to bring it up, and a silent button
@@ -487,7 +572,7 @@ private struct SlotComposerRow: View {
                     // Growing text field directly under the username
                     TextField(
                         isFirst
-                            ? (showQuotedPost != nil ? "Add a comment…" : "What's new?")
+                            ? (showQuotedPost != nil ? "Add a comment…" : (isGhost ? "Share a thought…" : "What's new?"))
                             : "Say more…",
                         text: $slot.text,
                         axis: .vertical
@@ -495,6 +580,16 @@ private struct SlotComposerRow: View {
                     .textFieldStyle(.plain)
                     .font(.body)
                     .frame(minHeight: 44, alignment: .topLeading)
+                    .padding(isGhost ? AtmoTheme.Spacing.md : 0)
+                    .background {
+                        if isGhost {
+                            // Dashed speech bubble — the ghost's outline.
+                            GhostBubbleShape()
+                                .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                                .foregroundStyle(Color.secondary.opacity(0.6))
+                        }
+                    }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isGhost)
 
                     // Attached images strip
                     if !slot.attachedImages.isEmpty {
@@ -730,8 +825,9 @@ private struct SlotComposerRow: View {
 #endif
 
 #if canImport(ImagePlayground)
-            // Image Playground — only where Apple Intelligence offers it.
-            if supportsImagePlayground {
+            // Image Playground — only where Apple Intelligence offers it
+            // and the feature switch is on.
+            if supportsImagePlayground, imagePlaygroundEnabled {
                 Button {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.2)) { imagePlaygroundLaunching = true }
@@ -1209,3 +1305,46 @@ extension Image {
     }
 }
 #endif
+
+
+// MARK: - Ghost composer pieces
+/// The note at the top of a ghost composition.
+private struct GhostComposerBanner: View {
+    var body: some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Image(systemName: "moon.haze.fill")
+                .foregroundStyle(AtmoColors.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Archives after 24 hours")
+                    .font(.subheadline.weight(.semibold))
+                Text("Replies and quotes are off. Readers on Atomic can message you instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(AtmoTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+}
+
+/// A rounded speech bubble with a small tail at the top-leading corner,
+/// pointing back at the avatar.
+private struct GhostBubbleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius: CGFloat = 20
+        let tail: CGFloat = 10
+        var p = Path()
+        let body = rect.insetBy(dx: 0, dy: 0)
+        p.addRoundedRect(in: body, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+        // Tail: a little notch off the top-left, like Threads' bubble.
+        p.move(to: CGPoint(x: body.minX + radius * 0.35, y: body.minY + radius * 0.35))
+        p.addLine(to: CGPoint(x: body.minX - tail * 0.2, y: body.minY - tail * 0.2))
+        p.addLine(to: CGPoint(x: body.minX + radius * 0.9, y: body.minY + 1))
+        return p
+    }
+}

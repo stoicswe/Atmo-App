@@ -63,6 +63,37 @@ struct FloatingGlassButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Glass Pill Buttons
+/// Explicit Liquid Glass capsule for bar/header buttons. Used instead of
+/// `.buttonStyle(.glass)` so macOS and iOS render the same thing — the
+/// system style tints itself opaque inside macOS sheets.
+struct GlassPillButtonStyle: ButtonStyle {
+    var prominent: Bool = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .padding(.horizontal, AtmoTheme.Spacing.md)
+            .frame(height: 32)
+            .contentShape(Capsule())
+            .glassEffect(
+                prominent
+                    ? .regular.tint(AtmoColors.accent).interactive()
+                    : .regular.interactive(),
+                in: Capsule()
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == GlassPillButtonStyle {
+    static var glassPill: GlassPillButtonStyle { GlassPillButtonStyle() }
+    static var glassPillProminent: GlassPillButtonStyle { GlassPillButtonStyle(prominent: true) }
+}
+
 // MARK: - Neumorphic Glass Card
 /// A soft-UI ("neumorphism") take on a content card that still belongs to
 /// the Liquid Glass era: the surface stays a system material, but the card

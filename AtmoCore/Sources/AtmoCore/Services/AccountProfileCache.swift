@@ -22,8 +22,11 @@ public final class AccountProfileCache {
         public var verification: String?
         public var memberSince: Date?
         public var fetchedAt: Date
+        /// The account accepts DMs at all (chat declaration isn't "none").
+        /// Nil when unknown — treated as enabled.
+        public var dmsEnabled: Bool? = nil
 
-        public init(did: String, handle: String, displayName: String?, bio: String?, avatarURL: URL?, verification: String?, memberSince: Date?, fetchedAt: Date) {
+        public init(did: String, handle: String, displayName: String?, bio: String?, avatarURL: URL?, verification: String?, memberSince: Date?, fetchedAt: Date, dmsEnabled: Bool? = nil) {
             self.did = did
             self.handle = handle
             self.displayName = displayName
@@ -32,6 +35,7 @@ public final class AccountProfileCache {
             self.verification = verification
             self.memberSince = memberSince
             self.fetchedAt = fetchedAt
+            self.dmsEnabled = dmsEnabled
         }
 
         public init(profile: ProfileModel, memberSince: Date?, fetchedAt: Date = Date()) {
@@ -48,7 +52,8 @@ public final class AccountProfileCache {
                     }
                 },
                 memberSince: memberSince,
-                fetchedAt: fetchedAt
+                fetchedAt: fetchedAt,
+                dmsEnabled: profile.chatAllowIncoming.map { $0 != "none" }
             )
         }
 

@@ -15,6 +15,7 @@ struct SettingsView: View {
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
         case appearance = "Appearance"
+        case features = "Features"
         case notifications = "Notifications"
         case family = "Family"
         case accessibility = "Accessibility"
@@ -26,6 +27,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .appearance:    return "paintbrush"
+            case .features:      return "switch.2"
             case .notifications: return "bell.badge"
             case .family:        return "figure.2.and.child.holdinghands"
             case .accessibility: return "figure.arms.open"
@@ -60,6 +62,7 @@ struct SettingsView: View {
 
             switch selectedTab {
             case .appearance:    AppearanceTab()
+            case .features:      FeaturesTab()
             case .notifications: NotificationsSettingsTab()
             case .family:        FamilyTab()
             case .accessibility: AccessibilityTab()
@@ -298,29 +301,17 @@ private struct FamilyTab: View {
 
 // MARK: - Appearance
 
-private struct AppearanceTab: View {
-    @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
-    @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
-    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
-    @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+// MARK: - Features
+// The opt-in features in one place: Ghost Posts, Liked history, Search
+// history, Topic summaries, and the composer's Image Playground button.
+private struct FeaturesTab: View {
     @AppStorage(LikedPostsRetention.storageKey) private var likedRetentionRaw: String = LikedPostsRetention.defaultValue.rawValue
     @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
-#if os(iOS)
-    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
-#endif
+    @AppStorage(ComposerFeatures.imagePlaygroundKey) private var imagePlaygroundEnabled: Bool = false
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Infinite scroll", isOn: $infiniteScrollEnabled)
-            } header: {
-                Text("Feed")
-            } footer: {
-                Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            GhostPostsSettingsSection()
 
             Section {
                 // NOTE: no .onChange here — an onChange attached to this
@@ -341,6 +332,90 @@ private struct AppearanceTab: View {
                 // Form footer sent macOS into an infinite update-constraints
                 // loop at launch (NSGenericException crash).
                 Text("How long the Liked section remembers posts you've liked. The history syncs privately through iCloud without appearing in iCloud Drive. Expired entries leave the history only — your likes on Bluesky are untouched. Extending the window re-syncs older likes from your account.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── Search history (opt-in; off wipes what was kept) ──
+            Section {
+                let history = SearchHistoryStore.shared
+                Toggle("Search history", isOn: Binding(
+                    get: { history.isEnabled },
+                    set: { history.setEnabled($0) }
+                ))
+                if history.isEnabled, !history.entries.isEmpty {
+                    Button("Clear search history", role: .destructive) {
+                        Haptics.soft()
+                        history.clear()
+                    }
+                }
+            } header: {
+                Text("Search History")
+            } footer: {
+                Text("On: your last few searches appear above the search bar as quick suggestions. Kept only on this device; turning it off forgets them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── Apple Intelligence (only on devices that support it) ──
+            if TopicSummarizer.isSupported {
+                Section {
+                    Toggle("Topic summaries", isOn: $topicSummariesEnabled)
+                    Link(destination: URL(string: "https://www.apple.com/apple-intelligence/")!) {
+                        Label("How Apple Intelligence works", systemImage: "arrow.up.right")
+                    }
+                } header: {
+                    Text("Topic Summaries")
+                } footer: {
+                    Text("Tapping a trending topic summarizes its top posts with Apple Intelligence — Apple's on-device foundation models. Everything runs locally on this device; the posts being summarized never leave it. Summaries are kept for three days and quietly re-checked for accuracy."
+                         + (TopicSummarizer.usesAdvancedModel
+                            ? " This device runs Apple's advanced on-device model."
+                            : ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // ── Image Playground (composer button; off by default) ──
+            Section {
+                Toggle("Image Playground", isOn: $imagePlaygroundEnabled)
+            } header: {
+                Text("Composer")
+            } footer: {
+                Text("On: the composer shows an Image Playground button for creating a picture with Apple Intelligence, on devices that offer it. Off by default.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Keys for composer feature switches (Settings → Features).
+enum ComposerFeatures {
+    static let imagePlaygroundKey = "atmo.composer.imagePlayground"
+}
+
+private struct AppearanceTab: View {
+    @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
+    @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
+    @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
+    @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
+#if os(iOS)
+    @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
+#endif
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Infinite scroll", isOn: $infiniteScrollEnabled)
+            } header: {
+                Text("Feed")
+            } footer: {
+                Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -405,46 +480,6 @@ private struct AppearanceTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // ── Search history (opt-in; off wipes what was kept) ──
-            Section {
-                let history = SearchHistoryStore.shared
-                Toggle("Search history", isOn: Binding(
-                    get: { history.isEnabled },
-                    set: { history.setEnabled($0) }
-                ))
-                if history.isEnabled, !history.entries.isEmpty {
-                    Button("Clear search history", role: .destructive) {
-                        Haptics.soft()
-                        history.clear()
-                    }
-                }
-            } header: {
-                Text("Search")
-            } footer: {
-                Text("On: your last few searches appear above the search bar as quick suggestions. Kept only on this device; turning it off forgets them.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            // ── Apple Intelligence (only on devices that support it) ──
-            if TopicSummarizer.isSupported {
-                Section {
-                    Toggle("Topic summaries", isOn: $topicSummariesEnabled)
-                    Link(destination: URL(string: "https://www.apple.com/apple-intelligence/")!) {
-                        Label("How Apple Intelligence works", systemImage: "arrow.up.right")
-                    }
-                } header: {
-                    Text("Intelligence")
-                } footer: {
-                    Text("Tapping a trending topic summarizes its top posts with Apple Intelligence — Apple's on-device foundation models. Everything runs locally on this device; the posts being summarized never leave it. Summaries are kept for three days and quietly re-checked for accuracy."
-                         + (TopicSummarizer.usesAdvancedModel
-                            ? " This device runs Apple's advanced on-device model."
-                            : ""))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
         .formStyle(.grouped)
     }
@@ -464,7 +499,7 @@ private struct BottomMenuEditorView: View {
 
     private var sidebarItems: [SidebarItem] {
         let chosen = barItems
-        return PhoneBarConfig.eligible.filter { !chosen.contains($0) }
+        return PhoneBarConfig.available.filter { !chosen.contains($0) }
     }
 
     var body: some View {
@@ -733,6 +768,49 @@ private struct AccessibilityTab: View {
 }
 
 // MARK: - Account
+
+// MARK: - Ghosts settings
+/// The opt-in switch with its warning. The ghosts themselves — live ones
+/// with their clocks, and the archive — live in the Ghosts library
+/// section, which appears in the sidebar while this is on.
+private struct GhostPostsSettingsSection: View {
+    @AppStorage(GhostPostPolicy.enabledKey) private var enabled = false
+    @State private var showWarning = false
+    @State private var showClearArchive = false
+
+    var body: some View {
+        let store = GhostPostStore.shared
+        Section {
+            Toggle("Ghosts", isOn: Binding(
+                get: { enabled },
+                set: { on in
+                    enabled = on
+                    if on { showWarning = true }
+                }
+            ))
+            if enabled, !store.archive.isEmpty {
+                LabeledContent("Archive", value: "\(store.archive.count) ended")
+                Button("Clear Archive", role: .destructive) { showClearArchive = true }
+            }
+        } header: {
+            Text("Ghosts")
+        } footer: {
+            Text("A Ghost closes replies and quotes and disappears 24 hours after you post it. Readers on Atomic see a ghost badge and can reply to you privately by message; other apps just see a normal post with replies off. Reposts can't be blocked on Bluesky — Atomic hides the repost button and count on Ghosts, but other apps can still repost one. Bluesky can't delete it for you: the takedown happens when this app runs — on any of your devices, including a Mac left open. Your Ghosts, live and ended, are listed under Ghosts in the Library.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .alert("Ghosts need the app to clean up", isPresented: $showWarning) {
+            Button("Got it") {}
+        } message: {
+            Text("Bluesky has no timer of its own. A Ghost is taken down only when Atomic runs after its 24 hours are up — open the app on your phone, or keep the macOS app open, and it will be removed on time. If no device runs the app, the post stays up until one does.\n\nReposts can't be blocked on Bluesky. Atomic hides the repost button and count on Ghosts, but someone using another app can still repost one while it's up.")
+        }
+        .confirmationDialog("Clear the Ghost archive?", isPresented: $showClearArchive, titleVisibility: .visible) {
+            Button("Clear Archive", role: .destructive) { store.clearArchive() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
 
 // MARK: - Cache report
 /// Sizes of the re-creatable caches Settings can clear. Bookmarks, likes,

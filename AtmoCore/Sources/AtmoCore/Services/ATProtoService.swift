@@ -320,6 +320,10 @@ public final class ATProtoService {
         }
 
         Atmo.platform.secrets.saveLastHandle(self.currentHandle ?? fallbackHandle)
+
+        // Ghost posts past their time come down as soon as we're signed in,
+        // and again on every return to the foreground.
+        GhostPostStore.shared.attach(service: self)
     }
 
     private func clearLocalState() {

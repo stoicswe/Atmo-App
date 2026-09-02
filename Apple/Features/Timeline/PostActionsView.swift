@@ -13,6 +13,7 @@ struct PostActionsView: View {
     /// not for reply rows.
     var showBookmark: Bool = false
 
+    @Environment(ATProtoService.self) private var service
     @State private var showRepostMenu: Bool = false
     @State private var showReplyComposer: Bool = false
     @State private var showQuoteComposer: Bool = false
@@ -31,8 +32,43 @@ struct PostActionsView: View {
         viewModel.livePost(uri: post.uri) ?? post
     }
 
+    /// Ghost posts: thread closed, counts hidden, Reply becomes a private
+    /// message to the author — offered only when messaging is possible.
+    private var isGhost: Bool { GhostPostPolicy.isGhost(livePost) }
+
+    /// The viewer can DM at all: chat available, their own DMs not turned
+    /// off, not their own post, and family controls allowing a new chat.
+    private var canReplyPrivately: Bool {
+        guard isGhost, service.atProtoChat != nil,
+              livePost.authorDID != service.currentUserDID
+        else { return false }
+        if let did = service.currentUserDID,
+           AccountProfileCache.shared.snapshot(for: did)?.dmsEnabled == false {
+            return false
+        }
+        return ParentalControlsStore.shared.canStartDM(with: livePost.authorHandle)
+    }
+
+    private func replyPrivately() {
+        Haptics.tap()
+        Task {
+            let vm = NewConversationViewModel(service: service)
+            if let convo = await vm.openConversation(with: livePost.authorDID) {
+                AppRouter.shared.pendingConversation = convo
+            }
+        }
+    }
+
     var body: some View {
         HStack(spacing: AtmoTheme.Spacing.xl) {
+            if isGhost {
+                if canReplyPrivately {
+                    ActionButton(icon: "envelope", count: 0, color: .secondary) {
+                        replyPrivately()
+                    }
+                    .accessibilityLabel("Reply privately")
+                }
+            } else {
             // Reply
             ActionButton(
                 icon: "bubble.left",
@@ -42,14 +78,18 @@ struct PostActionsView: View {
                 Haptics.tap()
                 showReplyComposer = true
             }
+            }
 
+            // Ghost posts: Bluesky can't block reposts, so Atmo simply
+            // doesn't offer the button (or show the count) on them.
+            if !isGhost {
             // Repost — green when the user has reposted OR quoted this post.
             // Uses a popover on macOS (confirmationDialog is unreliable
             // in NavigationSplitView detail columns on macOS) and confirmationDialog on iOS.
             let isRepostActive = livePost.isReposted || livePost.isQuoted || didQuotePost
             ActionButton(
                 icon: "arrow.2.squarepath",
-                count: livePost.repostCount,
+                count: isGhost ? 0 : livePost.repostCount,
                 color: isRepostActive ? AtmoColors.repostGreen : .secondary,
                 filled: isRepostActive
             ) {
@@ -90,11 +130,12 @@ struct PostActionsView: View {
                 Button("Cancel", role: .cancel) {}
             }
 #endif
+            }
 
             // Like
             ActionButton(
                 icon: livePost.isLiked ? "heart.fill" : "heart",
-                count: livePost.likeCount,
+                count: isGhost ? 0 : livePost.likeCount,
                 color: livePost.isLiked ? AtmoColors.likeRed : .secondary,
                 filled: livePost.isLiked
             ) {

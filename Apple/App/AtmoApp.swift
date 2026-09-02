@@ -9,6 +9,10 @@ struct AtmoApp: App {
     @State private var spotlightPostURI: String? = nil
 
     @Environment(\.scenePhase) private var scenePhase
+#if os(iOS)
+    /// Orientation: portrait everywhere, landscape only for full-screen media.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+#endif
 
     init() {
         // Install the Apple implementations of AtmoCore's platform seams

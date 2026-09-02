@@ -19,6 +19,7 @@
 		17A83F126C1CDA6DE9BC417A /* TranslationHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECBF46F2260DDDFB90663C7 /* TranslationHelper.swift */; };
 		1843786BDF6D8A2D2A15ED7D /* ThemeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2963C0869ED9D6AFF8E0255B /* ThemeSettings.swift */; };
 		1B86384E09352AC5D7806E10 /* AsyncCachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */; };
+		1CCE17DC47CF63155C92DF0B /* GhostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492B9BD7100475A0535529CF /* GhostsView.swift */; };
 		1FD075E8CE0F3E8D42D1958C /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35D8ECCAC181EE3791D987A6 /* GlassCard.swift */; };
 		22BC73F208891F3B99FDD44C /* DraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD035BF0A58A2F8E60C0E74 /* DraftsView.swift */; };
 		237A8B3C295991985EF383B8 /* FeedItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314CED221A493CBD1616999A /* FeedItemView.swift */; };
@@ -99,6 +100,7 @@
 		CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */; };
 		CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA8D74EB6AC8E9B734C1407 /* Pasteboard+Atmo.swift */; };
 		CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */; };
+		CEA6C67D323673F3F448B7E4 /* OrientationLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932AA242FA912E5A2CD75E85 /* OrientationLock.swift */; };
 		D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */; };
 		D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */; };
 		D88C5A142817BF4B66929CB4 /* ImageEnhancer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD59E289E3F205B61BF1046 /* ImageEnhancer.swift */; };
@@ -120,6 +122,7 @@
 		F2B5642AA48BFC893A8E112F /* DetachedVideoWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED2C660D1A0CAB34517CE3D /* DetachedVideoWindow.swift */; };
 		FAB6AC450F9A9B635B439808 /* PostPublishAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1D9BDBDBCE2292830AA7E9 /* PostPublishAttributes.swift */; };
 		FCC2510DB09B78B7D5D22BF9 /* UbiquitousFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2D34D55070B2FDC31315BF /* UbiquitousFileStore.swift */; };
+		FD9D10F7C15AD37F1DEABA2B /* GhostBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5745813F3F0385BD4EC737C7 /* GhostBadge.swift */; };
 		FDF994D444AD359F37ABB124 /* BookmarkPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A5B39E9A7B97C2A2F1E3FA /* BookmarkPickerSheet.swift */; };
 /* End PBXBuildFile section */
 
@@ -190,9 +193,11 @@
 		40F61145768666D41432CF33 /* AttachmentMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMenu.swift; sourceTree = "<group>"; };
 		43DFA7F337C478835D66241B /* AtmoWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AtmoWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		487A47451110A7905995A9DF /* ComposerToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolbar.swift; sourceTree = "<group>"; };
+		492B9BD7100475A0535529CF /* GhostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostsView.swift; sourceTree = "<group>"; };
 		4AE0BA51F1E6FB63EDB27577 /* ImagePrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrefetcher.swift; sourceTree = "<group>"; };
 		4ED2C660D1A0CAB34517CE3D /* DetachedVideoWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetachedVideoWindow.swift; sourceTree = "<group>"; };
 		55A4F0DB8994184336815282 /* VoiceMemoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoSheet.swift; sourceTree = "<group>"; };
+		5745813F3F0385BD4EC737C7 /* GhostBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostBadge.swift; sourceTree = "<group>"; };
 		5AD0CF7F30DC8F8729AD7F72 /* AnimatedGIFView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedGIFView.swift; sourceTree = "<group>"; };
 		5CC35E00C3AF01396EEA33F0 /* ThreadReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadReaderView.swift; sourceTree = "<group>"; };
 		60B9632F79CB5CC5D848C983 /* SendPostSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendPostSheet.swift; sourceTree = "<group>"; };
@@ -218,6 +223,7 @@
 		90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCachedImage.swift; sourceTree = "<group>"; };
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
+		932AA242FA912E5A2CD75E85 /* OrientationLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationLock.swift; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 		A27B819F70B1B177035BB257 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
@@ -313,6 +319,7 @@
 			isa = PBXGroup;
 			children = (
 				D715FDD86925513414979F8E /* BookmarksView.swift */,
+				492B9BD7100475A0535529CF /* GhostsView.swift */,
 				EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */,
 				138983AE61340680FD80D0CD /* VaultView.swift */,
 			);
@@ -324,6 +331,7 @@
 			children = (
 				A27B819F70B1B177035BB257 /* AppRouter.swift */,
 				1E27E161212025CBDA762FF7 /* AtmoApp.swift */,
+				932AA242FA912E5A2CD75E85 /* OrientationLock.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -405,6 +413,7 @@
 				DC1867ACECC3FF646FE786AD /* DrawingSheet.swift */,
 				E3E8DFAAE13D068BB6E88F6C /* EmbeddedVideoPlayer.swift */,
 				B9AD2FFF59B01294EB8AFC66 /* ErrorBannerView.swift */,
+				5745813F3F0385BD4EC737C7 /* GhostBadge.swift */,
 				35D8ECCAC181EE3791D987A6 /* GlassCard.swift */,
 				DCFE019FBE762F5CE1E1434B /* ImageViewerView.swift */,
 				967CF623DACB557545B3E065 /* InAppBrowser.swift */,
@@ -819,6 +828,8 @@
 				53F5849D7A7E79458EF3CABC /* FamilyControlsIntegration.swift in Sources */,
 				237A8B3C295991985EF383B8 /* FeedItemView.swift in Sources */,
 				525C3745C23625E7227952AF /* GIFPickerSheet.swift in Sources */,
+				FD9D10F7C15AD37F1DEABA2B /* GhostBadge.swift in Sources */,
+				1CCE17DC47CF63155C92DF0B /* GhostsView.swift in Sources */,
 				1FD075E8CE0F3E8D42D1958C /* GlassCard.swift in Sources */,
 				0365773AD438E93127C83C7A /* GlassModifiers.swift in Sources */,
 				5F8C12D599119CB1CF601449 /* Haptics.swift in Sources */,
@@ -837,6 +848,7 @@
 				7314CAAA255AFD978D889749 /* NewConversationView.swift in Sources */,
 				D8955B361EE8532C4AE57E4F /* NotificationRowView.swift in Sources */,
 				9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */,
+				CEA6C67D323673F3F448B7E4 /* OrientationLock.swift in Sources */,
 				CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */,
 				62289897EBF007549FD8E5A7 /* PostActionsView.swift in Sources */,
 				744CEA9BEE824804F8AEA7FC /* PostEmbedView.swift in Sources */,
@@ -973,7 +985,7 @@
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
@@ -1023,7 +1035,7 @@
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
@@ -1111,7 +1123,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0902.0004;
+				CURRENT_PROJECT_VERSION = 2026.0902.1651;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1186,7 +1198,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0902.0004;
+				CURRENT_PROJECT_VERSION = 2026.0902.1651;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_NS_ASSERTIONS = NO;

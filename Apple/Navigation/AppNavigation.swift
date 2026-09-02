@@ -11,6 +11,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case bookmarks     = "Bookmarks"
     case liked         = "Liked"
     case drafts        = "Drafts"
+    case ghosts        = "Ghosts"
     case settings      = "Settings"
 
     var id: String { rawValue }
@@ -25,6 +26,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .bookmarks:     return "bookmark"
         case .liked:         return "heart"
         case .drafts:        return "doc.text"
+        case .ghosts:        return "moon.haze"
         case .settings:      return "gearshape"
         }
     }
@@ -39,6 +41,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .bookmarks:     return "bookmark.fill"
         case .liked:         return "heart.fill"
         case .drafts:        return "doc.text.fill"
+        case .ghosts:        return "moon.haze.fill"
         case .settings:      return "gearshape.fill"
         }
     }
@@ -46,8 +49,15 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 // Items shown in the scrollable top section of the sidebar
 private let primaryItems: [SidebarItem] = [.timeline, .search, .notifications, .messages]
-// Items pinned to the bottom of the sidebar panel (profile → bookmarks → liked → drafts → settings)
-private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .liked, .drafts, .settings]
+// Items pinned to the bottom of the sidebar panel (profile → bookmarks → liked → drafts → ghosts → settings)
+private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .liked, .drafts, .ghosts, .settings]
+
+extension SidebarItem {
+    /// Ghosts only exists while the feature is switched on in Settings.
+    var isAvailable: Bool {
+        self != .ghosts || GhostPostPolicy.isEnabled
+    }
+}
 
 #if os(iOS)
 // MARK: - Phone Bar Configuration
@@ -63,7 +73,9 @@ enum PhoneBarConfig {
     static let maxCustomTabs = 3
     /// Everything that can be placed in either the bar or the drawer.
     static let eligible: [SidebarItem] =
-        [.search, .notifications, .messages, .profile, .bookmarks, .liked, .drafts, .settings]
+        [.search, .notifications, .messages, .profile, .bookmarks, .liked, .drafts, .ghosts, .settings]
+    /// Eligible items that are currently on (Ghosts follows its toggle).
+    static var available: [SidebarItem] { eligible.filter(\.isAvailable) }
 
     static func decode(_ raw: String) -> [SidebarItem] {
         raw.split(separator: ",")
@@ -127,6 +139,7 @@ final class PhoneChromeState {
 struct AppNavigation: View {
     @Environment(ATProtoService.self) private var service
     @State private var selectedItem: SidebarItem? = .timeline
+    @AppStorage(GhostPostPolicy.enabledKey) private var ghostsEnabled = false
     @State private var showComposer: Bool = false
     /// When non-nil, opens the composer sheet pre-loaded with this draft.
     @State private var draftToResume: ComposerDraft? = nil
@@ -173,12 +186,13 @@ struct AppNavigation: View {
     /// Home plus the user's chosen tabs, in their chosen order.
     private var phoneTabItems: [SidebarItem] {
         [.timeline] + Array(PhoneBarConfig.decode(phoneBarItemsRaw).prefix(PhoneBarConfig.maxCustomTabs))
+            .filter(\.isAvailable)
     }
 
     /// Everything eligible that isn't in the bar goes to the drawer.
     private var phoneDrawerItems: [SidebarItem] {
         let tabs = phoneTabItems
-        return PhoneBarConfig.eligible.filter { !tabs.contains($0) }
+        return PhoneBarConfig.available.filter { !tabs.contains($0) }
     }
 #endif
 
@@ -341,6 +355,20 @@ struct AppNavigation: View {
                 route(NavigationPath([did]))
                 AppRouter.shared.pendingProfileDID = nil
             }
+            .onChange(of: AppRouter.shared.pendingConversation) { _, convo in
+                guard let convo else { return }
+                selectedItem = .messages
+#if os(iOS)
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    phoneTimelineNavPath.append(convo)
+                } else {
+                    splitNavPath.append(convo)
+                }
+#else
+                splitNavPath.append(convo)
+#endif
+                AppRouter.shared.pendingConversation = nil
+            }
             // Applied outermost so every subtree — sheets included — resolves
             // web links to the in-app browser on iOS. (Sheets containing
             // links still host their own copy; see InAppBrowserHost.)
@@ -426,7 +454,7 @@ struct AppNavigation: View {
 
                 PhoneSideMenu(
                     active: selectedItem,
-                    items: primaryItems.filter { $0 != .timeline } + bottomItems,
+                    items: primaryItems.filter { $0 != .timeline } + bottomItems.filter(\.isAvailable),
                     activeFeedURI: currentCustomFeedURI,
                     onSelect: { item in
                         if item == .timeline { switchTimelineFeed(nil) }
@@ -485,6 +513,15 @@ struct AppNavigation: View {
         }
     }
 
+    /// macOS: no compose button over Settings.
+    private var hidesComposeFAB: Bool {
+#if os(macOS)
+        (selectedItem ?? .timeline) == .settings
+#else
+        false
+#endif
+    }
+
     private var sidebarToggleButton: some View {
         Button {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -525,7 +562,7 @@ struct AppNavigation: View {
                 }
 
                 Section("Library") {
-                    ForEach(bottomItems) { item in
+                    ForEach(bottomItems.filter(\.isAvailable)) { item in
                         sidebarLabel(for: item)
                             .tag(item)
                             .listItemTint(.fixed(sidebarTint))
@@ -542,6 +579,10 @@ struct AppNavigation: View {
                 }
             }
             .listStyle(.sidebar)
+            // Turning Ghosts off while it's selected: fall back home.
+            .onChange(of: ghostsEnabled) { _, on in
+                if !on, selectedItem == .ghosts { selectedItem = .timeline }
+            }
             // The system toggle can't be hovered; sidebarToggleButton in
             // the detail toolbar replaces it. The removal has to sit on the
             // sidebar column's content to take effect on macOS.
@@ -562,11 +603,17 @@ struct AppNavigation: View {
                 ZStack(alignment: .bottomTrailing) {
                     persistentDetailStack
 
-                    // Liquid Glass FAB — always on top
-                    ComposeFAB { showComposer = true }
-                        .padding(.trailing, AtmoTheme.Spacing.xxl)
-                        .padding(.bottom, AtmoTheme.Spacing.xxl)
+                    // Liquid Glass FAB — always on top, except over
+                    // Settings on macOS, where there's nothing to compose
+                    // about and it covered the form's controls.
+                    if !hidesComposeFAB {
+                        ComposeFAB { showComposer = true }
+                            .padding(.trailing, AtmoTheme.Spacing.xxl)
+                            .padding(.bottom, AtmoTheme.Spacing.xxl)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hidesComposeFAB)
                 // Our own sidebar toggle in place of the system one (removed
                 // below): clicking toggles the column as before, and while
                 // the sidebar is collapsed, hovering it slides the drawer in
@@ -665,6 +712,11 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .drafts)
                 .navigationTitle(active == .drafts ? "Drafts" : "")
 
+            GhostsView(splitNavPath: $splitNavPath)
+                .opacity(active == .ghosts ? 1 : 0)
+                .allowsHitTesting(active == .ghosts)
+                .navigationTitle(active == .ghosts ? "Ghosts" : "")
+
             // Settings mounts ON DEMAND, breaking the always-alive rule the
             // other tabs follow: its grouped Form, laid out invisibly at
             // opacity 0, sent macOS into an infinite update-constraints
@@ -689,6 +741,7 @@ struct AppNavigation: View {
         case .bookmarks:     return "Bookmarks"
         case .liked:         return "Liked"
         case .drafts:        return "Drafts"
+        case .ghosts:        return "Ghosts"
         case .settings:      return "Settings"
         }
     }
@@ -990,6 +1043,9 @@ struct AppNavigation: View {
                         draftToResume = draft
                     })
                     .navigationTitle("Drafts")
+                case .ghosts:
+                    GhostsView(splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Ghosts")
                 case .settings:
                     SettingsView()
                 default:

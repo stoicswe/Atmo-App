@@ -315,6 +315,8 @@ private struct FullscreenVideoView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model.controlsVisible)
+        // Full-screen video may turn sideways; the app itself stays portrait.
+        .allowsLandscapeWhileVisible()
         .onAppear { model.showControls() }
         .onDisappear { model.exitFullscreen() }
         .alert("Couldn't Save", isPresented: $showSaveError) {

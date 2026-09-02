@@ -612,7 +612,8 @@ private struct RootPostView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(livePost.indexedAt.atmoFormatted())
+                GhostBadge(post: livePost)
+                    Text(livePost.indexedAt.atmoFormatted())
                     .font(AtmoFonts.timestamp)
                     .foregroundStyle(.tertiary)
             }
@@ -643,11 +644,18 @@ private struct RootPostView: View {
                 PostEmbedView(embed: embed, onImageTap: onImageTap, sensitiveMedia: livePost.hasSensitiveMediaLabel)
             }
 
+            // Ghost posts close replies and quotes, and reposts can't be
+            // blocked — so none of those counts are shown; likes remain.
+            let isGhost = GhostPostPolicy.isGhost(livePost)
             HStack(spacing: AtmoTheme.Spacing.xl) {
-                statLabel(count: livePost.replyCount, label: "replies")
-                statLabel(count: livePost.repostCount, label: "reposts")
+                if !isGhost {
+                    statLabel(count: livePost.replyCount, label: "replies")
+                    statLabel(count: livePost.repostCount, label: "reposts")
+                }
                 statLabel(count: livePost.likeCount, label: "likes")
-                statLabel(count: livePost.quoteCount, label: "quotes")
+                if !isGhost {
+                    statLabel(count: livePost.quoteCount, label: "quotes")
+                }
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -835,7 +843,8 @@ private struct ReplyRowView: View {
                                 if let position = selfThreadPosition {
                                     SelfThreadPill(index: position.index, count: position.count, glass: true)
                                 }
-                                Text(livePost.indexedAt.atmoFormatted())
+                                GhostBadge(post: livePost)
+                    Text(livePost.indexedAt.atmoFormatted())
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }

@@ -12,6 +12,9 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
     public let bannerURL: URL?
     /// When the account was created, when the profile reports it.
     public var createdAt: Date? = nil
+    /// The account's chat declaration ("all", "following", "none"); nil
+    /// when the profile didn't include one (treated as DMs on).
+    public var chatAllowIncoming: String? = nil
 
     // Stats
     public let followersCount: Int
@@ -51,6 +54,7 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
         self.isBlockedBy = profile.viewer?.isBlocked ?? false
         self.verification = VerificationBadge(state: profile.verificationState)
         self.createdAt = profile.createdAt
+        self.chatAllowIncoming = profile.associated?.chats?.allowIncoming
     }
 
     /// The viewer is blocking this account.

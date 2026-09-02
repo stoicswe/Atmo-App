@@ -842,6 +842,7 @@ private struct SearchPostRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
+                    GhostBadge(post: post)
                     Text(post.indexedAt.atmoFormatted())
                         .font(AtmoFonts.timestamp)
                         .foregroundStyle(.tertiary)
