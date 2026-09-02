@@ -74,6 +74,18 @@ struct AtmoApp: App {
             AtmoCommands()
         }
 #endif
+#if os(macOS)
+        // Videos expanded from the feed open here: one resizable window
+        // per video, detached from the main window.
+        WindowGroup(id: "video-player", for: VideoWindowRequest.self) { $request in
+            if let request {
+                DetachedVideoWindow(request: request)
+                    .atmoTheme()
+            }
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 960, height: 540)
+#endif
     }
 }
 

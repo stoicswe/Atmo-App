@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - Video Blob Locator
 /// Locates the original uploaded video blob (a plain MP4) behind a Bluesky
@@ -80,6 +83,19 @@ public enum VideoBlobLocator {
               url.scheme == "https" || url.scheme == "http"
         else { return nil }
         return url
+    }
+
+    /// Runs the whole chain: the original upload's getBlob URL for a
+    /// playlist, or nil when any hop fails. Shared by save-to-Photos and
+    /// the player's Original quality switch.
+    public static func resolveBlobURL(playlistURL: URL, session: URLSession = .shared) async -> URL? {
+        guard let reference = parse(playlistURL: playlistURL),
+              let documentURL = didDocumentURL(forDID: reference.did),
+              let (document, response) = try? await session.data(from: documentURL),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+              let pds = pdsEndpoint(inDIDDocument: document)
+        else { return nil }
+        return blobURL(pds: pds, reference: reference)
     }
 
     /// The `com.atproto.sync.getBlob` URL on the author's PDS for the

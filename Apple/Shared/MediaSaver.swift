@@ -42,6 +42,12 @@ nonisolated enum MediaSaver {
     static func saveImage(from url: URL) async throws {
         try await ensureAddAccess()
         let data = try await fetchData(from: url)
+        try await saveImage(data: data)
+    }
+
+    /// Saves image bytes already in hand (an Enhanced copy).
+    static func saveImage(data: Data) async throws {
+        try await ensureAddAccess()
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .photo, data: data, options: nil)
@@ -53,14 +59,9 @@ nonisolated enum MediaSaver {
     static func saveVideo(fromPlaylist playlistURL: URL) async throws {
         try await ensureAddAccess()
 
-        guard let reference = VideoBlobLocator.parse(playlistURL: playlistURL),
-              let didDocumentURL = VideoBlobLocator.didDocumentURL(forDID: reference.did)
-        else { throw SaveError.videoSourceUnavailable }
-
-        let didDocument = try await fetchData(from: didDocumentURL)
-        guard let pds = VideoBlobLocator.pdsEndpoint(inDIDDocument: didDocument),
-              let blobURL = VideoBlobLocator.blobURL(pds: pds, reference: reference)
-        else { throw SaveError.videoSourceUnavailable }
+        guard let blobURL = await VideoBlobLocator.resolveBlobURL(playlistURL: playlistURL) else {
+            throw SaveError.videoSourceUnavailable
+        }
 
         // Blobs can be large (up to 100 MB) — stream to disk, and give the
         // file a real .mp4 name so Photos recognizes the container.

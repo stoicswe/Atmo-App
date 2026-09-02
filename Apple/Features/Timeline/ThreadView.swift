@@ -227,7 +227,7 @@ struct ThreadView: View {
                                 mentionedHandle = handle
                             },
                             onImageTap: { images, index in
-                                showImages(images, at: index)
+                                showImages(images, at: index, postURI: root.uri)
                             },
                             selfThreadPosition: chain.count >= 2 ? (1, chain.count) : nil
                         )
@@ -275,7 +275,7 @@ struct ThreadView: View {
                                     mentionedHandle = handle
                                 },
                                 onImageTap: { images, index in
-                                    showImages(images, at: index)
+                                    showImages(images, at: index, postURI: reply.post.uri)
                                 },
                                 selfThreadPosition: chainPositions[reply.post.uri].map { ($0, chain.count) }
                             )
@@ -404,10 +404,10 @@ struct ThreadView: View {
     /// Routes an image tap to the window-level glass viewer, falling back
     /// to the legacy sheet when no host is mounted above this view.
     private func showImages(
-        _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage], at index: Int
+        _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage], at index: Int, postURI: String? = nil
     ) {
         if let viewerPresenter {
-            viewerPresenter.present(images, at: index)
+            viewerPresenter.present(images, at: index, postURI: postURI)
         } else {
             viewerImages = images
             viewerStartIndex = index

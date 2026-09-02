@@ -125,6 +125,8 @@ public final class BookmarkStore {
     private func persist() {
         saveToUserDefaults(bookmarks)
         saveToSyncedStore(bookmarks)
+        // Enhanced copies follow the bookmark: kept while it exists.
+        EnhancedImageStore.shared.reconcileFromStores()
     }
 
     // MARK: - UserDefaults (local, primary)

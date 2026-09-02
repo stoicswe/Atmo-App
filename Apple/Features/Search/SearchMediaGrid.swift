@@ -150,7 +150,7 @@ private struct MediaTile: View {
     private func imageTile(_ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]) -> some View {
         Color.clear
             .overlay {
-                AsyncCachedImage(url: images[0].thumbnailImageURL) { phase in
+                AsyncCachedImage(url: images[0].thumbnailImageURL, maxPixelSize: 900) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
                     } else {
@@ -180,7 +180,7 @@ private struct MediaTile: View {
     private func openViewer(_ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]) {
         Haptics.tap()
         if let viewerPresenter {
-            viewerPresenter.present(images, at: 0)
+            viewerPresenter.present(images, at: 0, postURI: post.uri)
         } else {
             viewerIndex = 0
             showViewer = true

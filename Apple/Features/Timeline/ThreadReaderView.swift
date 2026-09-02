@@ -118,7 +118,7 @@ struct ThreadReaderView: View {
         Color.clear
             .aspectRatio(ImageGridView.displayAspectRatio(image.aspectRatio), contentMode: .fit)
             .overlay {
-                AsyncCachedImage(url: image.fullSizeImageURL) { phase in
+                AsyncCachedImage(url: image.thumbnailImageURL, maxPixelSize: 2000) { phase in
                     if let loaded = phase.image {
                         loaded.resizable().scaledToFill()
                     } else {

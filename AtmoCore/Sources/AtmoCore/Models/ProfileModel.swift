@@ -10,6 +10,8 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
     public let description: String?
     public let avatarURL: URL?
     public let bannerURL: URL?
+    /// When the account was created, when the profile reports it.
+    public var createdAt: Date? = nil
 
     // Stats
     public let followersCount: Int
@@ -48,6 +50,7 @@ public struct ProfileModel: Identifiable, Hashable, Sendable {
         self.blockURI = profile.viewer?.blockingURI
         self.isBlockedBy = profile.viewer?.isBlocked ?? false
         self.verification = VerificationBadge(state: profile.verificationState)
+        self.createdAt = profile.createdAt
     }
 
     /// The viewer is blocking this account.

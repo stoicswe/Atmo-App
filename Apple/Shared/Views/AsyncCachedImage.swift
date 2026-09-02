@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 import AtmoCore
 
 #if canImport(UIKit)
@@ -17,6 +18,11 @@ import AppKit
 /// stuck on `.empty` forever.
 struct AsyncCachedImage<Content: View>: View {
     private let url: URL?
+    /// Decode no larger than this on the long edge (pixels). The CDN's
+    /// presets are often far bigger than the view showing them; decoding
+    /// to the display size cuts memory and decode time several-fold.
+    /// Nil decodes at full size (the full-screen viewer).
+    private let maxPixelSize: CGFloat?
     private let content: (AsyncImagePhase) -> Content
 
     @State private var phase: AsyncImagePhase = .empty
@@ -24,9 +30,17 @@ struct AsyncCachedImage<Content: View>: View {
     /// `.task(id:)` to restart after LazyVStack task cancellation.
     @State private var loadID: UUID = UUID()
 
-    init(url: URL?, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
+    init(url: URL?, maxPixelSize: CGFloat? = nil, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         self.url = url
+        self.maxPixelSize = maxPixelSize
         self.content = content
+    }
+
+    /// Cache identity: the same bytes decoded to different sizes are
+    /// different bitmaps.
+    private var cacheKey: String {
+        guard let url else { return "" }
+        return maxPixelSize.map { "\(url.absoluteString)#\(Int($0))" } ?? url.absoluteString
     }
 
     var body: some View {
@@ -72,7 +86,8 @@ struct AsyncCachedImage<Content: View>: View {
         // Fast path: decoded earlier this session — no fetch, no decode.
         // Without this, every LazyVStack cell realization re-decoded the
         // image bytes on the main thread (URLCache only stores raw data).
-        if let cached = DecodedImageCache.shared.image(for: url) {
+        let key = cacheKey
+        if let cached = DecodedImageCache.shared.image(for: key) {
             #if canImport(UIKit)
             phase = .success(Image(uiImage: cached))
             #elseif canImport(AppKit)
@@ -91,33 +106,63 @@ struct AsyncCachedImage<Content: View>: View {
             // bail out rather than writing stale state.
             guard !Task.isCancelled else { return }
 
-            #if canImport(UIKit)
-            // Decode AND decompress off the main actor; preparingForDisplay
-            // forces the (expensive, lazy) decompression now instead of at
-            // first render on main.
+            // Decode off the main actor, downsampled to the display size
+            // when a cap is given: ImageIO's thumbnail path never allocates
+            // the full-resolution bitmap, so a 3300 px CDN image bound for
+            // a 400 pt cell costs a few MB instead of 26.
+            let limit = maxPixelSize
             let decoded = await Task.detached(priority: .userInitiated) {
-                let image = UIImage(data: data)
-                return image?.preparingForDisplay() ?? image
+                Self.decode(data, maxPixelSize: limit)
             }.value
             guard !Task.isCancelled else { return }
             if let decoded {
-                DecodedImageCache.shared.store(decoded, for: url)
+                DecodedImageCache.shared.store(decoded, for: key)
+                #if canImport(UIKit)
                 phase = .success(Image(uiImage: decoded))
+                #elseif canImport(AppKit)
+                phase = .success(Image(nsImage: decoded))
+                #endif
             } else {
                 phase = .failure(URLError(.cannotDecodeContentData))
             }
-            #elseif canImport(AppKit)
-            if let nsImage = NSImage(data: data) {
-                DecodedImageCache.shared.store(nsImage, for: url)
-                phase = .success(Image(nsImage: nsImage))
-            } else {
-                phase = .failure(URLError(.cannotDecodeContentData))
-            }
-            #endif
         } catch {
             guard !Task.isCancelled else { return }
             phase = .failure(error)
         }
+    }
+}
+
+extension AsyncCachedImage {
+    /// ImageIO decode, downsampled when `maxPixelSize` is set. Runs off
+    /// the main actor; returns a fully decompressed platform image.
+    nonisolated static func decode(_ data: Data, maxPixelSize: CGFloat?) -> PlatformDecodedImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return nil
+        }
+        var options: [CFString: Any] = [
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        let cgImage: CGImage?
+        if let maxPixelSize {
+            options[kCGImageSourceCreateThumbnailFromImageAlways] = true
+            options[kCGImageSourceThumbnailMaxPixelSize] = Int(maxPixelSize)
+            cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        } else {
+            cgImage = CGImageSourceCreateImageAtIndex(source, 0, options as CFDictionary)
+        }
+        guard let cgImage else {
+            #if canImport(UIKit)
+            return UIImage(data: data)?.preparingForDisplay()
+            #else
+            return NSImage(data: data)
+            #endif
+        }
+        #if canImport(UIKit)
+        return UIImage(cgImage: cgImage)
+        #else
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        #endif
     }
 }
 
@@ -126,31 +171,31 @@ struct AsyncCachedImage<Content: View>: View {
 // URLCache below it holds raw bytes; this layer skips the repeated
 // decode/decompress work as cells recycle during scrolling.
 #if canImport(UIKit)
-private typealias PlatformDecodedImage = UIImage
+typealias PlatformDecodedImage = UIImage
 #elseif canImport(AppKit)
-private typealias PlatformDecodedImage = NSImage
+typealias PlatformDecodedImage = NSImage
 #endif
 
 private final class DecodedImageCache: @unchecked Sendable {
     static let shared = DecodedImageCache()
 
-    private let cache: NSCache<NSURL, PlatformDecodedImage> = {
-        let cache = NSCache<NSURL, PlatformDecodedImage>()
+    private let cache: NSCache<NSString, PlatformDecodedImage> = {
+        let cache = NSCache<NSString, PlatformDecodedImage>()
         cache.totalCostLimit = 64 * 1024 * 1024   // ~64 MB of decoded pixels
         return cache
     }()
 
-    func image(for url: URL) -> PlatformDecodedImage? {
-        cache.object(forKey: url as NSURL)
+    func image(for key: String) -> PlatformDecodedImage? {
+        cache.object(forKey: key as NSString)
     }
 
-    func store(_ image: PlatformDecodedImage, for url: URL) {
+    func store(_ image: PlatformDecodedImage, for key: String) {
         #if canImport(UIKit)
         let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
         #else
         let cost = Int(image.size.width * image.size.height * 4)
         #endif
-        cache.setObject(image, forKey: url as NSURL, cost: cost)
+        cache.setObject(image, forKey: key as NSString, cost: cost)
     }
 }
 

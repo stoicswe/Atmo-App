@@ -3,6 +3,7 @@ import AVFoundation
 import AtmoCore
 #if os(iOS)
 import UIKit
+import AVKit
 #elseif os(macOS)
 import AppKit
 #endif
@@ -29,6 +30,13 @@ import AppKit
 ///     sheet on macOS) with the same glass controls at full size, an X to
 ///     close, and a volume slider capsule. Sound comes on for full screen
 ///     and the feed's mute state is restored on the way back.
+///   • iOS / iPadOS: a Picture in Picture button (inline and full screen)
+///     hands the stream to the system mini player, which keeps playing
+///     while the person moves around the app or leaves it.
+///   • Full screen offers "Original": swaps the HLS stream for the file the
+///     author uploaded, served by their PDS (typically 1080p at its native
+///     bitrate vs HLS's 720p cap), keeping the playhead. Remembered per
+///     video; inline playback always goes back to HLS.
 ///
 /// Visibility and scroll-rest detection are self-contained: the view
 /// watches its own frame within the enclosing scroll view's bounds via
@@ -45,6 +53,19 @@ struct EmbeddedVideoPlayer: View {
     var tapTogglesPlayback: Bool = false
     /// Bump to open full screen from outside (a tile's context menu).
     var fullscreenRequest: Int = 0
+    /// Hide the expand control (a detached window has nowhere to go).
+    var showsExpandButton: Bool = true
+    /// Sound on from the start (the detached window).
+    var startsUnmuted: Bool = false
+    /// Seek here once the stream is ready (carrying a playhead over).
+    var startTime: Double = 0
+    /// The video's pixel size from the post, handed to the detached window
+    /// so it opens at that size and keeps the shape.
+    var videoPixelSize: CGSize? = nil
+
+#if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+#endif
 
     @State private var model: EmbeddedPlayerModel? = nil
     @State private var showFullscreen = false
@@ -52,21 +73,32 @@ struct EmbeddedVideoPlayer: View {
     var body: some View {
         ZStack {
             // Poster frame sits behind the player: visible until the stream
-            // renders its first frame, and again after teardown.
-            if let thumbnailURL {
-                AsyncCachedImage(url: thumbnailURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
+            // renders its first frame, and again after teardown. Bound to
+            // the box (Color.clear + overlay) so a tall poster can't grow
+            // the player past its crop — which would push the centered
+            // play badge and controls below the visible area.
+            Color.clear
+                .overlay {
+                    if let thumbnailURL {
+                        AsyncCachedImage(url: thumbnailURL, maxPixelSize: 1400) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Color.black.opacity(0.4)
+                            }
+                        }
                     } else {
                         Color.black.opacity(0.4)
                     }
                 }
-            } else {
-                Color.black.opacity(0.4)
-            }
+                .clipped()
 
             if let model, model.isActive, let player = model.player {
+#if os(iOS)
+                PlayerLayerView(player: player, pictureInPictureHost: model)
+#else
                 PlayerLayerView(player: player)
+#endif
             }
         }
         .overlay {
@@ -110,9 +142,8 @@ struct EmbeddedVideoPlayer: View {
         }
         .overlay {
             if let model, model.isActive, model.controlsVisible {
-                VideoControlsOverlay(model: model, style: .inline, onCorner: {
-                    model.enterFullscreen()
-                    showFullscreen = true
+                VideoControlsOverlay(model: model, style: .inline, showsCorner: showsExpandButton, onCorner: {
+                    expand(model)
                 })
                 .transition(.opacity)
             }
@@ -154,6 +185,16 @@ struct EmbeddedVideoPlayer: View {
         .onDisappear {
             model?.teardown()
         }
+#if os(macOS)
+        // Double-click pops the video out into its own window. Simultaneous
+        // with the single-click handlers underneath (which just toggle the
+        // controls twice, a no-op).
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                if showsExpandButton { expand(ensureModel()) }
+            }
+        )
+#endif
         .onChange(of: fullscreenRequest) { _, request in
             guard request > 0 else { return }
             let model = ensureModel()
@@ -177,6 +218,26 @@ struct EmbeddedVideoPlayer: View {
 #endif
     }
 
+    /// Expand: iOS covers the screen; macOS detaches the video into its
+    /// own resizable window (a fresh player at the same playhead) and
+    /// pauses the inline copy so two streams don't run.
+    private func expand(_ model: EmbeddedPlayerModel) {
+#if os(macOS)
+        let request = VideoWindowRequest(
+            playlistURL: playlistURL,
+            thumbnailURL: thumbnailURL,
+            pixelWidth: videoPixelSize.map { Int($0.width) },
+            pixelHeight: videoPixelSize.map { Int($0.height) },
+            startTime: model.currentTime
+        )
+        if model.isPlaying { model.togglePlayPause(showingControls: false) }
+        openWindow(id: "video-player", value: request)
+#else
+        model.enterFullscreen()
+        showFullscreen = true
+#endif
+    }
+
     private var playBadge: some View {
         Image(systemName: "play.circle.fill")
             .font(.system(size: 48))
@@ -196,7 +257,9 @@ struct EmbeddedVideoPlayer: View {
     /// user flies past never allocate playback machinery.
     private func ensureModel() -> EmbeddedPlayerModel {
         if let model { return model }
-        let created = EmbeddedPlayerModel(url: playlistURL, autoplays: autoplays)
+        let created = EmbeddedPlayerModel(
+            url: playlistURL, autoplays: autoplays, startsMuted: !startsUnmuted, startTime: startTime
+        )
         model = created
         return created
     }
@@ -290,6 +353,8 @@ private struct VideoControlsOverlay: View {
 
     let model: EmbeddedPlayerModel
     let style: Style
+    /// Inline only: whether the expand control is offered.
+    var showsCorner: Bool = true
     /// Save-to-Photos affordance (fullscreen): non-nil shows the button in
     /// this state.
     var saveState: MediaSaveState? = nil
@@ -303,14 +368,22 @@ private struct VideoControlsOverlay: View {
         centerCluster
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) {
-                cornerButton
-                    .padding(inline ? AtmoTheme.Spacing.sm : AtmoTheme.Spacing.lg)
+                if !inline || showsCorner {
+                    cornerButton
+                        .padding(inline ? AtmoTheme.Spacing.sm : AtmoTheme.Spacing.lg)
+                }
             }
             .overlay(alignment: .topTrailing) {
                 VStack(alignment: .trailing, spacing: AtmoTheme.Spacing.sm) {
                     soundControl
+                    if model.isPictureInPictureSupported {
+                        pictureInPictureButton
+                    }
                     if let saveState, let onSave {
                         saveButton(state: saveState, action: onSave)
+                    }
+                    if !inline, model.supportsOriginalQuality {
+                        originalQualityButton
                     }
                 }
                 .padding(inline ? AtmoTheme.Spacing.sm : AtmoTheme.Spacing.lg)
@@ -406,6 +479,66 @@ private struct VideoControlsOverlay: View {
             .frame(height: 40)
             .videoControlGlass(in: Capsule())
         }
+    }
+
+    /// Picture in Picture: hands the stream to the system mini player.
+    /// From full screen the cover closes first so the inline layer — the
+    /// one the controller is bound to — is back on screen.
+    private var pictureInPictureButton: some View {
+        Button {
+            Haptics.tap()
+#if os(iOS)
+            if inline {
+                model.startPictureInPicture()
+            } else {
+                onCorner()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    model.startPictureInPicture()
+                }
+            }
+#endif
+        } label: {
+            Image(systemName: model.isPictureInPictureActive ? "pip.exit" : "pip.enter")
+                .font(.system(size: inline ? 12 : 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: inline ? 30 : 40, height: inline ? 30 : 40)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .videoControlGlass(in: Circle())
+        .accessibilityLabel("Picture in Picture")
+    }
+
+    /// "Original": play the author's upload instead of HLS. Off → accent
+    /// on; a spinner while the PDS is resolved; a note when it can't be.
+    private var originalQualityButton: some View {
+        Button {
+            Haptics.tap()
+            model.toggleOriginalQuality()
+        } label: {
+            HStack(spacing: 6) {
+                if model.isSwitchingQuality {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: model.isOriginalQuality ? "checkmark.circle.fill" : "sparkles.tv")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text(model.originalUnavailable ? "Original unavailable" : "Original")
+                    .font(.caption.weight(.semibold))
+                    .fixedSize()
+            }
+            .foregroundStyle(model.isOriginalQuality ? AtmoColors.accent : .white)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .videoControlGlass(in: Capsule())
+        .disabled(model.isSwitchingQuality || model.originalUnavailable)
+        .accessibilityLabel(model.isOriginalQuality ? "Playing original quality" : "Play original quality")
     }
 
     /// Save-to-Photos: idle glyph → spinner while the blob downloads →
@@ -619,6 +752,8 @@ private final class EmbeddedPlayerModel {
     /// Exists from the first mostly-visible sighting (pre-buffering) until
     /// teardown; check `isActive` for whether playback has begun.
     private(set) var player: AVPlayer? = nil
+    /// Seek applied once, when playback first starts.
+    @ObservationIgnored private var pendingStartTime: Double
     /// Playback has been started (by autoplay or the play badge) — the
     /// video layer and controls belong on screen. False while the player
     /// is merely warming the stream behind the poster.
@@ -645,6 +780,19 @@ private final class EmbeddedPlayerModel {
     /// the player down underneath it (covers fire onDisappear/zero-visible
     /// geometry on the covered feed).
     private(set) var isFullscreen = false
+    /// The system Picture in Picture mini player is showing this video.
+    private(set) var isPictureInPictureActive = false
+#if os(iOS)
+    @ObservationIgnored private var pipController: AVPictureInPictureController? = nil
+    @ObservationIgnored private var pipDelegate: PictureInPictureDelegate? = nil
+#endif
+    /// Playing the author's original upload instead of the HLS stream.
+    private(set) var isOriginalQuality = false
+    private(set) var isSwitchingQuality = false
+    /// The PDS declined (or the video isn't a Bluesky stream) — offered
+    /// once, then the control explains itself.
+    private(set) var originalUnavailable = false
+    @ObservationIgnored private var originalBlobURL: URL? = nil
 
     /// Fraction of the view currently inside the scroll viewport.
     @ObservationIgnored private var visibleFraction: CGFloat = 0
@@ -675,15 +823,20 @@ private final class EmbeddedPlayerModel {
     private static let teardownThreshold: CGFloat = 0.15
     /// "Stopped scrolling for about a second."
     private static let restDelay: Duration = .milliseconds(950)
+    /// Inline rendition caps (see preparePlayer).
+    private static let inlinePeakBitRate: Double = 1_500_000
+    private static let inlineMaximumResolution = CGSize(width: 960, height: 960)
     /// How long the controls linger after playback starts or a touch.
     private static let controlsLinger: Duration = .seconds(3)
 
     /// Whether scroll rest starts playback (feeds) or only a tap does (grid).
     let autoplays: Bool
 
-    init(url: URL, autoplays: Bool = true) {
+    init(url: URL, autoplays: Bool = true, startsMuted: Bool = true, startTime: Double = 0) {
         self.url = url
         self.autoplays = autoplays
+        self.isMuted = startsMuted
+        self.pendingStartTime = startTime
     }
 
     func viewportChanged(_ metrics: ViewportMetrics) {
@@ -754,6 +907,12 @@ private final class EmbeddedPlayerModel {
         let item = AVPlayerItem(url: url)
         // Feed cells shouldn't buffer minutes ahead of a muted loop.
         item.preferredForwardBufferDuration = 5
+        // Inline: steer HLS to the 360p rendition (Bluesky offers 360p at
+        // ~0.9 Mbps and 720p at ~3.2 Mbps). Starts faster, a fraction of
+        // the data, and indistinguishable in a muted cell. Full screen
+        // lifts both caps (enterFullscreen).
+        item.preferredPeakBitRate = Self.inlinePeakBitRate
+        item.preferredMaximumResolution = Self.inlineMaximumResolution
 
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.isMuted = isMuted
@@ -771,14 +930,7 @@ private final class EmbeddedPlayerModel {
             }
         }
 
-        loopObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification,
-            object: item,
-            queue: .main
-        ) { [weak newPlayer] _ in
-            newPlayer?.seek(to: .zero)
-            newPlayer?.play()
-        }
+        installLoopObserver(for: item, on: newPlayer)
 
         // Drives the elapsed label and the scrubber's fill.
         timeObserver = newPlayer.addPeriodicTimeObserver(
@@ -798,9 +950,146 @@ private final class EmbeddedPlayerModel {
         player = newPlayer
     }
 
+    /// Loops the given item; re-installed whenever the item is swapped.
+    private func installLoopObserver(for item: AVPlayerItem, on player: AVPlayer) {
+        if let loopObserver {
+            NotificationCenter.default.removeObserver(loopObserver)
+        }
+        loopObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
+            object: item,
+            queue: .main
+        ) { [weak player] _ in
+            player?.seek(to: .zero)
+            player?.play()
+        }
+    }
+
+    // MARK: Picture in Picture (iOS / iPadOS)
+
+    var isPictureInPictureSupported: Bool {
+#if os(iOS)
+        AVPictureInPictureController.isPictureInPictureSupported()
+#else
+        false
+#endif
+    }
+
+#if os(iOS)
+    /// Binds the system controller to the inline layer once it exists.
+    func attachPictureInPicture(to layer: AVPlayerLayer) {
+        guard pipController == nil, AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        let delegate = PictureInPictureDelegate(owner: self)
+        let controller = AVPictureInPictureController(playerLayer: layer)
+        controller?.delegate = delegate
+        controller?.canStartPictureInPictureAutomaticallyFromInline = true
+        pipController = controller
+        pipDelegate = delegate
+    }
+
+    func startPictureInPicture() {
+        guard let pipController, !pipController.isPictureInPictureActive else { return }
+        if !isActive { playNow() }
+        // The system player needs the playback category and the audio on.
+        if isMuted { toggleMute() }
+        configureAudioSession(muted: false)
+        pipController.startPictureInPicture()
+    }
+
+    func stopPictureInPicture() {
+        pipController?.stopPictureInPicture()
+    }
+
+    fileprivate func pictureInPictureChanged(active: Bool) {
+        isPictureInPictureActive = active
+        if active { controlsInteracted() }
+    }
+#endif
+
+    // MARK: Original quality
+
+    private static let originalPreferenceKey = "atmo.video.originalQuality"
+
+    /// Videos the person chose Original for, remembered across launches
+    /// (a bounded set of playlist URLs).
+    private static var preferredOriginal: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: originalPreferenceKey) ?? []) }
+        set {
+            var list = Array(newValue)
+            if list.count > 200 { list = Array(list.suffix(200)) }
+            UserDefaults.standard.set(list, forKey: originalPreferenceKey)
+        }
+    }
+
+    /// Whether this video can offer an original file at all.
+    var supportsOriginalQuality: Bool {
+        VideoBlobLocator.parse(playlistURL: url) != nil
+    }
+
+    func toggleOriginalQuality() {
+        Task { await setOriginalQuality(!isOriginalQuality, remember: true) }
+    }
+
+    /// Swaps between the HLS stream and the original upload, keeping the
+    /// playhead and play state. A failed resolution leaves HLS playing and
+    /// marks the original unavailable.
+    func setOriginalQuality(_ original: Bool, remember: Bool) async {
+        guard player != nil, !isSwitchingQuality, original != isOriginalQuality else { return }
+        isSwitchingQuality = true
+        defer { isSwitchingQuality = false }
+
+        let target: URL
+        if original {
+            // The PDS serves blobs without byte-range support, which
+            // AVPlayer needs to stream an MP4 — so fetch the file to the
+            // local cache first and play from disk (seeking works too).
+            if originalBlobURL == nil {
+                originalBlobURL = await OriginalVideoCache.localFile(forPlaylist: url)
+            }
+            guard let blob = originalBlobURL else {
+                originalUnavailable = true
+                return
+            }
+            target = blob
+        } else {
+            target = url
+        }
+
+        swapItem(to: target, capped: !original)
+        isOriginalQuality = original
+        if remember {
+            var set = Self.preferredOriginal
+            if original { set.insert(url.absoluteString) } else { set.remove(url.absoluteString) }
+            Self.preferredOriginal = set
+        }
+        controlsInteracted()
+    }
+
+    private func swapItem(to target: URL, capped: Bool) {
+        guard let player else { return }
+        let resumeAt = player.currentTime()
+        let wasPlaying = isPlaying
+        let item = AVPlayerItem(url: target)
+        item.preferredForwardBufferDuration = 5
+        if capped, !isFullscreen {
+            item.preferredPeakBitRate = Self.inlinePeakBitRate
+            item.preferredMaximumResolution = Self.inlineMaximumResolution
+        }
+        player.replaceCurrentItem(with: item)
+        installLoopObserver(for: item, on: player)
+        player.seek(to: resumeAt, toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
+        if wasPlaying { player.play() }
+    }
+
     private func startPlayback() {
         preparePlayer()
         configureAudioSession(muted: isMuted)
+        if pendingStartTime > 0 {
+            let target = pendingStartTime
+            pendingStartTime = 0
+            currentTime = target
+            player?.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        }
         player?.play()
         isPlaying = true
         isActive = true
@@ -915,7 +1204,14 @@ private final class EmbeddedPlayerModel {
         }
         configureAudioSession(muted: false)
         player?.preventsDisplaySleepDuringVideoPlayback = true
+        // Full screen wants the best rendition available.
+        player?.currentItem?.preferredPeakBitRate = 0
+        player?.currentItem?.preferredMaximumResolution = .zero
         showControls()
+        // The person asked for the original last time: bring it back.
+        if Self.preferredOriginal.contains(url.absoluteString), !isOriginalQuality {
+            Task { await setOriginalQuality(true, remember: false) }
+        }
     }
 
     /// Back to the feed: restore mute etiquette; playback carries on.
@@ -923,6 +1219,13 @@ private final class EmbeddedPlayerModel {
         guard isFullscreen else { return }
         isFullscreen = false
         player?.preventsDisplaySleepDuringVideoPlayback = false
+        // Inline is muted and small: HLS again, whatever full screen used.
+        if isOriginalQuality {
+            swapItem(to: url, capped: true)
+            isOriginalQuality = false
+        }
+        player?.currentItem?.preferredPeakBitRate = Self.inlinePeakBitRate
+        player?.currentItem?.preferredMaximumResolution = Self.inlineMaximumResolution
         if mutedBeforeFullscreen, !isMuted {
             isMuted = true
             player?.isMuted = true
@@ -965,7 +1268,7 @@ private final class EmbeddedPlayerModel {
     /// A no-op while full screen holds the player — the covered feed fires
     /// disappear/zero-visibility events that must not kill the video.
     func teardown() {
-        guard !isFullscreen else { return }
+        guard !isFullscreen, !isPictureInPictureActive else { return }
         guard let player else { return }
         player.pause()
         if let timeObserver {
@@ -983,6 +1286,8 @@ private final class EmbeddedPlayerModel {
         isActive = false
         isPlaying = false
         isBuffering = false
+        isOriginalQuality = false
+        isSwitchingQuality = false
         isScrubbing = false
         userPaused = false
         currentTime = 0
@@ -1012,6 +1317,29 @@ private final class EmbeddedPlayerModel {
     }
 }
 
+#if os(iOS)
+/// Forwards the system controller's callbacks to the model. NSObject
+/// because AVFoundation requires it; the model itself stays a plain
+/// observable class.
+private final class PictureInPictureDelegate: NSObject, AVPictureInPictureControllerDelegate {
+    weak var owner: EmbeddedPlayerModel?
+
+    init(owner: EmbeddedPlayerModel) { self.owner = owner }
+
+    func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        Task { @MainActor in owner?.pictureInPictureChanged(active: true) }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        Task { @MainActor in owner?.pictureInPictureChanged(active: false) }
+    }
+
+    func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: any Error) {
+        Task { @MainActor in owner?.pictureInPictureChanged(active: false) }
+    }
+}
+#endif
+
 // MARK: - Player Layer View
 // Bare AVPlayerLayer host — AVKit's VideoPlayer insists on its own
 // controls, which have no place on an inline auto-playing cell. Inline
@@ -1020,6 +1348,8 @@ private final class EmbeddedPlayerModel {
 private struct PlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
     var gravity: AVLayerVideoGravity = .resizeAspectFill
+    /// The inline host: its layer is the one Picture in Picture uses.
+    var pictureInPictureHost: EmbeddedPlayerModel? = nil
 
     func makeUIView(context: Context) -> PlayerContainerUIView {
         PlayerContainerUIView()
@@ -1032,6 +1362,7 @@ private struct PlayerLayerView: UIViewRepresentable {
         if view.playerLayer.videoGravity != gravity {
             view.playerLayer.videoGravity = gravity
         }
+        pictureInPictureHost?.attachPictureInPicture(to: view.playerLayer)
     }
 }
 
@@ -1088,3 +1419,64 @@ private final class PlayerContainerNSView: NSView {
     }
 }
 #endif
+
+
+// MARK: - Original Video Cache
+/// Original uploads fetched for "Original" playback, kept in Caches by
+/// blob CID so re-opening a video (or the remembered preference) doesn't
+/// download it again. Bounded; the system may purge it anyway.
+enum OriginalVideoCache {
+    private static let limit = 12
+
+    private static var directory: URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return caches.appendingPathComponent("OriginalVideos", isDirectory: true)
+    }
+
+    /// The local MP4 for a playlist's original upload — cached, or
+    /// downloaded from the author's PDS now. Nil when unavailable.
+    static func localFile(forPlaylist playlist: URL) async -> URL? {
+        guard let reference = VideoBlobLocator.parse(playlistURL: playlist) else { return nil }
+        let fm = FileManager.default
+        let file = directory.appendingPathComponent("\(reference.cid).mp4")
+        if fm.fileExists(atPath: file.path) { return file }
+
+        guard let blobURL = await VideoBlobLocator.resolveBlobURL(playlistURL: playlist),
+              let (downloaded, response) = try? await URLSession.shared.download(from: blobURL),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return nil }
+        do {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? fm.removeItem(at: file)
+            try fm.moveItem(at: downloaded, to: file)
+        } catch {
+            try? fm.removeItem(at: downloaded)
+            return nil
+        }
+        prune()
+        return file
+    }
+
+    /// Bytes on disk.
+    static func totalBytes() -> Int64 {
+        EnhancedImageStore.directoryBytes(directory)
+    }
+
+    /// Removes every cached original (Settings → Clear Caches).
+    static func clear() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private static func prune() {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey]),
+              files.count > limit else { return }
+        let dated = files.map { url -> (URL, Date) in
+            ((url), (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast)
+        }.sorted { $0.1 < $1.1 }
+        for (url, _) in dated.prefix(files.count - limit) {
+            try? fm.removeItem(at: url)
+        }
+    }
+}

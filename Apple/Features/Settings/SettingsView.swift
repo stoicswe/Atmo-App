@@ -1,4 +1,5 @@
 import SwiftUI
+import ATProtoKit
 import AtmoCore
 import StoreKit
 import Combine
@@ -733,28 +734,170 @@ private struct AccessibilityTab: View {
 
 // MARK: - Account
 
+// MARK: - Cache report
+/// Sizes of the re-creatable caches Settings can clear. Bookmarks, likes,
+/// drafts, and the Vault's own posts are never part of this.
+struct CacheReport: Equatable {
+    var enhancedImages: Int64 = 0
+    var originalVideos: Int64 = 0
+    var images: Int64 = 0
+
+    var total: Int64 { enhancedImages + originalVideos + images }
+
+    @MainActor
+    static func measure() async -> CacheReport {
+        var report = CacheReport()
+        report.enhancedImages = EnhancedImageStore.shared.totalBytes()
+        report.originalVideos = OriginalVideoCache.totalBytes()
+        report.images = Int64(URLCache.shared.currentDiskUsage)
+        return report
+    }
+
+    @MainActor
+    static func clearAll() async {
+        EnhancedImageStore.shared.clearAll()
+        OriginalVideoCache.clear()
+        URLCache.shared.removeAllCachedResponses()
+    }
+
+    static func format(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+// MARK: - Account card
+/// The signed-in account as a card: avatar, name, handle, bio, and when
+/// the account joined Bluesky. DID stays copyable underneath.
+private struct AccountCard: View {
+    let snapshot: AccountProfileCache.Snapshot?
+    let handle: String?
+    let did: String?
+
+    private var memberSince: Date? { snapshot?.memberSince }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AtmoTheme.Spacing.md) {
+            HStack(alignment: .center, spacing: AtmoTheme.Spacing.md) {
+                AvatarView(url: snapshot?.avatarURL, size: 64)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(snapshot?.displayName ?? handle.map { "@\($0)" } ?? "Signed in")
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(1)
+                        if let badge = snapshot?.verificationBadge {
+                            VerifiedBadge(badge: badge)
+                        }
+                    }
+                    Text(handle.map { "@\($0)" } ?? "—")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .textSelection(.enabled)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if let bio = snapshot?.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let memberSince {
+                    Text("Member since \(memberSince.formatted(.dateTime.month(.wide).year()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if snapshot != nil {
+                    Text("Member since —")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ProgressView().controlSize(.mini)
+                    Text("Loading profile…")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            if let did {
+                HStack(spacing: 6) {
+                    Text("DID")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                    Text(did)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(AtmoTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neumorphicGlassCard(cornerRadius: AtmoTheme.CornerRadius.large)
+    }
+}
+
 private struct AccountTab: View {
     @Environment(ATProtoService.self) private var service
     @State private var showSignOutConfirmation = false
+    @State private var showClearCachesConfirmation = false
+    @State private var cacheReport = CacheReport()
+    @State private var isClearingCaches = false
+
+    private var storageSection: some View {
+        Section {
+            LabeledContent("Enhanced images", value: CacheReport.format(cacheReport.enhancedImages))
+            LabeledContent("Original videos", value: CacheReport.format(cacheReport.originalVideos))
+            LabeledContent("Downloaded pictures", value: CacheReport.format(cacheReport.images))
+            Button(role: .destructive) {
+                showClearCachesConfirmation = true
+            } label: {
+                HStack {
+                    Label("Clear Caches", systemImage: "trash")
+                    Spacer()
+                    if isClearingCaches {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(CacheReport.format(cacheReport.total))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .disabled(isClearingCaches || cacheReport.total == 0)
+        } header: {
+            Text("Storage")
+        } footer: {
+            Text("Everything here can be rebuilt on demand. Clearing never touches bookmarks, likes, drafts, or the Vault's posts — only the enhanced copies of images, cached original videos, and downloaded pictures.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Served from AccountProfileCache first; refreshed quietly when stale.
+    private var cached: AccountProfileCache.Snapshot? {
+        service.currentUserDID.flatMap { AccountProfileCache.shared.snapshot(for: $0) }
+    }
 
     var body: some View {
         Form {
+            // ── Profile card ──
             Section {
-                LabeledContent("Handle") {
-                    Text(service.currentHandle.map { "@\($0)" } ?? "—")
-                        .textSelection(.enabled)
-                }
-                LabeledContent("DID") {
-                    Text(service.currentUserDID ?? "—")
-                        .font(.caption)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            } header: {
-                Text("Signed in")
+                AccountCard(
+                    snapshot: cached,
+                    handle: service.currentHandle,
+                    did: service.currentUserDID
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             } footer: {
-                Text("@omic signs in with a Bluesky App Password. Your session tokens are stored in the Keychain.")
+                Text("@omic signs in with your Bluesky password or an App Password. Your session tokens are stored in the Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -770,8 +913,42 @@ private struct AccountTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            storageSection
         }
         .formStyle(.grouped)
+        .task { cacheReport = await CacheReport.measure() }
+        .task(id: service.currentUserDID) {
+            // Cached details show immediately; only a stale (or missing)
+            // snapshot triggers a fetch. The join date is looked up once.
+            guard let did = service.currentUserDID, let kit = service.atProtoKit else { return }
+            let cache = AccountProfileCache.shared
+            guard cache.isStale(for: did) else { return }
+            if let detailed = try? await kit.getProfile(for: did) {
+                let model = ProfileModel(profile: detailed)
+                let joined: Date?
+                if let known = cache.snapshot(for: did)?.memberSince {
+                    joined = known
+                } else {
+                    joined = await MemberSinceResolver.resolve(profile: model, kit: kit)
+                }
+                cache.store(profile: model, memberSince: joined)
+            }
+        }
+        .confirmationDialog("Clear caches?", isPresented: $showClearCachesConfirmation, titleVisibility: .visible) {
+            Button("Clear Caches", role: .destructive) {
+                Task {
+                    isClearingCaches = true
+                    await CacheReport.clearAll()
+                    cacheReport = await CacheReport.measure()
+                    isClearingCaches = false
+                    Haptics.confirm()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enhanced images, cached original videos, and downloaded pictures are removed. Bookmarks, likes, and the Vault are not affected — enhanced copies can be made again.")
+        }
         .confirmationDialog(
             "Sign out of \(service.currentHandle.map { "@\($0)" } ?? "this account")?",
             isPresented: $showSignOutConfirmation,

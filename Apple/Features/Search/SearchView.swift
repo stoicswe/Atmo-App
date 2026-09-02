@@ -860,7 +860,7 @@ private struct SearchPostRow: View {
                 // images load asynchronously (cached), so the result rows
                 // land instantly and the media streams in just after.
                 if let embed = post.embed {
-                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel)
+                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel, postURI: post.uri)
                 }
             }
         }
@@ -911,15 +911,46 @@ private struct SearchFeedRow: View {
                 }
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 14)
+            FeedSubscribeButton(feed: feed.asCustomFeed)
+                .padding(.top, 6)
         }
         .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
         .padding(.vertical, AtmoTheme.Spacing.md)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityHint("Opens this feed")
+    }
+}
+
+// MARK: - Feed Subscribe Button
+// Inline on feed rows (search results, Explore): plus to subscribe, a
+// filled check once subscribed — tap again to unsubscribe.
+struct FeedSubscribeButton: View {
+    let feed: CustomFeedItem
+    @Environment(ATProtoService.self) private var service
+
+    var body: some View {
+        let store = SavedFeedsStore.shared
+        let subscribed = store.isSubscribed(uri: feed.uri)
+        Button {
+            Haptics.tap()
+            Task {
+                if subscribed {
+                    await store.unsubscribe(uri: feed.uri, service: service)
+                } else {
+                    await store.subscribe(feed, pinned: false, service: service)
+                }
+            }
+        } label: {
+            Image(systemName: subscribed ? "checkmark.circle.fill" : "plus.circle")
+                .font(.title3)
+                .foregroundStyle(subscribed ? AtmoColors.accent : .secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+                .symbolEffect(.bounce, value: subscribed)
+        }
+        .buttonStyle(.plain)
+        .disabled(store.isUpdating)
+        .accessibilityLabel(subscribed ? "Subscribed, tap to unsubscribe" : "Subscribe")
     }
 }
 
@@ -1163,11 +1194,12 @@ private struct ExploreSectionsView: View {
                     Text(feed.displayName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text("Open this feed")
+                    Text(SavedFeedsStore.shared.isSubscribed(uri: feed.uri) ? "Subscribed" : "Open this feed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                FeedSubscribeButton(feed: feed)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

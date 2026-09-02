@@ -137,6 +137,9 @@ struct AppNavigation: View {
     /// the one presentation point verified to work everywhere.
     @State private var showNewConversation: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// Where the person was when they opened a feed (Search / Explore),
+    /// so the feed's Back button can return them there.
+    @State private var feedReturnItem: SidebarItem? = nil
     /// iPad / macOS with the sidebar collapsed: the drawer slides in when
     /// the pointer rests at the leading edge and slides out once it leaves.
     @State private var hoverDrawerOpen = false
@@ -227,6 +230,7 @@ struct AppNavigation: View {
             // (FeedItemView, ThreadView, etc.) can open Search pre-filled with a tag
             // without requiring explicit callback threading through intermediate views.
             .environment(\.openFeed, OpenFeedAction { [self] feed in
+                if selectedItem != .timeline { feedReturnItem = selectedItem }
                 switchTimelineFeed(feed)
                 selectedItem = .timeline
             })
@@ -615,7 +619,7 @@ struct AppNavigation: View {
         // internally — from bleeding their title preference through the ZStack
         // onto the nav bar of a different active tab.
         ZStack {
-            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath, showsToolbar: active == .timeline)
+            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath, showsToolbar: active == .timeline, onLeaveFeed: leaveFeed)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
                 .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
@@ -944,7 +948,7 @@ struct AppNavigation: View {
         let searchVm = getOrCreateSearchViewModel()
 
         ZStack {
-            TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath)
+            TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath, onLeaveFeed: leaveFeed)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
                 .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
@@ -1255,6 +1259,21 @@ struct AppNavigation: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(isActive ? sidebarTint.opacity(0.12) : nil)
+        .contextMenu {
+            if let feed {
+                SavedFeedMenuItems(feed: feed)
+            }
+        }
+    }
+
+    /// Back from a feed: Following again, and back to Search / Explore if
+    /// that's where the feed was opened from.
+    private func leaveFeed() {
+        switchTimelineFeed(nil)
+        if let back = feedReturnItem {
+            feedReturnItem = nil
+            selectedItem = back
+        }
     }
 
     /// Switches the home timeline between Following (nil) and a saved feed.
@@ -1405,6 +1424,7 @@ private struct PhoneSideMenu: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { SavedFeedMenuItems(feed: feed) }
     }
 
     @ViewBuilder
@@ -1632,5 +1652,31 @@ private struct DraftSavedToast: View {
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.vertical, AtmoTheme.Spacing.md)
         .glassEffect(.regular, in: Capsule())
+    }
+}
+
+
+// MARK: - Saved feed menu
+/// Pin / Unpin and Unsubscribe for a saved feed, offered from the sidebar
+/// and drawer rows (press and hold, or right-click).
+struct SavedFeedMenuItems: View {
+    let feed: CustomFeedItem
+    @Environment(ATProtoService.self) private var service
+
+    var body: some View {
+        let store = SavedFeedsStore.shared
+        let pinned = store.isPinned(uri: feed.uri)
+        Button {
+            Haptics.tap()
+            Task { await store.setPinned(!pinned, uri: feed.uri, service: service) }
+        } label: {
+            Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
+        }
+        Button(role: .destructive) {
+            Haptics.soft()
+            Task { await store.unsubscribe(uri: feed.uri, service: service) }
+        } label: {
+            Label("Unsubscribe", systemImage: "minus.circle")
+        }
     }
 }

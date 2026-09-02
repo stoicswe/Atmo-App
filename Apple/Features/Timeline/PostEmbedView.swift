@@ -16,12 +16,15 @@ struct PostEmbedView: View {
     /// Whether the owning post's media is labeled explicit — drives the
     /// Show/Blur/Hide shield on images and video.
     var sensitiveMedia: Bool = false
+    /// The owning post, so an Enhanced image in the viewer can be kept
+    /// with the post's bookmark (or Vault entry).
+    var postURI: String? = nil
 
     var body: some View {
         Group {
             switch embed {
             case .embedImagesView(let images):
-                ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
+                ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia, postURI: postURI)
 
             case .embedExternalView(let external):
                 ExternalLinkCardView(external: external.external, sensitiveMedia: sensitiveMedia)
@@ -35,7 +38,7 @@ struct PostEmbedView: View {
                 VStack(spacing: AtmoTheme.Spacing.sm) {
                     switch rwm.media {
                     case .embedImagesView(let images):
-                        ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
+                        ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia, postURI: postURI)
                     case .embedVideoView(let video):
                         VideoEmbedView(video: video, sensitiveMedia: sensitiveMedia)
                     case .embedExternalView(let external):
@@ -71,6 +74,8 @@ struct ImageGridView: View {
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
     /// Labeled explicit by Bluesky (author self-label or labeler).
     var sensitiveMedia: Bool = false
+    /// Owning post, handed to the viewer for Enhanced-image retention.
+    var postURI: String? = nil
 
     /// Flagged by on-device analysis (Apple's Sensitive Content Warning)
     /// when the post carried no label.
@@ -98,7 +103,11 @@ struct ImageGridView: View {
                 Color.clear
                     .aspectRatio(Self.displayAspectRatio(images[0].aspectRatio), contentMode: .fit)
                     .overlay {
-                        AsyncCachedImage(url: images[0].fullSizeImageURL) { phase in
+                        // The 1000 px thumbnail preset, decoded to ~2× the
+                        // widest cell: a quarter of the bytes and a tenth of
+                        // the pixels of feed_fullsize, which is for the
+                        // viewer only.
+                        AsyncCachedImage(url: images[0].thumbnailImageURL, maxPixelSize: 1400) { phase in
                             if let image = phase.image {
                                 image.resizable().scaledToFill()
                             } else {
@@ -152,7 +161,7 @@ struct ImageGridView: View {
                             Color.clear
                                 .containerRelativeFrame(.horizontal)
                                 .overlay {
-                                    AsyncCachedImage(url: img.thumbnailImageURL) { phase in
+                                    AsyncCachedImage(url: img.thumbnailImageURL, maxPixelSize: 1400) { phase in
                                         if let image = phase.image {
                                             image.resizable().scaledToFill()
                                         } else {
@@ -198,7 +207,7 @@ struct ImageGridView: View {
         if let onImageTap {
             onImageTap(images, index)
         } else if let viewerPresenter {
-            viewerPresenter.present(images, at: index)
+            viewerPresenter.present(images, at: index, postURI: postURI)
         } else {
             viewerIndex = index
             showViewer = true
@@ -535,24 +544,33 @@ private struct VideoEmbedView: View {
     /// Under a whole-post veil the video needs no shield of its own; the
     /// post's Show is the one reveal, after which it plays like any other.
     @Environment(\.coveredByPostShield) private var coveredByPost
+    /// Measured row width; the box height is derived from it below.
+    @State private var width: CGFloat = 0
 
     var body: some View {
         let shielded = sensitiveMedia && !coveredByPost
-        // Same pre-reserved sizing as images: the box height comes from the
-        // record's aspect ratio, not from whether the thumbnail has loaded.
+        let ratio = ImageGridView.displayAspectRatio(video.aspectRatio)
+        // The box is sized explicitly from the measured width (capped at
+        // 480 pt tall) rather than with aspectRatio + frame(maxHeight:) —
+        // inside a scroll view that pair laid the player out at its full
+        // height and clipped it, which put the expand, mute, and scrubber
+        // controls of tall videos outside the visible crop.
+        let height = width > 0 ? min(480, width / ratio) : 480 / max(ratio, 0.85)
         Color.clear
-            .aspectRatio(ImageGridView.displayAspectRatio(video.aspectRatio), contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
             .overlay {
                 if !shielded, let playlistURL = URL(string: video.playlistURI) {
                     EmbeddedVideoPlayer(
                         playlistURL: playlistURL,
-                        thumbnailURL: video.thumbnailImageURL.flatMap(URL.init(string:))
+                        thumbnailURL: video.thumbnailImageURL.flatMap(URL.init(string:)),
+                        videoPixelSize: video.aspectRatio.map { CGSize(width: $0.width, height: $0.height) }
                     )
                 } else {
                     StaticVideoThumbnail(video: video)
                 }
             }
-            .frame(maxHeight: 480)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .clipped()
             .sensitiveMediaShield(shielded, key: video.playlistURI)
             .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))

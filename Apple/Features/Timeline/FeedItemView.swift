@@ -138,7 +138,7 @@ struct FeedItemView: View {
 
                     // Embed — tapping opens the thread
                     if let embed = livePost.embed {
-                        PostEmbedView(embed: embed, sensitiveMedia: livePost.hasSensitiveMediaLabel)
+                        PostEmbedView(embed: embed, sensitiveMedia: livePost.hasSensitiveMediaLabel, postURI: livePost.uri)
                             .contentShape(Rectangle())
                             .onTapGesture { onTap?() }
                             .padding(.top, AtmoTheme.Spacing.xs)
@@ -294,7 +294,7 @@ private struct AncestorPostRow: View {
                 }
 
                 if let embed = post.embed {
-                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel)
+                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel, postURI: post.uri)
                         .contentShape(Rectangle())
                         .onTapGesture { onTap?() }
                         .padding(.top, AtmoTheme.Spacing.xs)

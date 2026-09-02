@@ -271,6 +271,7 @@ public final class ATProtoService {
         clearLocalState()
         Atmo.platform.secrets.clearAll()
         PDSStore.clear()
+        AccountProfileCache.shared.clear()
         PositionStore.shared.clear()
     }
 

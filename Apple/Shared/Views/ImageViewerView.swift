@@ -15,16 +15,20 @@ final class ImageViewerPresenter {
         let id = UUID()
         let images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage]
         var index: Int
+        /// The post the images belong to, when known — lets an Enhanced
+        /// copy be kept with the post's bookmark or Vault entry.
+        let postURI: String?
     }
 
     private(set) var session: Session? = nil
 
     func present(
         _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage],
-        at index: Int
+        at index: Int,
+        postURI: String? = nil
     ) {
         guard !images.isEmpty else { return }
-        session = Session(images: images, index: min(max(index, 0), images.count - 1))
+        session = Session(images: images, index: min(max(index, 0), images.count - 1), postURI: postURI)
     }
 
     func dismissViewer() {
@@ -91,6 +95,14 @@ private struct GlassImageViewer: View {
     @State private var saveState: MediaSaveState = .idle
     @State private var showSaveError = false
     @State private var saveErrorText = ""
+    /// Enhanced (upscaled) bytes per image URL for this session — made
+    /// here, or loaded from the enhanced-image cache.
+    @State private var enhanced: [String: Data] = [:]
+    @State private var isEnhancing = false
+    @State private var enhanceFailed = false
+    /// Brightness under the chrome, per image URL — drives glyph colors.
+    @State private var luminance: [String: ImageLuminance.Sample] = [:]
+    @State private var containerSize: CGSize = .zero
 
     var body: some View {
         if let session = presenter.session {
@@ -100,6 +112,15 @@ private struct GlassImageViewer: View {
                     .ignoresSafeArea()
             }
             .overlay { chrome(session: session) }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { containerSize = $0 }
+            .task(id: "lum|\(session.id)|\(session.index)") {
+                let image = session.images[safe: session.index] ?? session.images[0]
+                let key = image.fullSizeImageURL.absoluteString
+                guard luminance[key] == nil,
+                      let sample = await ImageLuminance.sample(image.thumbnailImageURL)
+                else { return }
+                luminance[key] = sample
+            }
             .opacity(appeared ? 1 : 0)
             .scaleEffect(appeared ? 1 : 0.96)
             .onAppear {
@@ -141,6 +162,17 @@ private struct GlassImageViewer: View {
             } message: {
                 Text(saveErrorText)
             }
+            // A previously Enhanced copy (bookmarked / Vault / recent) is
+            // shown straight away. Vault copies stay hidden while locked.
+            .task(id: "\(session.id)|\(session.index)|\(EnhancedImageStore.shared.generation)") {
+                let image = session.images[safe: session.index] ?? session.images[0]
+                let key = image.fullSizeImageURL.absoluteString
+                guard enhanced[key] == nil,
+                      let file = EnhancedImageStore.shared.fileURL(for: image.fullSizeImageURL),
+                      let data = try? Data(contentsOf: file)
+                else { return }
+                enhanced[key] = data
+            }
         }
     }
 
@@ -162,6 +194,7 @@ private struct GlassImageViewer: View {
             ForEach(session.images.indices, id: \.self) { index in
                 ZoomableImageView(
                     url: session.images[index].fullSizeImageURL,
+                    overrideData: enhanced[session.images[index].fullSizeImageURL.absoluteString],
                     onPinchOut: { presenter.dismissViewer() }
                 )
                 .tag(index)
@@ -170,7 +203,10 @@ private struct GlassImageViewer: View {
         // The glass counter pill replaces the system dots.
         .tabViewStyle(.page(indexDisplayMode: .never))
 #else
-        ZoomableImageView(url: session.images[safe: session.index]?.fullSizeImageURL ?? nil)
+        ZoomableImageView(
+            url: session.images[safe: session.index]?.fullSizeImageURL ?? nil,
+            overrideData: session.images[safe: session.index].flatMap { enhanced[$0.fullSizeImageURL.absoluteString] }
+        )
             .id(session.index)
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.18), value: session.index)
@@ -194,28 +230,56 @@ private struct GlassImageViewer: View {
 
     private func chrome(session: ImageViewerPresenter.Session) -> some View {
         let image = session.images[safe: session.index] ?? session.images[0]
+        let key = image.fullSizeImageURL.absoluteString
+        let topLight = bandIsLight(.top, image: image)
+        let bottomLight = bandIsLight(.bottom, image: image)
         return ZStack {
-            saveButton(for: image)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(AtmoTheme.Spacing.md)
+            // Action pill: Save and Enhance share one glass capsule, the
+            // iOS 26 toolbar grouping, instead of two separate discs.
+            HStack(spacing: 0) {
+                saveButton(for: image, onLight: topLight)
+                Rectangle()
+                    .fill(ChromeStyle.glyph(onLight: topLight).opacity(0.18))
+                    .frame(width: 1, height: 18)
+                enhanceButton(for: image, onLight: topLight)
+            }
+            .padding(.horizontal, 4)
+            .glassEffect(ChromeStyle.glass(onLight: topLight, interactive: true), in: Capsule())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(AtmoTheme.Spacing.md)
+            .environment(\.chromeOnLight, topLight)
+
+            if enhanced[key] != nil {
+                Label("Enhanced", systemImage: "sparkles")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(ChromeStyle.glyph(onLight: topLight))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .glassEffect(ChromeStyle.glass(onLight: topLight), in: Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(AtmoTheme.Spacing.md)
+                    .padding(.trailing, 44)
+                    .allowsHitTesting(false)
+            }
 
             closeButton
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(AtmoTheme.Spacing.md)
+                .environment(\.chromeOnLight, topLight)
 
             if session.images.count > 1 {
                 Text("\(session.index + 1) / \(session.images.count)")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ChromeStyle.glyph(onLight: bottomLight))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
-                    .glassEffect(.regular, in: Capsule())
+                    .glassEffect(ChromeStyle.glass(onLight: bottomLight), in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, AtmoTheme.Spacing.md)
             }
 
             if !image.altText.isEmpty {
-                AltTextBadge(text: image.altText)
+                AltTextBadge(text: image.altText, onLight: bottomLight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(AtmoTheme.Spacing.md)
                     .padding(.bottom, session.images.count > 1 ? 32 : 0)
@@ -223,20 +287,44 @@ private struct GlassImageViewer: View {
 
 #if os(macOS)
             if session.images.count > 1 {
-                pagerArrow(symbol: "chevron.left", step: -1, session: session)
+                // Side arrows sit mid-height: average of the two bands.
+                let midLight = topLight == bottomLight ? topLight : false
+                pagerArrow(symbol: "chevron.left", step: -1, session: session, onLight: midLight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .padding(AtmoTheme.Spacing.md)
-                pagerArrow(symbol: "chevron.right", step: 1, session: session)
+                pagerArrow(symbol: "chevron.right", step: 1, session: session, onLight: midLight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .padding(AtmoTheme.Spacing.md)
             }
 #endif
         }
+        .animation(.easeInOut(duration: 0.25), value: topLight)
+        .animation(.easeInOut(duration: 0.25), value: bottomLight)
+    }
+
+    private enum Band { case top, bottom }
+
+    /// Whether the chrome band sits over a light part of the picture. A
+    /// band the fitted photo doesn't reach is over the black backdrop, so
+    /// it counts as dark no matter how bright the photo is.
+    private func bandIsLight(_ band: Band, image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage) -> Bool {
+        guard let sample = luminance[image.fullSizeImageURL.absoluteString] else { return false }
+        if containerSize.width > 0, containerSize.height > 0,
+           let ratio = image.aspectRatio, ratio.width > 0, ratio.height > 0 {
+            let aspect = CGFloat(ratio.width) / CGFloat(ratio.height)
+            let fittedHeight = min(containerSize.height, containerSize.width / aspect)
+            let letterbox = (containerSize.height - fittedHeight) / 2
+            // The chrome lives in the outer ~70 pt; if the photo starts
+            // below that, the button is on black.
+            if letterbox > 70 { return false }
+        }
+        let value = band == .top ? sample.top : sample.bottom
+        return value > ChromeStyle.lightThreshold
     }
 
 #if os(macOS)
     private func pagerArrow(
-        symbol: String, step: Int, session: ImageViewerPresenter.Session
+        symbol: String, step: Int, session: ImageViewerPresenter.Session, onLight: Bool
     ) -> some View {
         let target = session.index + step
         return Button {
@@ -244,43 +332,100 @@ private struct GlassImageViewer: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
+                .chromeContrast(onLight: onLight)
                 .frame(width: 38, height: 38)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
+        .glassEffect(ChromeStyle.glass(onLight: onLight, interactive: true), in: Circle())
         .disabled(!session.images.indices.contains(target))
         .opacity(session.images.indices.contains(target) ? 1 : 0.3)
     }
 #endif
 
     private var closeButton: some View {
-        Button {
+        ChromeCircleButton(systemImage: "xmark", weight: .bold, label: "Close image viewer") {
             presenter.dismissViewer()
+        }
+    }
+
+    /// Enhance: fetch the largest CDN preset and upscale toward 4K; the
+    /// result replaces the displayed image, is what Save writes out, and
+    /// is cached — for as long as the post stays bookmarked (or in the
+    /// Vault), briefly otherwise.
+    private func enhanceButton(
+        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage, onLight: Bool
+    ) -> some View {
+        let key = image.fullSizeImageURL.absoluteString
+        let done = enhanced[key] != nil
+        return Button {
+            guard !isEnhancing, !done else { return }
+            Haptics.tap()
+            enhanceFailed = false
+            Task {
+                isEnhancing = true
+                defer { isEnhancing = false }
+                do {
+                    let data = try await ImageEnhancer.enhance(image.fullSizeImageURL)
+                    enhanced[key] = data
+                    EnhancedImageStore.shared.store(data, for: image.fullSizeImageURL, postURI: presenter.session?.postURI)
+                    Haptics.confirm()
+                } catch {
+                    enhanceFailed = true
+                }
+            }
         } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .contentShape(Circle())
+            Group {
+                if isEnhancing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: done ? "sparkles" : "wand.and.sparkles")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+            }
+            .foregroundStyle(done ? AtmoColors.accent : ChromeStyle.glyph(onLight: onLight))
+            .chromeContrast(onLight: onLight)
+            .frame(width: 40, height: 34)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .accessibilityLabel("Close image viewer")
+        .disabled(isEnhancing || done)
+        .help(done ? "Enhanced" : "Enhance")
+        .accessibilityLabel(done ? "Enhanced" : "Enhance image")
+        .overlay(alignment: .bottom) {
+            if enhanceFailed {
+                Text("Couldn't enhance")
+                    .font(.caption2)
+                    .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .glassEffect(.regular, in: Capsule())
+                    .offset(y: 30)
+                    .fixedSize()
+            }
+        }
     }
 
     private func saveButton(
-        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage
+        for image: AppBskyLexicon.Embed.ImagesDefinition.ViewImage, onLight: Bool
     ) -> some View {
         Button {
             guard saveState == .idle else { return }
             let url = image.fullSizeImageURL
+            let enhancedData = enhanced[url.absoluteString]
             Haptics.tap()
             Task {
                 saveState = .saving
                 do {
-                    try await MediaSaver.saveImage(from: url)
+                    // Enhanced first: that's the picture on screen.
+                    if let enhancedData {
+                        try await MediaSaver.saveImage(data: enhancedData)
+                    } else {
+                        try await MediaSaver.saveImage(from: url)
+                    }
                     Haptics.confirm()
                     saveState = .saved
                     try? await Task.sleep(for: .seconds(1.6))
@@ -299,18 +444,18 @@ private struct GlassImageViewer: View {
                 case .saving:
                     ProgressView()
                         .controlSize(.small)
-                        .tint(.white)
+                        .tint(ChromeStyle.glyph(onLight: onLight))
                 case .saved:
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
                 }
             }
-            .foregroundStyle(.white)
-            .frame(width: 34, height: 34)
-            .contentShape(Circle())
+            .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
+            .chromeContrast(onLight: onLight)
+            .frame(width: 40, height: 34)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("Save image to Photos")
     }
 }
@@ -456,7 +601,11 @@ struct ImageViewerView: View {
 // released just under fit it springs back.
 private struct ZoomableImageView: View {
     let url: URL?
+    /// Enhanced bytes to show instead of the URL's image, when present.
+    var overrideData: Data? = nil
     var onPinchOut: (() -> Void)? = nil
+    /// Decoded `overrideData`, off the main actor.
+    @State private var overrideImage: Image? = nil
 
     /// Released below this fraction of fit → dismiss.
     private let dismissScale: CGFloat = 0.85
@@ -478,70 +627,12 @@ private struct ZoomableImageView: View {
                 ? geo.size
                 : CGSize(width: 400, height: 500)
 
+            if let overrideImage {
+                zoomable(overrideImage, size: size)
+            } else {
             AsyncCachedImage(url: url) { phase in
                 if let image = phase.image {
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: size.width, height: size.height)
-                        .scaleEffect(scale)
-                        .offset(offset)
-                        // ── Pinch-to-zoom ──
-                        .gesture(
-                            MagnificationGesture()
-                                .onChanged { value in
-                                    let proposed = lastScale * value
-                                    let floor = onPinchOut != nil ? pinchFloor : minScale
-                                    scale = min(maxScale, max(floor, proposed))
-                                }
-                                .onEnded { _ in
-                                    // Pinched out past fit: leave the viewer.
-                                    if scale < dismissScale, let onPinchOut {
-                                        onPinchOut()
-                                        return
-                                    }
-                                    lastScale = scale
-                                    // Snap back to 1× if pinched below minimum
-                                    if scale < minScale {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                                            scale = minScale
-                                            offset = .zero
-                                        }
-                                        lastScale = minScale
-                                        lastOffset = .zero
-                                    }
-                                }
-                        )
-                        // ── Pan while zoomed ──
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    guard scale > 1 else { return }
-                                    let maxX = (size.width  * (scale - 1)) / 2
-                                    let maxY = (size.height * (scale - 1)) / 2
-                                    offset = CGSize(
-                                        width:  (lastOffset.width  + value.translation.width).clamped(to: -maxX...maxX),
-                                        height: (lastOffset.height + value.translation.height).clamped(to: -maxY...maxY)
-                                    )
-                                }
-                                .onEnded { _ in
-                                    lastOffset = offset
-                                }
-                        )
-                        // ── Double-tap to zoom / reset ──
-                        .onTapGesture(count: 2) {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                if scale > 1 {
-                                    scale = minScale
-                                    lastScale = minScale
-                                    offset = .zero
-                                    lastOffset = .zero
-                                } else {
-                                    scale = doubleTapZoom
-                                    lastScale = doubleTapZoom
-                                }
-                            }
-                        }
+                    zoomable(image, size: size)
                 } else if phase.error != nil {
                     // Failed to load
                     VStack(spacing: 12) {
@@ -560,16 +651,96 @@ private struct ZoomableImageView: View {
                         .frame(width: size.width, height: size.height)
                 }
             }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Reset zoom when the user swipes to a different page in the TabView
         .id(url)
+        .task(id: overrideData?.count ?? 0) {
+            guard let overrideData else { overrideImage = nil; return }
+            let decoded = await Task.detached(priority: .userInitiated) {
+                AsyncCachedImage<EmptyView>.decode(overrideData, maxPixelSize: nil)
+            }.value
+            guard let decoded else { return }
+            #if canImport(UIKit)
+            overrideImage = Image(uiImage: decoded)
+            #else
+            overrideImage = Image(nsImage: decoded)
+            #endif
+        }
         .onDisappear {
             scale = minScale
             lastScale = minScale
             offset = .zero
             lastOffset = .zero
         }
+    }
+
+    /// The image with fit sizing, pinch-zoom, pan, and double-tap — shared
+    /// by the network image and an Enhanced override.
+    private func zoomable(_ image: Image, size: CGSize) -> some View {
+            image
+                .resizable()
+                .scaledToFit()
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(scale)
+                .offset(offset)
+                // ── Pinch-to-zoom ──
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            let proposed = lastScale * value
+                            let floor = onPinchOut != nil ? pinchFloor : minScale
+                            scale = min(maxScale, max(floor, proposed))
+                        }
+                        .onEnded { _ in
+                            // Pinched out past fit: leave the viewer.
+                            if scale < dismissScale, let onPinchOut {
+                                onPinchOut()
+                                return
+                            }
+                            lastScale = scale
+                            // Snap back to 1× if pinched below minimum
+                            if scale < minScale {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                    scale = minScale
+                                    offset = .zero
+                                }
+                                lastScale = minScale
+                                lastOffset = .zero
+                            }
+                        }
+                )
+                // ── Pan while zoomed ──
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            guard scale > 1 else { return }
+                            let maxX = (size.width  * (scale - 1)) / 2
+                            let maxY = (size.height * (scale - 1)) / 2
+                            offset = CGSize(
+                                width:  (lastOffset.width  + value.translation.width).clamped(to: -maxX...maxX),
+                                height: (lastOffset.height + value.translation.height).clamped(to: -maxY...maxY)
+                            )
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+                // ── Double-tap to zoom / reset ──
+                .onTapGesture(count: 2) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        if scale > 1 {
+                            scale = minScale
+                            lastScale = minScale
+                            offset = .zero
+                            lastOffset = .zero
+                        } else {
+                            scale = doubleTapZoom
+                            lastScale = doubleTapZoom
+                        }
+                    }
+                }
     }
 }
 
@@ -621,6 +792,7 @@ private struct DismissHintBar: View {
 // MARK: - Alt Text Badge
 private struct AltTextBadge: View {
     let text: String
+    var onLight: Bool = false
     @State private var expanded = false
 
     var body: some View {
@@ -633,19 +805,19 @@ private struct AltTextBadge: View {
                 HStack(spacing: 5) {
                     Text("ALT")
                         .font(.system(size: 10, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
 
                     if expanded {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(ChromeStyle.glyph(onLight: onLight).opacity(0.7))
                     }
                 }
 
                 if expanded {
                     Text(text)
                         .font(.caption)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
                         .lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 260, alignment: .leading)
@@ -653,9 +825,70 @@ private struct AltTextBadge: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
+            .glassEffect(ChromeStyle.glass(onLight: onLight), in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.small, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Content-aware chrome
+/// Viewer chrome colors chosen from the photo underneath: white glyphs on
+/// a faintly darkened glass over dark areas, near-black glyphs on clear
+/// glass over light areas — so the buttons never wash out.
+enum ChromeStyle {
+    static func glyph(onLight: Bool) -> Color {
+        onLight ? Color.black.opacity(0.82) : .white
+    }
+
+    /// Luminance above this reads as "light" under the chrome.
+    static let lightThreshold = 0.55
+
+    static func glass(onLight: Bool, interactive: Bool = false) -> Glass {
+        let base: Glass = onLight ? .regular.tint(.white.opacity(0.35)) : .regular.tint(.black.opacity(0.22))
+        return interactive ? base.interactive() : base
+    }
+}
+
+extension View {
+    /// A faint opposing halo behind a glyph, so it stays readable even in
+    /// the moment before the photo's brightness has been sampled.
+    func chromeContrast(onLight: Bool) -> some View {
+        shadow(color: onLight ? .white.opacity(0.6) : .black.opacity(0.55), radius: 1.5)
+    }
+}
+
+private struct ChromeOnLightKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var chromeOnLight: Bool {
+        get { self[ChromeOnLightKey.self] }
+        set { self[ChromeOnLightKey.self] = newValue }
+    }
+}
+
+/// A round glass chrome button that reads `chromeOnLight`.
+private struct ChromeCircleButton: View {
+    let systemImage: String
+    var weight: Font.Weight = .semibold
+    let label: String
+    let action: () -> Void
+
+    @Environment(\.chromeOnLight) private var onLight
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: weight))
+                .foregroundStyle(ChromeStyle.glyph(onLight: onLight))
+                .chromeContrast(onLight: onLight)
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(ChromeStyle.glass(onLight: onLight, interactive: true), in: Circle())
+        .accessibilityLabel(label)
     }
 }
 

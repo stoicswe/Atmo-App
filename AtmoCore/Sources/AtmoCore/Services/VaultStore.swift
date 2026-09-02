@@ -124,6 +124,9 @@ public final class VaultStore {
             syncedStore.set(data, forKey: storeKey)
             syncedStore.synchronize()
         }
+        // Enhanced copies move into (and out of) the protected tier with
+        // the post.
+        EnhancedImageStore.shared.reconcileFromStores()
     }
 
     private func saveLocal(_ value: VaultState) {
