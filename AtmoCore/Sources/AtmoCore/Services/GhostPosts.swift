@@ -13,9 +13,8 @@ public enum GhostPostPolicy {
     /// Self-label value that marks a post as a ghost. Other clients don't
     /// know it and ignore it.
     public static let label = "atmo-ghost"
-    // TEMPORARY for testing: one minute. Restore to 24 * 60 * 60 before
-    // shipping.
-    public static let lifetime: TimeInterval = 60
+    /// How long a ghost stays up before the app takes it down.
+    public static let lifetime: TimeInterval = 24 * 60 * 60
 
     public static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: enabledKey)
