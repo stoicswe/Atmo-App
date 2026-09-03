@@ -10,7 +10,8 @@ struct AtmoApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
 #if os(iOS)
-    /// Orientation: portrait everywhere, landscape only for full-screen media.
+    /// Orientation: portrait everywhere, landscape only while full-screen
+    /// media is up (MediaPresentation.swift).
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 #endif
 

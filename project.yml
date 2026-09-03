@@ -37,7 +37,7 @@ settings:
     # regenerates the project). Applies to every target — app, watch app,
     # and widget extension all inherit it, keeping their CFBundleVersions
     # matched (App Store validation requires it).
-    CURRENT_PROJECT_VERSION: "2026.0902.1651"
+    CURRENT_PROJECT_VERSION: "2026.0902.1705"
     MARKETING_VERSION: "1.0.0"
 
 packages:
@@ -127,7 +127,7 @@ targets:
         # Save-to-Photos from posts (image viewer / video player) uses the
         # same permission (add-only access; nothing is read back).
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "@omic saves photos and videos you shoot in the composer, and media you save from posts, to your photo library."
-        # iPhone lists landscape too, but AppDelegate (OrientationLock)
+        # iPhone lists landscape too, but AppDelegate (MediaPresentation)
         # only allows it while a photo or video is full screen.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown

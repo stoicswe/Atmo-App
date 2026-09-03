@@ -68,7 +68,9 @@ struct EmbeddedVideoPlayer: View {
 #endif
 
     @State private var model: EmbeddedPlayerModel? = nil
+#if os(macOS)
     @State private var showFullscreen = false
+#endif
 
     var body: some View {
         ZStack {
@@ -199,22 +201,35 @@ struct EmbeddedVideoPlayer: View {
             guard request > 0 else { return }
             let model = ensureModel()
             if !model.isActive { model.playNow() }
-            model.enterFullscreen()
-            showFullscreen = true
+            openFullscreen(model)
         }
-#if os(iOS)
-        .fullScreenCover(isPresented: $showFullscreen) {
-            if let model {
-                FullscreenVideoView(model: model)
-            }
-        }
-#else
+#if os(macOS)
         .sheet(isPresented: $showFullscreen) {
             if let model {
                 FullscreenVideoView(model: model)
                     .frame(minWidth: 780, minHeight: 460)
             }
         }
+#endif
+    }
+
+    /// Full screen for `model`. iOS puts it up as its own UIKit
+    /// presentation over the whole app (MediaPresentation.swift): that is
+    /// what lets the iPhone turn sideways for it, and it keeps the player
+    /// alive independent of this row — a `.fullScreenCover` hung off a
+    /// lazy feed row went away with the row whenever the covered feed
+    /// re-laid out, rotation included. macOS shows a large sheet.
+    private func openFullscreen(_ model: EmbeddedPlayerModel) {
+        model.enterFullscreen()
+#if os(iOS)
+        MediaViewerController.present(
+            onDismissed: { _ in model.exitFullscreen() },
+            content: { controller in
+                FullscreenVideoView(model: model, onClose: { controller.dismissMedia() })
+            }
+        )
+#else
+        showFullscreen = true
 #endif
     }
 
@@ -233,8 +248,7 @@ struct EmbeddedVideoPlayer: View {
         if model.isPlaying { model.togglePlayPause(showingControls: false) }
         openWindow(id: "video-player", value: request)
 #else
-        model.enterFullscreen()
-        showFullscreen = true
+        openFullscreen(model)
 #endif
     }
 
@@ -272,6 +286,9 @@ struct EmbeddedVideoPlayer: View {
 /// model's AVPlayer, so position, loop, and play state carry over both ways.
 private struct FullscreenVideoView: View {
     let model: EmbeddedPlayerModel
+    /// Closes the presentation. iOS supplies the UIKit dismissal; the
+    /// macOS sheet falls back to the environment's dismiss action.
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var saveState: MediaSaveState = .idle
@@ -309,14 +326,12 @@ private struct FullscreenVideoView: View {
                     saveState: VideoBlobLocator.parse(playlistURL: model.url) != nil
                         ? saveState : nil,
                     onSave: { saveVideo() },
-                    onCorner: { dismiss() }
+                    onCorner: { close() }
                 )
                 .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model.controlsVisible)
-        // Full-screen video may turn sideways; the app itself stays portrait.
-        .allowsLandscapeWhileVisible()
         .onAppear { model.showControls() }
         .onDisappear { model.exitFullscreen() }
         .alert("Couldn't Save", isPresented: $showSaveError) {
@@ -324,6 +339,10 @@ private struct FullscreenVideoView: View {
         } message: {
             Text(saveErrorText)
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private func saveVideo() {

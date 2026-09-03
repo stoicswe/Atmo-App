@@ -93,6 +93,7 @@
 		B449D5D49FCF4C84E2842261 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9084323DF95DF070B6E3BC73 /* SettingsView.swift */; };
 		BA547FD6B799B74C41882C96 /* AtmoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9658D1CD2CE07F044CA212D /* AtmoWatchApp.swift */; };
 		BD407337803ED8DE0E6C85CB /* RichTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFDAE3CD661558EEAF60A875 /* RichTextView.swift */; };
+		BE8B98FCEB54958390E98792 /* MediaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C433ECB23852BAF8233CC2 /* MediaPresentation.swift */; };
 		BFED697050C2916BE78B1F11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E35E4112FA41B1233D574B12 /* Assets.xcassets */; };
 		C0C560B337FACFEC4A5AE2BE /* TranslateButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900DE4B09A74ED39CF4A5C62 /* TranslateButton.swift */; };
 		C3FCC3EC164628B409301EB6 /* ProfileHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62B909A2464E8BE9773B576 /* ProfileHeaderView.swift */; };
@@ -100,7 +101,6 @@
 		CCE4B116D34C9F4F713CB35F /* TwoFactorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE1AB1182A6CEE1EAC1C431 /* TwoFactorView.swift */; };
 		CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA8D74EB6AC8E9B734C1407 /* Pasteboard+Atmo.swift */; };
 		CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1D4306B9B229153CAA9545 /* LikedPostsView.swift */; };
-		CEA6C67D323673F3F448B7E4 /* OrientationLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932AA242FA912E5A2CD75E85 /* OrientationLock.swift */; };
 		D1FEF82FE42D24D1F3A24717 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF46EADCBCB1DEE04BB4C93A /* ComposerView.swift */; };
 		D76BEAC02FBCD4579AC8F14F /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E1F323E5E970FA2FF9BFF0 /* TimelineView.swift */; };
 		D88C5A142817BF4B66929CB4 /* ImageEnhancer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD59E289E3F205B61BF1046 /* ImageEnhancer.swift */; };
@@ -192,6 +192,7 @@
 		39A5B39E9A7B97C2A2F1E3FA /* BookmarkPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkPickerSheet.swift; sourceTree = "<group>"; };
 		40F61145768666D41432CF33 /* AttachmentMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMenu.swift; sourceTree = "<group>"; };
 		43DFA7F337C478835D66241B /* AtmoWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AtmoWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		45C433ECB23852BAF8233CC2 /* MediaPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPresentation.swift; sourceTree = "<group>"; };
 		487A47451110A7905995A9DF /* ComposerToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolbar.swift; sourceTree = "<group>"; };
 		492B9BD7100475A0535529CF /* GhostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostsView.swift; sourceTree = "<group>"; };
 		4AE0BA51F1E6FB63EDB27577 /* ImagePrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrefetcher.swift; sourceTree = "<group>"; };
@@ -223,7 +224,6 @@
 		90536C4D03C78CBCEE85EFEF /* AsyncCachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCachedImage.swift; sourceTree = "<group>"; };
 		9084323DF95DF070B6E3BC73 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		91938DD29517C10C03A830ED /* Atmo.storekit */ = {isa = PBXFileReference; path = Atmo.storekit; sourceTree = "<group>"; };
-		932AA242FA912E5A2CD75E85 /* OrientationLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationLock.swift; sourceTree = "<group>"; };
 		93D1E7B8D83296E87147911D /* NewConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewConversationView.swift; sourceTree = "<group>"; };
 		967CF623DACB557545B3E065 /* InAppBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 		A27B819F70B1B177035BB257 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
@@ -331,7 +331,7 @@
 			children = (
 				A27B819F70B1B177035BB257 /* AppRouter.swift */,
 				1E27E161212025CBDA762FF7 /* AtmoApp.swift */,
-				932AA242FA912E5A2CD75E85 /* OrientationLock.swift */,
+				45C433ECB23852BAF8233CC2 /* MediaPresentation.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -843,12 +843,12 @@
 				CE4C749BDE87979B530FE5A0 /* LikedPostsView.swift in Sources */,
 				496F933C6600B2472C27686C /* LoadingView.swift in Sources */,
 				3874E80E83F7CE3D56B75D42 /* LoginView.swift in Sources */,
+				BE8B98FCEB54958390E98792 /* MediaPresentation.swift in Sources */,
 				51F375B821D4965C72C435E5 /* MediaSaver.swift in Sources */,
 				52A7076A1EC50C6BFBE8049A /* MessageBubbleView.swift in Sources */,
 				7314CAAA255AFD978D889749 /* NewConversationView.swift in Sources */,
 				D8955B361EE8532C4AE57E4F /* NotificationRowView.swift in Sources */,
 				9D314B40BE2982783BE8F3FC /* NotificationsView.swift in Sources */,
-				CEA6C67D323673F3F448B7E4 /* OrientationLock.swift in Sources */,
 				CD59977FDDDA4C9C1A1F767B /* Pasteboard+Atmo.swift in Sources */,
 				62289897EBF007549FD8E5A7 /* PostActionsView.swift in Sources */,
 				744CEA9BEE824804F8AEA7FC /* PostEmbedView.swift in Sources */,
@@ -1123,7 +1123,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0902.1651;
+				CURRENT_PROJECT_VERSION = 2026.0902.1705;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1198,7 +1198,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2026.0902.1651;
+				CURRENT_PROJECT_VERSION = 2026.0902.1705;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = P22P7U46RW;
 				ENABLE_NS_ASSERTIONS = NO;

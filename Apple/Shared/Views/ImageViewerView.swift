@@ -21,6 +21,13 @@ final class ImageViewerPresenter {
     }
 
     private(set) var session: Session? = nil
+#if os(iOS)
+    /// The UIKit presentation carrying the viewer while a session is up.
+    /// It owns the iPhone's orientation rule (see MediaPresentation.swift);
+    /// the session is cleared only once it has fully faded out, so the
+    /// photo doesn't vanish ahead of its dismissal.
+    @ObservationIgnored private weak var controller: MediaViewerController?
+#endif
 
     func present(
         _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage],
@@ -29,9 +36,29 @@ final class ImageViewerPresenter {
     ) {
         guard !images.isEmpty else { return }
         session = Session(images: images, index: min(max(index, 0), images.count - 1), postURI: postURI)
+#if os(iOS)
+        // Already up (a second tap while viewing): the hosted view just
+        // follows the new session. One that is fading out is replaced.
+        if let controller, !controller.isClosing { return }
+        controller = MediaViewerController.present(
+            onDismissed: { [weak self] dismissed in
+                // Ignore a predecessor finishing under a newer presentation.
+                guard let self, self.controller === dismissed else { return }
+                self.controller = nil
+                self.session = nil
+            },
+            content: { _ in GlassImageViewer(presenter: self) }
+        )
+#endif
     }
 
     func dismissViewer() {
+#if os(iOS)
+        if let controller {
+            controller.dismissMedia()   // `session` clears in onDismissed
+            return
+        }
+#endif
         session = nil
     }
 
@@ -44,11 +71,14 @@ final class ImageViewerPresenter {
 }
 
 // MARK: - Image Viewer Host
-/// Mounts the glass image viewer over this subtree and exposes the
-/// presenter through the environment. Apply at the app root, and ALSO to
-/// the root of any sheet whose content shows tappable images (same rule as
-/// InAppBrowserHost) — pass that sheet's own presenter so its taps target
-/// the local overlay rather than the covered root one.
+/// Exposes a presenter through the environment and, on macOS, mounts the
+/// glass image viewer over this subtree. Apply at the app root, and ALSO
+/// to the root of any sheet whose content shows tappable images (same
+/// rule as InAppBrowserHost) — on macOS a covered node can't float chrome
+/// above its cover, so pass that sheet's own presenter. On iOS the
+/// presenter puts the viewer up as a UIKit presentation over whatever is
+/// top-most, so any host reaches the screen; the same rule keeps the two
+/// platforms wired identically.
 struct ImageViewerHost: ViewModifier {
     @State private var presenter: ImageViewerPresenter
 
@@ -59,6 +89,7 @@ struct ImageViewerHost: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(presenter)
+#if os(macOS)
             .overlay {
                 ZStack {
                     if presenter.session != nil {
@@ -68,6 +99,7 @@ struct ImageViewerHost: ViewModifier {
                 }
                 .animation(.easeOut(duration: 0.18), value: presenter.session?.id)
             }
+#endif
     }
 }
 
@@ -79,10 +111,12 @@ extension View {
 }
 
 // MARK: - Full-Bleed Image Viewer
-/// The photo fills the space it's given — the whole screen on iOS, the
-/// whole window on macOS — scaled to fit its long edge, never stretched,
-/// on black. Chrome floats over it inside the safe area: save-to-Photos,
-/// close, pager arrows (macOS), counter, alt text.
+/// The photo fills the space it's given — the whole screen on iOS (its
+/// own UIKit presentation, which is also what lets the iPhone turn
+/// sideways for it), the whole window on macOS (a root overlay) — scaled
+/// to fit its long edge, never stretched, on black. Chrome floats over it
+/// inside the safe area: save-to-Photos, close, pager arrows (macOS),
+/// counter, alt text.
 ///
 /// Dismiss: the X, Esc (macOS), a tap on the letterbox, a flick down
 /// (iOS), or pinching out past the fitted size (iOS) — zooming in never
@@ -112,8 +146,6 @@ private struct GlassImageViewer: View {
                     .ignoresSafeArea()
             }
             .overlay { chrome(session: session) }
-            // The photo may turn sideways; the rest of the app stays portrait.
-            .allowsLandscapeWhileVisible()
             .onGeometryChange(for: CGSize.self) { $0.size } action: { containerSize = $0 }
             .task(id: "lum|\(session.id)|\(session.index)") {
                 let image = session.images[safe: session.index] ?? session.images[0]
@@ -583,7 +615,6 @@ struct ImageViewerView: View {
                     .padding(.leading, 20)
             }
         }
-        .allowsLandscapeWhileVisible()
         // Sync currentIndex from the incoming binding on first appear,
         // then keep it up to date as the TabView selection changes.
         .onAppear { currentIndex = selectedIndex }
