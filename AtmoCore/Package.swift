@@ -30,7 +30,14 @@ let package = Package(
         // the fork here (and in the other roots: project.yml, LinuxApp)
         // makes the whole graph resolve the "swift-log" identity to the
         // fork's main branch instead of apple/swift-log.
-        .package(url: "https://github.com/stoicswe/swift-log.git", branch: "main")
+        .package(url: "https://github.com/stoicswe/swift-log.git", branch: "main"),
+        // Wallet passes: the .pkpass signature is a CMS (PKCS#7) detached
+        // signature over manifest.json. swift-certificates produces it
+        // (its CMS API is @_spi(CMS), hence the pinned floor) and
+        // swift-crypto supplies SHA-1 for the manifest and RSA for the
+        // Pass Type ID key — both build on Linux too.
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.20.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.12.3")
     ],
     targets: [
         .target(
@@ -40,7 +47,10 @@ let package = Package(
                 // Linked explicitly so the fork override above counts as a
                 // used dependency (SwiftPM warns otherwise); ATProtoKit logs
                 // through it and AtmoCore may too.
-                .product(name: "Logging", package: "swift-log")
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "_CryptoExtras", package: "swift-crypto")
             ]
         ),
         .testTarget(

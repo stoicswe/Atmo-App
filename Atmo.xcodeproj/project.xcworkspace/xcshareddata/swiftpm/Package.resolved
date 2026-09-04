@@ -1,23 +1,51 @@
 {
-  "pins": [
+  "originHash" : "51f7fb4294625a0fd428f73915f6554471c4c5e4d2397ea1061a9adcd993faa2",
+  "pins" : [
     {
-      "identity": "atprotokit",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/MasterJ93/ATProtoKit.git",
-      "state": {
-        "revision": "263f093f211d4c68ee7c77f3dc5b4dab1530cc5c",
-        "version": "0.34.1"
+      "identity" : "atprotokit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/MasterJ93/ATProtoKit.git",
+      "state" : {
+        "revision" : "263f093f211d4c68ee7c77f3dc5b4dab1530cc5c",
+        "version" : "0.34.1"
       }
     },
     {
-      "identity": "swift-log",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/stoicswe/swift-log.git",
-      "state": {
-        "branch": "main",
-        "revision": "47a917767fde0cd7f5b5dfdabbec733d2cb2dd95"
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
+        "version" : "1.7.2"
+      }
+    },
+    {
+      "identity" : "swift-certificates",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-certificates.git",
+      "state" : {
+        "revision" : "c8aece90ea05f9866bd392a5bf13b5cae56c0e03",
+        "version" : "1.20.0"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "version" : "3.15.1"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stoicswe/swift-log.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "47a917767fde0cd7f5b5dfdabbec733d2cb2dd95"
       }
     }
   ],
-  "version": 3
+  "version" : 3
 }

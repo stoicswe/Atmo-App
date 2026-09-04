@@ -928,6 +928,7 @@ private struct AccountTab: View {
     @State private var showClearCachesConfirmation = false
     @State private var cacheReport = CacheReport()
     @State private var isClearingCaches = false
+    @State private var showWalletPass = false
 
     private var storageSection: some View {
         Section {
@@ -957,6 +958,35 @@ private struct AccountTab: View {
                 .foregroundStyle(.secondary)
         }
     }
+
+#if os(iOS)
+    /// A Wallet card whose QR code opens the account's Bluesky profile.
+    /// iOS 27 only — the pass is designed around Wallet's poster layout,
+    /// which older Wallets don't draw — and only where Wallet exists
+    /// (iPhone), so everywhere else the section isn't rendered at all.
+    @ViewBuilder
+    private var walletSection: some View {
+        if #available(iOS 27, *), WalletPassAvailability.canOffer,
+           service.currentHandle != nil, service.currentUserDID != nil {
+            Section {
+                Button {
+                    showWalletPass = true
+                } label: {
+                    Label("Add to Apple Wallet", systemImage: "wallet.pass")
+                }
+                .disabled(!WalletPassAvailability.canSign)
+            } header: {
+                Text("Wallet")
+            } footer: {
+                Text(WalletPassAvailability.canSign
+                     ? "Keep a card in Wallet with a QR code that opens your Bluesky profile. Pick from a few looks."
+                     : "Signing credentials are missing from this build — see Resources/WalletPass/Signing/README.md.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+#endif
 
     /// Served from AccountProfileCache first; refreshed quietly when stale.
     private var cached: AccountProfileCache.Snapshot? {
@@ -992,9 +1022,19 @@ private struct AccountTab: View {
                     .foregroundStyle(.secondary)
             }
 
+#if os(iOS)
+            walletSection
+#endif
             storageSection
         }
         .formStyle(.grouped)
+#if os(iOS)
+        .sheet(isPresented: $showWalletPass) {
+            if #available(iOS 27, *), let handle = service.currentHandle, let did = service.currentUserDID {
+                WalletPassSheet(handle: handle, did: did, memberSince: cached?.memberSince)
+            }
+        }
+#endif
         .task { cacheReport = await CacheReport.measure() }
         .task(id: service.currentUserDID) {
             // Cached details show immediately; only a stale (or missing)

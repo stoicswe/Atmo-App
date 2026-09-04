@@ -37,7 +37,7 @@ settings:
     # regenerates the project). Applies to every target — app, watch app,
     # and widget extension all inherit it, keeping their CFBundleVersions
     # matched (App Store validation requires it).
-    CURRENT_PROJECT_VERSION: "2026.0902.1705"
+    CURRENT_PROJECT_VERSION: "2026.0904.1013"
     MARKETING_VERSION: "1.0.0"
 
 packages:
@@ -78,6 +78,13 @@ targets:
       # ASSETCATALOG_COMPILER_APPICON_NAME); the appiconset PNGs remain
       # the legacy/watch fallback.
       - path: Resources/AppIcon.icon
+      # Wallet pass images (icon, logos, per-theme artwork) and signing
+      # material, copied into the bundle as a folder (WalletPass/…). The
+      # signing certificate and key are gitignored — see
+      # Resources/WalletPass/Signing/README.md. iOS 27 uses them; the
+      # macOS build carries the folder too but never shows the feature.
+      - path: Resources/WalletPass
+        type: folder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: stoicswe.com-atmin-app
