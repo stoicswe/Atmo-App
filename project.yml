@@ -37,7 +37,7 @@ settings:
     # regenerates the project). Applies to every target — app, watch app,
     # and widget extension all inherit it, keeping their CFBundleVersions
     # matched (App Store validation requires it).
-    CURRENT_PROJECT_VERSION: "2026.0904.2217"
+    CURRENT_PROJECT_VERSION: "2026.0905.1427"
     MARKETING_VERSION: "1.0.0"
 
 packages:
