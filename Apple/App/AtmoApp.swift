@@ -9,6 +9,11 @@ struct AtmoApp: App {
     @State private var spotlightPostURI: String? = nil
 
     @Environment(\.scenePhase) private var scenePhase
+#if os(iOS)
+    /// Orientation: portrait everywhere, landscape only while full-screen
+    /// media is up (MediaPresentation.swift).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+#endif
 
     init() {
         // Install the Apple implementations of AtmoCore's platform seams
@@ -36,6 +41,8 @@ struct AtmoApp: App {
         let service = ATProtoService()
         _atProtoService = State(initialValue: service)
         BackgroundSync.configure(service: service)
+        // App Intents run in-process but outside the view tree.
+        AppRouter.shared.service = service
     }
 
     var body: some Scene {
@@ -71,6 +78,18 @@ struct AtmoApp: App {
         .commands {
             AtmoCommands()
         }
+#endif
+#if os(macOS)
+        // Videos expanded from the feed open here: one resizable window
+        // per video, detached from the main window.
+        WindowGroup(id: "video-player", for: VideoWindowRequest.self) { $request in
+            if let request {
+                DetachedVideoWindow(request: request)
+                    .atmoTheme()
+            }
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 960, height: 540)
 #endif
     }
 }
@@ -109,6 +128,8 @@ struct ContentView: View {
         // on the splash forever. Kick another attempt whenever the scene
         // becomes active while still in `.restoring` with none in flight.
         .onChange(of: scenePhase) { _, phase in
+            // The Vault never survives leaving the app, whatever its timer.
+            if phase != .active { VaultLock.shared.lockForLeavingApp() }
             guard phase == .active,
                   case .restoring = service.authPhase,
                   !service.isLoading else { return }

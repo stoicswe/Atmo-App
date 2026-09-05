@@ -53,6 +53,8 @@ struct GIFPickerSheet: View {
                     }
                 }
             }
+            // INSIDE the stack — iOS nav hosting covers outside backgrounds.
+            .themedBackdrop()
         }
 #if os(macOS)
         .frame(minWidth: 460, minHeight: 540)

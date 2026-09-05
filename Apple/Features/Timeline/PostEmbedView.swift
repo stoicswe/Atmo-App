@@ -16,15 +16,18 @@ struct PostEmbedView: View {
     /// Whether the owning post's media is labeled explicit — drives the
     /// Show/Blur/Hide shield on images and video.
     var sensitiveMedia: Bool = false
+    /// The owning post, so an Enhanced image in the viewer can be kept
+    /// with the post's bookmark (or Vault entry).
+    var postURI: String? = nil
 
     var body: some View {
         Group {
             switch embed {
             case .embedImagesView(let images):
-                ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
+                ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia, postURI: postURI)
 
             case .embedExternalView(let external):
-                ExternalLinkCardView(external: external.external)
+                ExternalLinkCardView(external: external.external, sensitiveMedia: sensitiveMedia)
 
             case .embedRecordView(let record):
                 if case .viewRecord(let viewRecord) = record.record {
@@ -35,11 +38,11 @@ struct PostEmbedView: View {
                 VStack(spacing: AtmoTheme.Spacing.sm) {
                     switch rwm.media {
                     case .embedImagesView(let images):
-                        ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia)
+                        ImageGridView(images: images.images, onImageTap: onImageTap, sensitiveMedia: sensitiveMedia, postURI: postURI)
                     case .embedVideoView(let video):
                         VideoEmbedView(video: video, sensitiveMedia: sensitiveMedia)
                     case .embedExternalView(let external):
-                        ExternalLinkCardView(external: external.external)
+                        ExternalLinkCardView(external: external.external, sensitiveMedia: sensitiveMedia)
                     default:
                         EmptyView()
                     }
@@ -71,6 +74,8 @@ struct ImageGridView: View {
     var onImageTap: (([AppBskyLexicon.Embed.ImagesDefinition.ViewImage], Int) -> Void)? = nil
     /// Labeled explicit by Bluesky (author self-label or labeler).
     var sensitiveMedia: Bool = false
+    /// Owning post, handed to the viewer for Enhanced-image retention.
+    var postURI: String? = nil
 
     /// Flagged by on-device analysis (Apple's Sensitive Content Warning)
     /// when the post carried no label.
@@ -78,7 +83,11 @@ struct ImageGridView: View {
 
     /// Carousel page currently snapped into view (drives the dots).
     @State private var carouselPage: Int? = 0
-    /// Fallback viewer state, used when no onImageTap delegate is provided.
+    /// Window-level glass viewer, mounted by the app root (and by sheets
+    /// that host their own). Preferred over the sheet fallback below.
+    @Environment(ImageViewerPresenter.self) private var viewerPresenter: ImageViewerPresenter?
+    /// Fallback viewer state, used when no onImageTap delegate is provided
+    /// and no glass-viewer host sits above this view.
     @State private var showViewer = false
     @State private var viewerIndex = 0
 
@@ -94,7 +103,11 @@ struct ImageGridView: View {
                 Color.clear
                     .aspectRatio(Self.displayAspectRatio(images[0].aspectRatio), contentMode: .fit)
                     .overlay {
-                        AsyncCachedImage(url: images[0].fullSizeImageURL) { phase in
+                        // The 1000 px thumbnail preset, decoded to ~2× the
+                        // widest cell: a quarter of the bytes and a tenth of
+                        // the pixels of feed_fullsize, which is for the
+                        // viewer only.
+                        AsyncCachedImage(url: images[0].thumbnailImageURL, maxPixelSize: 1400) { phase in
                             if let image = phase.image {
                                 image.resizable().scaledToFill()
                             } else {
@@ -112,7 +125,7 @@ struct ImageGridView: View {
                 carousel(count: count)
             }
         }
-        .sensitiveMediaShield(sensitiveMedia || screenerFlagged)
+        .sensitiveMediaShield(sensitiveMedia || screenerFlagged, key: images.first?.thumbnailImageURL.absoluteString)
         .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
         .sheet(isPresented: $showViewer) {
             ImageViewerView(images: images, selectedIndex: $viewerIndex)
@@ -148,7 +161,7 @@ struct ImageGridView: View {
                             Color.clear
                                 .containerRelativeFrame(.horizontal)
                                 .overlay {
-                                    AsyncCachedImage(url: img.thumbnailImageURL) { phase in
+                                    AsyncCachedImage(url: img.thumbnailImageURL, maxPixelSize: 1400) { phase in
                                         if let image = phase.image {
                                             image.resizable().scaledToFill()
                                         } else {
@@ -189,10 +202,12 @@ struct ImageGridView: View {
     }
 
     /// Delegate to the owner's viewer when one is wired (ThreadView), else
-    /// present our own.
+    /// the window-level glass viewer, else our own fallback sheet.
     private func handleTap(_ index: Int) {
         if let onImageTap {
             onImageTap(images, index)
+        } else if let viewerPresenter {
+            viewerPresenter.present(images, at: index, postURI: postURI)
         } else {
             viewerIndex = index
             showViewer = true
@@ -231,8 +246,14 @@ struct ImageGridView: View {
 // (1.91:1, the Open Graph card ratio) over title, description, and a
 // divided footer carrying the site icon + domain. Cards without a
 // thumbnail collapse to the text block alone, like the official client.
+//
+// Links to a GIF (Tenor/KLIPY picks, any direct .gif) skip the card and
+// play inline on a loop — see GIFEmbedView, which falls back to the card
+// when the bytes turn out not to be a GIF.
 struct ExternalLinkCardView: View {
     let external: AppBskyLexicon.Embed.ExternalDefinition.ViewExternal
+    /// The owning post's media is labeled explicit — shields the GIF.
+    var sensitiveMedia: Bool = false
 
     @Environment(\.openURL) private var openURL
 
@@ -245,6 +266,21 @@ struct ExternalLinkCardView: View {
     }
 
     var body: some View {
+        if let gif = GIFLink.parse(external.uri) {
+            GIFEmbedView(
+                link: gif,
+                thumbnailURL: external.thumbnailImageURL,
+                altText: external.title,
+                sensitiveMedia: sensitiveMedia
+            ) {
+                linkCard
+            }
+        } else {
+            linkCard
+        }
+    }
+
+    private var linkCard: some View {
         Button {
             if let url = linkURL { openURL(url) }
         } label: {
@@ -332,7 +368,8 @@ struct ExternalLinkCardView: View {
 // Bluesky-style embedded post on the app's glass surface: author header
 // with timestamp, the text, and the quoted post's own media (images, a
 // video still, or a compact link row) rendered inside the card.
-private struct QuotePostView: View {
+// Internal (not private): the DM bubble renders shared posts with it.
+struct QuotePostView: View {
     let record: AppBskyLexicon.Embed.RecordDefinition.ViewRecord
 
     /// The quoted post's media, labeled explicit by the author or a labeler.
@@ -406,11 +443,11 @@ private struct QuotedMediaView: View {
 
         case .embedVideoView(let video):
             StaticVideoThumbnail(video: video)
-                .sensitiveMediaShield(sensitiveMedia)
+                .sensitiveMediaShield(sensitiveMedia, key: video.playlistURI)
                 .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
 
         case .embedExternalView(let external):
-            CompactExternalLinkRow(external: external.external)
+            CompactExternalLinkRow(external: external.external, sensitiveMedia: sensitiveMedia)
 
         case .embedRecordWithMediaView(let rwm):
             switch rwm.media {
@@ -418,7 +455,7 @@ private struct QuotedMediaView: View {
                 ImageGridView(images: images.images, sensitiveMedia: sensitiveMedia)
             case .embedVideoView(let video):
                 StaticVideoThumbnail(video: video)
-                    .sensitiveMediaShield(sensitiveMedia)
+                    .sensitiveMediaShield(sensitiveMedia, key: video.playlistURI)
                     .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
             default:
                 EmptyView()
@@ -435,6 +472,7 @@ private struct QuotedMediaView: View {
 // full Bluesky-style card would out-weigh the quote itself.
 private struct CompactExternalLinkRow: View {
     let external: AppBskyLexicon.Embed.ExternalDefinition.ViewExternal
+    var sensitiveMedia: Bool = false
 
     private var host: String {
         guard let host = URL(string: external.uri)?.host else { return external.uri }
@@ -442,6 +480,23 @@ private struct CompactExternalLinkRow: View {
     }
 
     var body: some View {
+        // A quoted GIF still plays (quotes already show images and video
+        // stills at full width); everything else keeps the compact row.
+        if let gif = GIFLink.parse(external.uri) {
+            GIFEmbedView(
+                link: gif,
+                thumbnailURL: external.thumbnailImageURL,
+                altText: external.title,
+                sensitiveMedia: sensitiveMedia
+            ) {
+                row
+            }
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
             if let thumbURL = external.thumbnailImageURL {
                 AsyncCachedImage(url: thumbURL) { phase in
@@ -486,24 +541,38 @@ private struct VideoEmbedView: View {
     let video: AppBskyLexicon.Embed.VideoDefinition.View
     var sensitiveMedia: Bool = false
 
+    /// Under a whole-post veil the video needs no shield of its own; the
+    /// post's Show is the one reveal, after which it plays like any other.
+    @Environment(\.coveredByPostShield) private var coveredByPost
+    /// Measured row width; the box height is derived from it below.
+    @State private var width: CGFloat = 0
+
     var body: some View {
-        // Same pre-reserved sizing as images: the box height comes from the
-        // record's aspect ratio, not from whether the thumbnail has loaded.
+        let shielded = sensitiveMedia && !coveredByPost
+        let ratio = ImageGridView.displayAspectRatio(video.aspectRatio)
+        // The box is sized explicitly from the measured width (capped at
+        // 480 pt tall) rather than with aspectRatio + frame(maxHeight:) —
+        // inside a scroll view that pair laid the player out at its full
+        // height and clipped it, which put the expand, mute, and scrubber
+        // controls of tall videos outside the visible crop.
+        let height = width > 0 ? min(480, width / ratio) : 480 / max(ratio, 0.85)
         Color.clear
-            .aspectRatio(ImageGridView.displayAspectRatio(video.aspectRatio), contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
             .overlay {
-                if !sensitiveMedia, let playlistURL = URL(string: video.playlistURI) {
+                if !shielded, let playlistURL = URL(string: video.playlistURI) {
                     EmbeddedVideoPlayer(
                         playlistURL: playlistURL,
-                        thumbnailURL: video.thumbnailImageURL.flatMap(URL.init(string:))
+                        thumbnailURL: video.thumbnailImageURL.flatMap(URL.init(string:)),
+                        videoPixelSize: video.aspectRatio.map { CGSize(width: $0.width, height: $0.height) }
                     )
                 } else {
                     StaticVideoThumbnail(video: video)
                 }
             }
-            .frame(maxHeight: 480)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .clipped()
-            .sensitiveMediaShield(sensitiveMedia)
+            .sensitiveMediaShield(shielded, key: video.playlistURI)
             .clipShape(RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
             .accessibilityLabel(video.altText?.isEmpty == false ? "Video: \(video.altText!)" : "Video")
     }

@@ -55,3 +55,16 @@ parity matrix updated when landing Linux features).
   installs' refresh tokens working (`<uuid>.refreshToken`).
 - Bundle ID `stoicswe.com-atmin-app` and the keychain access group in
   `Resources/Atmo.entitlements` likewise.
+
+## Wallet profile pass (iOS 27+)
+
+Settings → Account → "Add to Apple Wallet" builds a `.pkpass` on the
+device: `AtmoCore/Sources/AtmoCore/Services/WalletPass/` (pass.json
+model, SHA-1 manifest, stored-ZIP writer, CMS signer via
+swift-certificates' `@_spi(CMS)`), presented by
+`Apple/Features/Settings/WalletPass/`. Images and signing material are a
+folder reference, `Resources/WalletPass/` (themes under `Themes/<id>/`
+— swap the placeholder PNGs for stock artwork). The Pass Type ID
+certificate and key are gitignored; setup in
+`Resources/WalletPass/Signing/README.md`. Without them release builds
+hide the row and debug builds show it disabled.

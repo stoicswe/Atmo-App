@@ -9,7 +9,9 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case messages      = "Messages"
     case profile       = "Profile"
     case bookmarks     = "Bookmarks"
+    case liked         = "Liked"
     case drafts        = "Drafts"
+    case ghosts        = "Ghosts"
     case settings      = "Settings"
 
     var id: String { rawValue }
@@ -22,7 +24,9 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .messages:      return "bubble.left.and.bubble.right"
         case .profile:       return "person.circle"
         case .bookmarks:     return "bookmark"
+        case .liked:         return "heart"
         case .drafts:        return "doc.text"
+        case .ghosts:        return "moon.haze"
         case .settings:      return "gearshape"
         }
     }
@@ -35,7 +39,9 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .messages:      return "bubble.left.and.bubble.right.fill"
         case .profile:       return "person.circle.fill"
         case .bookmarks:     return "bookmark.fill"
+        case .liked:         return "heart.fill"
         case .drafts:        return "doc.text.fill"
+        case .ghosts:        return "moon.haze.fill"
         case .settings:      return "gearshape.fill"
         }
     }
@@ -43,8 +49,15 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 // Items shown in the scrollable top section of the sidebar
 private let primaryItems: [SidebarItem] = [.timeline, .search, .notifications, .messages]
-// Items pinned to the bottom of the sidebar panel (profile → bookmarks → drafts → settings)
-private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .drafts, .settings]
+// Items pinned to the bottom of the sidebar panel (profile → bookmarks → liked → drafts → ghosts → settings)
+private let bottomItems:  [SidebarItem] = [.profile, .bookmarks, .liked, .drafts, .ghosts, .settings]
+
+extension SidebarItem {
+    /// Ghosts only exists while the feature is switched on in Settings.
+    var isAvailable: Bool {
+        self != .ghosts || GhostPostPolicy.isEnabled
+    }
+}
 
 #if os(iOS)
 // MARK: - Phone Bar Configuration
@@ -60,7 +73,9 @@ enum PhoneBarConfig {
     static let maxCustomTabs = 3
     /// Everything that can be placed in either the bar or the drawer.
     static let eligible: [SidebarItem] =
-        [.search, .notifications, .messages, .profile, .bookmarks, .drafts, .settings]
+        [.search, .notifications, .messages, .profile, .bookmarks, .liked, .drafts, .ghosts, .settings]
+    /// Eligible items that are currently on (Ghosts follows its toggle).
+    static var available: [SidebarItem] { eligible.filter(\.isAvailable) }
 
     static func decode(_ raw: String) -> [SidebarItem] {
         raw.split(separator: ",")
@@ -124,6 +139,7 @@ final class PhoneChromeState {
 struct AppNavigation: View {
     @Environment(ATProtoService.self) private var service
     @State private var selectedItem: SidebarItem? = .timeline
+    @AppStorage(GhostPostPolicy.enabledKey) private var ghostsEnabled = false
     @State private var showComposer: Bool = false
     /// When non-nil, opens the composer sheet pre-loaded with this draft.
     @State private var draftToResume: ComposerDraft? = nil
@@ -134,6 +150,15 @@ struct AppNavigation: View {
     /// the one presentation point verified to work everywhere.
     @State private var showNewConversation: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// Where the person was when they opened a feed (Search / Explore),
+    /// so the feed's Back button can return them there.
+    @State private var feedReturnItem: SidebarItem? = nil
+    /// iPad / macOS with the sidebar collapsed: the drawer slides in when
+    /// the pointer rests at the leading edge and slides out once it leaves.
+    @State private var hoverDrawerOpen = false
+    @State private var hoverDrawerCloseTask: Task<Void, Never>? = nil
+    /// Same width as the iPhone drawer.
+    private static let hoverDrawerWidth: CGFloat = 290
 #if os(iOS)
     /// iPhone: whether the left drawer menu is open.
     @State private var phoneMenuOpen = false
@@ -152,18 +177,22 @@ struct AppNavigation: View {
     /// dismiss-keyboard circle can clear it through SwiftUI (a raw
     /// resignFirstResponder fought the FocusState and needed two taps).
     @FocusState private var phoneSearchFocused: Bool
+    /// iPhone: where the user was before switching to Search — the search
+    /// circle's back caret (keyboard down) returns here.
+    @State private var phoneSearchReturnItem: SidebarItem? = nil
     /// iPhone: shared bar-minimize state, written by scrolling views.
     private let phoneChrome = PhoneChromeState.shared
 
     /// Home plus the user's chosen tabs, in their chosen order.
     private var phoneTabItems: [SidebarItem] {
         [.timeline] + Array(PhoneBarConfig.decode(phoneBarItemsRaw).prefix(PhoneBarConfig.maxCustomTabs))
+            .filter(\.isAvailable)
     }
 
     /// Everything eligible that isn't in the bar goes to the drawer.
     private var phoneDrawerItems: [SidebarItem] {
         let tabs = phoneTabItems
-        return PhoneBarConfig.eligible.filter { !tabs.contains($0) }
+        return PhoneBarConfig.available.filter { !tabs.contains($0) }
     }
 #endif
 
@@ -215,12 +244,18 @@ struct AppNavigation: View {
             // (FeedItemView, ThreadView, etc.) can open Search pre-filled with a tag
             // without requiring explicit callback threading through intermediate views.
             .environment(\.openFeed, OpenFeedAction { [self] feed in
+                if selectedItem != .timeline { feedReturnItem = selectedItem }
                 switchTimelineFeed(feed)
                 selectedItem = .timeline
             })
             .environment(\.hashtagSearch, HashtagSearchAction { [self] tag in
                 let vm = getOrCreateSearchViewModel()
                 vm.activateHashtag(tag)
+                selectedItem = .search
+            })
+            .environment(\.authorSearch, AuthorSearchAction { [self] handle in
+                let vm = getOrCreateSearchViewModel()
+                vm.activateAuthorSearch(handle: handle)
                 selectedItem = .search
             })
             // Inject the draft-saved notification so ComposerView can trigger the
@@ -232,7 +267,34 @@ struct AppNavigation: View {
                 }
             })
             .sheet(isPresented: $showComposer, onDismiss: handleComposerDismiss) {
-                ComposerView()
+                ComposerView(initialText: consumeComposerSeed())
+            }
+            // Requests from Siri / Shortcuts (AppRouter): switch section,
+            // open a post, run a search, or open the composer — consumed
+            // once handled so they don't fire again.
+            .onChange(of: AppRouter.shared.pendingItem) { _, item in
+                guard let item else { return }
+                selectedItem = item
+                AppRouter.shared.pendingItem = nil
+            }
+            .onChange(of: AppRouter.shared.pendingPostURI) { _, uri in
+                guard let uri else { return }
+                // Same path a Spotlight result takes.
+                spotlightPostURI = uri
+                AppRouter.shared.pendingPostURI = nil
+            }
+            .onChange(of: AppRouter.shared.pendingSearchQuery) { _, query in
+                guard let query else { return }
+                let vm = getOrCreateSearchViewModel()
+                selectedItem = .search
+                vm.selectedCategory = .posts
+                vm.query = query
+                vm.onQueryChanged(query)
+                AppRouter.shared.pendingSearchQuery = nil
+            }
+            .onChange(of: AppRouter.shared.pendingComposerText) { _, text in
+                guard text != nil else { return }
+                showComposer = true
             }
             // New-DM recipient picker; opening a person pushes their
             // conversation onto the phone stack.
@@ -274,30 +336,48 @@ struct AppNavigation: View {
                     .zIndex(99)
             }
 #endif
+            // "Vault locked" notice when the Vault re-locks on its own.
+            .overlay(alignment: .top) {
+                VaultLockToast()
+                    .padding(.top, AtmoTheme.Spacing.sm)
+                    .zIndex(98)
+            }
             // Navigate to a bookmarked post opened via Spotlight search.
             // Switches to the Timeline tab (so Back works) then pushes the thread
             // onto whichever navigation stack is active for the current platform.
             .onChange(of: spotlightPostURI) { _, uri in
                 guard let uri else { return }
-                selectedItem = .timeline
-                let target = NavigationPath([PostNavTarget(uri: uri)])
-                // Split view (iPad / macOS) uses splitNavPath.
-                // Phone TabView uses the owned phoneTimelineNavPath.
+                route(NavigationPath([PostNavTarget(uri: uri)]))
+                spotlightPostURI = nil   // consume — prevents re-triggering on redraw
+            }
+            .onChange(of: AppRouter.shared.pendingProfileDID) { _, did in
+                guard let did else { return }
+                route(NavigationPath([did]))
+                AppRouter.shared.pendingProfileDID = nil
+            }
+            .onChange(of: AppRouter.shared.pendingConversation) { _, convo in
+                guard let convo else { return }
+                selectedItem = .messages
 #if os(iOS)
                 if UIDevice.current.userInterfaceIdiom == .phone {
-                    phoneTimelineNavPath = target
+                    phoneTimelineNavPath.append(convo)
                 } else {
-                    splitNavPath = target
+                    splitNavPath.append(convo)
                 }
 #else
-                splitNavPath = target
+                splitNavPath.append(convo)
 #endif
-                spotlightPostURI = nil   // consume — prevents re-triggering on redraw
+                AppRouter.shared.pendingConversation = nil
             }
             // Applied outermost so every subtree — sheets included — resolves
             // web links to the in-app browser on iOS. (Sheets containing
             // links still host their own copy; see InAppBrowserHost.)
             .hostsInAppBrowser()
+            // Window-level glass image viewer: image taps anywhere in the
+            // main hierarchy pop the centered glass popup over everything.
+            // (Sheets showing images host their own — a covered node can't
+            // float chrome above its cover; see ThreadReaderView.)
+            .hostsImageViewer()
             // Declared Age Range probe + PermissionKit response listener.
             .integratesFamilyControls()
             .task {
@@ -349,6 +429,118 @@ struct AppNavigation: View {
     // MARK: - iPad / macOS Split View
     // Custom sidebar: scrollable primary items at top, Profile + Settings pinned at bottom.
     private var splitView: some View {
+        splitViewBody
+            .overlay(alignment: .leading) { hoverDrawer }
+    }
+
+    /// Only a deliberately collapsed sidebar gets the hover drawer — while
+    /// the sidebar is on screen there's nothing to slide in.
+    private var sidebarCollapsed: Bool { columnVisibility == .detailOnly }
+
+    /// The iPhone drawer, driven by pointer hover: a thin hot zone along
+    /// the leading edge opens it; leaving the panel (with a short grace
+    /// period, so crossing the gap doesn't snap it shut) closes it.
+    @ViewBuilder
+    private var hoverDrawer: some View {
+        if sidebarCollapsed {
+            ZStack(alignment: .leading) {
+                if hoverDrawerOpen {
+                    Color.black.opacity(0.18)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeHoverDrawer() }
+                        .transition(.opacity)
+                }
+
+                PhoneSideMenu(
+                    active: selectedItem,
+                    items: primaryItems.filter { $0 != .timeline } + bottomItems.filter(\.isAvailable),
+                    activeFeedURI: currentCustomFeedURI,
+                    onSelect: { item in
+                        if item == .timeline { switchTimelineFeed(nil) }
+                        selectedItem = item
+                        closeHoverDrawer()
+                    },
+                    onSelectFeed: { feed in
+                        switchTimelineFeed(feed)
+                        selectedItem = .timeline
+                        closeHoverDrawer()
+                    }
+                )
+                .frame(width: Self.hoverDrawerWidth)
+                .offset(x: hoverDrawerOpen ? 0 : -Self.hoverDrawerWidth - 24)
+                .shadow(color: .black.opacity(hoverDrawerOpen ? 0.22 : 0), radius: 24, x: 8)
+                .allowsHitTesting(hoverDrawerOpen)
+                .onHover { inside in
+                    if inside { cancelHoverDrawerClose() } else { scheduleHoverDrawerClose() }
+                }
+
+                // The hot zone: resting the pointer here opens the drawer.
+                Color.clear
+                    .frame(width: 10)
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onHover { inside in
+                        if inside { openHoverDrawer() }
+                    }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: hoverDrawerOpen)
+        }
+    }
+
+    private func openHoverDrawer() {
+        cancelHoverDrawerClose()
+        guard !hoverDrawerOpen else { return }
+        hoverDrawerOpen = true
+    }
+
+    private func closeHoverDrawer() {
+        cancelHoverDrawerClose()
+        hoverDrawerOpen = false
+    }
+
+    private func cancelHoverDrawerClose() {
+        hoverDrawerCloseTask?.cancel()
+        hoverDrawerCloseTask = nil
+    }
+
+    private func scheduleHoverDrawerClose() {
+        cancelHoverDrawerClose()
+        hoverDrawerCloseTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            hoverDrawerOpen = false
+        }
+    }
+
+    /// macOS: no compose button over Settings.
+    private var hidesComposeFAB: Bool {
+#if os(macOS)
+        (selectedItem ?? .timeline) == .settings
+#else
+        false
+#endif
+    }
+
+    private var sidebarToggleButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                columnVisibility = sidebarCollapsed ? .all : .detailOnly
+            }
+            closeHoverDrawer()
+        } label: {
+            Image(systemName: "sidebar.leading")
+        }
+        .keyboardShortcut("s", modifiers: [.command, .control])
+        .help(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar")
+        .accessibilityLabel(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar")
+        .onHover { inside in
+            guard sidebarCollapsed else { return }
+            if inside { openHoverDrawer() } else { scheduleHoverDrawerClose() }
+        }
+    }
+
+    private var splitViewBody: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // One native sidebar List, sectioned like Mail/Notes: every row
             // gets the system selection highlight, hover states, spacing,
@@ -370,7 +562,7 @@ struct AppNavigation: View {
                 }
 
                 Section("Library") {
-                    ForEach(bottomItems) { item in
+                    ForEach(bottomItems.filter(\.isAvailable)) { item in
                         sidebarLabel(for: item)
                             .tag(item)
                             .listItemTint(.fixed(sidebarTint))
@@ -387,6 +579,17 @@ struct AppNavigation: View {
                 }
             }
             .listStyle(.sidebar)
+            // Turning Ghosts off while it's selected: fall back home.
+            .onChange(of: ghostsEnabled) { _, on in
+                if !on, selectedItem == .ghosts { selectedItem = .timeline }
+            }
+            // The system toggle can't be hovered; sidebarToggleButton in
+            // the detail toolbar replaces it. The removal has to sit on the
+            // sidebar column's content to take effect on macOS.
+            .toolbar(removing: .sidebarToggle)
+            // Accent wash behind the sidebar too, so the whole window
+            // carries the theme (replaces the sidebar material while on).
+            .themedBackdrop()
             // Wide enough that "Notifications" and "Messages" don't truncate.
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .navigationTitle("@omic")
@@ -400,10 +603,25 @@ struct AppNavigation: View {
                 ZStack(alignment: .bottomTrailing) {
                     persistentDetailStack
 
-                    // Liquid Glass FAB — always on top
-                    ComposeFAB { showComposer = true }
-                        .padding(.trailing, AtmoTheme.Spacing.xxl)
-                        .padding(.bottom, AtmoTheme.Spacing.xxl)
+                    // Liquid Glass FAB — always on top, except over
+                    // Settings on macOS, where there's nothing to compose
+                    // about and it covered the form's controls.
+                    if !hidesComposeFAB {
+                        ComposeFAB { showComposer = true }
+                            .padding(.trailing, AtmoTheme.Spacing.xxl)
+                            .padding(.bottom, AtmoTheme.Spacing.xxl)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hidesComposeFAB)
+                // Our own sidebar toggle in place of the system one (removed
+                // below): clicking toggles the column as before, and while
+                // the sidebar is collapsed, hovering it slides the drawer in
+                // just like the leading-edge hot zone.
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        sidebarToggleButton
+                    }
                 }
                 // All destinations for every tab registered once here.
                 // Each carries the tinted backdrop itself — pushed hosting
@@ -421,9 +639,12 @@ struct AppNavigation: View {
                     ConversationDetailView(conversation: convo)
                         .themedBackdrop()
                 }
+                // Accent-derived wash behind every tab. Must sit INSIDE the
+                // stack: iOS navigation hosting paints an opaque system
+                // background over anything applied outside it (why the tint
+                // showed on macOS but not iOS).
+                .themedBackdrop()
             }
-            // Accent-derived wash behind every tab (Settings → Appearance).
-            .themedBackdrop()
         }
     }
 
@@ -445,7 +666,7 @@ struct AppNavigation: View {
         // internally — from bleeding their title preference through the ZStack
         // onto the nav bar of a different active tab.
         ZStack {
-            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath)
+            TimelineView(viewModel: timelineVm, splitNavPath: $splitNavPath, showsToolbar: active == .timeline, onLeaveFeed: leaveFeed)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
                 .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
@@ -479,6 +700,11 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .bookmarks)
                 .navigationTitle(active == .bookmarks ? "Bookmarks" : "")
 
+            LikedPostsView(splitNavPath: $splitNavPath)
+                .opacity(active == .liked ? 1 : 0)
+                .allowsHitTesting(active == .liked)
+                .navigationTitle(active == .liked ? "Liked" : "")
+
             DraftsView(splitNavPath: $splitNavPath, onOpenDraft: { draft in
                 draftToResume = draft
             })
@@ -486,10 +712,22 @@ struct AppNavigation: View {
                 .allowsHitTesting(active == .drafts)
                 .navigationTitle(active == .drafts ? "Drafts" : "")
 
-            SettingsView()
-                .opacity(active == .settings ? 1 : 0)
-                .allowsHitTesting(active == .settings)
-                .navigationTitle(active == .settings ? "Settings" : "")
+            GhostsView(splitNavPath: $splitNavPath)
+                .opacity(active == .ghosts ? 1 : 0)
+                .allowsHitTesting(active == .ghosts)
+                .navigationTitle(active == .ghosts ? "Ghosts" : "")
+
+            // Settings mounts ON DEMAND, breaking the always-alive rule the
+            // other tabs follow: its grouped Form, laid out invisibly at
+            // opacity 0, sent macOS into an infinite update-constraints
+            // loop at launch once the Form outgrew the window
+            // (NSGenericException, "more Update Constraints in Window
+            // passes than there are views"). Settings keeps all state in
+            // @AppStorage, so nothing is lost by recreating it.
+            if active == .settings {
+                SettingsView()
+                    .navigationTitle("Settings")
+            }
         }
     }
 
@@ -501,7 +739,9 @@ struct AppNavigation: View {
         case .messages:      return "Messages"
         case .profile:       return "Profile"
         case .bookmarks:     return "Bookmarks"
+        case .liked:         return "Liked"
         case .drafts:        return "Drafts"
+        case .ghosts:        return "Ghosts"
         case .settings:      return "Settings"
         }
     }
@@ -644,6 +884,14 @@ struct AppNavigation: View {
         NavigationStack(path: $phoneTimelineNavPath) {
             phonePersistentContent
                 .toolbarTitleDisplayMode(.inline)
+                // Remember where the user came from whenever they land on
+                // Search, from ANY entry point (tab pill, drawer, corner
+                // menu) — the search circle's back caret returns there.
+                .onChange(of: selectedItem) { old, new in
+                    if new == .search, old != .search {
+                        phoneSearchReturnItem = old
+                    }
+                }
                 // No nav-bar glass: content passes to the very top edge.
                 // Only the status bar keeps a blur (overlay below).
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -675,17 +923,39 @@ struct AppNavigation: View {
                     ConversationDetailView(conversation: convo)
                         .themedBackdrop()
                 }
+                // Accent-derived wash behind every tab. Must sit INSIDE the
+                // stack: iOS navigation hosting paints an opaque system
+                // background over anything applied outside it.
+                .themedBackdrop()
         }
-        // Accent-derived wash behind every tab (Settings → Appearance).
-        .themedBackdrop()
         // Floating bottom bar. safeAreaInset (not overlay) so scroll content
         // gets the inset automatically and the bar rides above the keyboard.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            phoneBottomBar
-                // Sit lower, hugging the home-indicator region like the
-                // native tab bar — except while the search keyboard is up,
-                // where sinking would clip the field into the keyboard.
-                .offset(y: phoneSearchFocused ? 0 : 22)
+            VStack(spacing: 0) {
+                // Recent searches rise out of the search field while its
+                // keyboard is up and sink back into it when dismissed
+                // (opt-in, Settings → Search).
+                if let searchVm = searchViewModel, (selectedItem ?? .timeline) == .search {
+                    SearchHistoryPills(
+                        entries: SearchHistoryStore.shared.recent,
+                        visible: phoneHistoryPillsVisible(searchVm),
+                        barEdge: .bottom,
+                        onSelect: { entry in
+                            Haptics.tap()
+                            SearchHistoryStore.shared.record(entry)
+                            searchVm.query = entry
+                            searchVm.onQueryChanged(entry)
+                            phoneSearchFocused = false
+                        }
+                    )
+                    .padding(.horizontal, AtmoTheme.Spacing.lg)
+                }
+                phoneBottomBar
+                    // Sit lower, hugging the home-indicator region like the
+                    // native tab bar — except while the search keyboard is up,
+                    // where sinking would clip the field into the keyboard.
+                    .offset(y: phoneSearchFocused ? 0 : 22)
+            }
         }
         // Status-bar blur: with the toolbar glass hidden, this is the only
         // chrome above the content. The material runs a little past the
@@ -713,6 +983,13 @@ struct AppNavigation: View {
         }
     }
 
+    /// Pills show while the search keyboard is up and nothing is typed —
+    /// arriving on Search focuses the field, so they rise on arrival too.
+    private func phoneHistoryPillsVisible(_ vm: SearchViewModel) -> Bool {
+        let store = SearchHistoryStore.shared
+        return store.isEnabled && !store.recent.isEmpty && phoneSearchFocused && vm.query.isEmpty
+    }
+
     /// The three pill tabs stay alive (opacity toggle) so their scroll
     /// position and state survive switches; drawer destinations render on
     /// demand. Titles follow the split view's pattern — set per view, only
@@ -724,7 +1001,7 @@ struct AppNavigation: View {
         let searchVm = getOrCreateSearchViewModel()
 
         ZStack {
-            TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath)
+            TimelineView(viewModel: timelineVm, splitNavPath: $phoneTimelineNavPath, onLeaveFeed: leaveFeed)
                 .opacity(active == .timeline ? 1 : 0)
                 .allowsHitTesting(active == .timeline)
                 .navigationTitle(active == .timeline ? timelineVm.feedSource.displayName : "")
@@ -758,11 +1035,17 @@ struct AppNavigation: View {
                 case .bookmarks:
                     BookmarksView(splitNavPath: $phoneTimelineNavPath)
                         .navigationTitle("Bookmarks")
+                case .liked:
+                    LikedPostsView(splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Liked")
                 case .drafts:
                     DraftsView(splitNavPath: $phoneTimelineNavPath, onOpenDraft: { draft in
                         draftToResume = draft
                     })
                     .navigationTitle("Drafts")
+                case .ghosts:
+                    GhostsView(splitNavPath: $phoneTimelineNavPath)
+                        .navigationTitle("Ghosts")
                 case .settings:
                     SettingsView()
                 default:
@@ -858,11 +1141,17 @@ struct AppNavigation: View {
                     Spacer(minLength: 0)
                 }
 
-                // Right circle: Search gets a dismiss-keyboard control (the
-                // field lives in this bar); everywhere else composes.
+                // Right circle: Search gets the dismiss-keyboard / back
+                // control (the field lives in this bar); elsewhere composes.
                 if active == .search {
-                    DismissKeyboardFAB { phoneSearchFocused = false }
-                        .transition(.blurReplace)
+                    DismissKeyboardFAB(
+                        keyboardVisible: phoneSearchFocused,
+                        dismissKeyboard: { phoneSearchFocused = false },
+                        goBack: {
+                            selectedItem = phoneSearchReturnItem ?? .timeline
+                        }
+                    )
+                    .transition(.blurReplace)
                 } else {
                     ComposeFAB { showComposer = true }
                         .transition(.blurReplace)
@@ -941,6 +1230,29 @@ struct AppNavigation: View {
     /// within the last 2 seconds. If so, the environment action already fired and
     /// we don't need to show the toast again. If not, and the draft store grew, we
     /// show the toast here.
+    /// Pushes a destination from outside the view tree (Spotlight, Siri):
+    /// switches to the Timeline tab so Back works, then sets whichever
+    /// navigation stack the platform is using.
+    private func route(_ target: NavigationPath) {
+        selectedItem = .timeline
+#if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            phoneTimelineNavPath = target
+        } else {
+            splitNavPath = target
+        }
+#else
+        splitNavPath = target
+#endif
+    }
+
+    /// The composer seed from an intent, taken exactly once.
+    private func consumeComposerSeed() -> String? {
+        let text = AppRouter.shared.pendingComposerText
+        AppRouter.shared.pendingComposerText = nil
+        return text
+    }
+
     private func handleComposerDismiss() {
         let store = DraftStore.shared
         guard !store.drafts.isEmpty else { return }
@@ -1003,6 +1315,21 @@ struct AppNavigation: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(isActive ? sidebarTint.opacity(0.12) : nil)
+        .contextMenu {
+            if let feed {
+                SavedFeedMenuItems(feed: feed)
+            }
+        }
+    }
+
+    /// Back from a feed: Following again, and back to Search / Explore if
+    /// that's where the feed was opened from.
+    private func leaveFeed() {
+        switchTimelineFeed(nil)
+        if let back = feedReturnItem {
+            feedReturnItem = nil
+            selectedItem = back
+        }
     }
 
     /// Switches the home timeline between Following (nil) and a saved feed.
@@ -1035,9 +1362,11 @@ struct AppNavigation: View {
 }
 
 // MARK: - Liquid Glass Compose FAB
-#if os(iOS)
-// MARK: - Phone Side Menu
-// The left drawer holding everything that isn't one of the three pill tabs.
+// MARK: - Side Menu (drawer)
+// The left drawer holding everything that isn't one of the three pill
+// tabs on iPhone. Shared with iPad / macOS: when the split view's sidebar
+// is collapsed, the same panel slides in on pointer hover at the leading
+// edge, so the drawer looks and behaves the same everywhere.
 private struct PhoneSideMenu: View {
     let active: SidebarItem?
     /// Everything the user did NOT place in the bottom bar.
@@ -1151,6 +1480,7 @@ private struct PhoneSideMenu: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { SavedFeedMenuItems(feed: feed) }
     }
 
     @ViewBuilder
@@ -1186,6 +1516,7 @@ private struct PhoneSideMenu: View {
     }
 }
 
+#if os(iOS)
 // MARK: - Phone Search Field
 // Notes-style bottom search bar. Backed by the same persistent
 // SearchViewModel as SearchView, so typing here drives the page directly.
@@ -1203,6 +1534,7 @@ private struct PhoneSearchField: View {
                 .textFieldStyle(.plain)
                 .focused($focused)
                 .submitLabel(.search)
+                .onSubmit { SearchHistoryStore.shared.record(viewModel.query) }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 // Debounced fetch — same contract as SearchView's own bar:
@@ -1236,24 +1568,37 @@ private struct PhoneSearchField: View {
 
 // MARK: - Dismiss Keyboard FAB
 // Takes compose's slot on the Search page only — the search field lives in
-// the bottom bar there, so the circle acts as its "done" control.
+// the bottom bar there. Two-mode circle: while the keyboard is up it's the
+// field's "done" control; once dismissed it becomes a back caret that
+// returns to wherever the user was before opening Search.
 private struct DismissKeyboardFAB: View {
-    let action: () -> Void
+    let keyboardVisible: Bool
+    let dismissKeyboard: () -> Void
+    let goBack: () -> Void
 
     var body: some View {
         Button {
             Haptics.tap()
-            action()
+            if keyboardVisible {
+                dismissKeyboard()
+            } else {
+                goBack()
+            }
         } label: {
-            Image(systemName: "keyboard.chevron.compact.down")
+            Image(systemName: keyboardVisible ? "keyboard.chevron.compact.down" : "chevron.left")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AtmoColors.accent)
-                .frame(width: 64, height: 64)
+                // The two glyphs cross-fade in place as focus changes.
+                .contentTransition(.symbolEffect(.replace))
+                // Sized to the 48 pt search field beside it, a hair larger
+                // so the circle reads as a button rather than a bar end.
+                .frame(width: 52, height: 52)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .contentShape(Circle().inset(by: -10))
+                .contentShape(Circle().inset(by: -12))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: keyboardVisible)
         }
         .buttonStyle(FABButtonStyle())
-        .accessibilityLabel("Dismiss Keyboard")
+        .accessibilityLabel(keyboardVisible ? "Dismiss Keyboard" : "Back")
     }
 }
 
@@ -1363,5 +1708,31 @@ private struct DraftSavedToast: View {
         .padding(.horizontal, AtmoTheme.Spacing.lg)
         .padding(.vertical, AtmoTheme.Spacing.md)
         .glassEffect(.regular, in: Capsule())
+    }
+}
+
+
+// MARK: - Saved feed menu
+/// Pin / Unpin and Unsubscribe for a saved feed, offered from the sidebar
+/// and drawer rows (press and hold, or right-click).
+struct SavedFeedMenuItems: View {
+    let feed: CustomFeedItem
+    @Environment(ATProtoService.self) private var service
+
+    var body: some View {
+        let store = SavedFeedsStore.shared
+        let pinned = store.isPinned(uri: feed.uri)
+        Button {
+            Haptics.tap()
+            Task { await store.setPinned(!pinned, uri: feed.uri, service: service) }
+        } label: {
+            Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
+        }
+        Button(role: .destructive) {
+            Haptics.soft()
+            Task { await store.unsubscribe(uri: feed.uri, service: service) }
+        } label: {
+            Label("Unsubscribe", systemImage: "minus.circle")
+        }
     }
 }

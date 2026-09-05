@@ -85,14 +85,20 @@ Status: ✅ done · 🟡 partial · ⬜ not started · ❌ intentionally skipped
 | Composer (single post + replies) | ✅ | `.dialog` with `TextEditor`, 300-char counter; submits through shared `ComposerViewModel`/`PostPublisher` (facets, reply refs). Rows have a ↩ reply button |
 | Composer (threads, images, quote) | ⬜ | Reuse `PostSlot` list + portal `fileImporter` for images |
 | Drafts | ⬜ | `DraftStore` works on Linux already (UserDefaults → XDG plist); needs UI |
-| Search (posts/people/hashtags) | 🟡 | `MainView+Search` on shared `SearchViewModel` (debounce, fan-out, enrichment from core). **TODO:** Top/Latest sort toggle, like/repost on result rows (needs a core interaction path for search results), people load-more, follow buttons |
+| Search (posts/people/hashtags/feeds) | 🟡 | `MainView+Search` on shared `SearchViewModel` (debounce, fan-out, enrichment from core). **TODO:** Top/Latest sort toggle, like/repost on result rows (needs a core interaction path for search results), people load-more, follow buttons, feed results (`feedResults` + `loadMoreFeeds`) |
 | Notifications list + mark-seen | ✅ | `MainView+Notifications` on shared `NotificationsViewModel` |
+| Search history suggestions (opt-in, Settings → Search) | ⬜ | Core: `SearchHistoryStore` (record on submit/result tap, `recent` for the pills); Linux needs the toggle + a pill row under the search entry |
 | DMs | ⬜ | Reuse `DMsViewModel`/`ConversationDetailViewModel`; split-view page |
+| Send post via DM (paperplane in the action row) | ⬜ | Core has it: `SendPostViewModel` (recent conversations + people, per-recipient send state); needs a GTK recipient picker |
+| Shared posts in DMs open the post | ⬜ | Core: `MessageItem.embeddedRecord` / `embeddedPostURI`; Apple renders the quote card and navigates on tap |
+| Action row on thread-context rows | ⬜ | `TimelineViewModel.livePost(uri:)` and like/repost now work for `threadAncestors`; Linux still shows the "↩ Replying to" line |
 | Profiles (view/edit/follow) | ⬜ | Reuse `ProfileViewModel` |
+| Profile ··· menu (copy link, search posts, hide reposts, mute, block, report) | ⬜ | Core has it all: `ProfileModel.bskyWebURL`, `SearchViewModel.activateAuthorSearch`, `HiddenRepostsStore` (feeds already filter), `ProfileViewModel.toggleMute/toggleBlock`, `ReportAccountViewModel` (4-step report → chosen labeler). Needs GTK menu + report dialog |
 | Bookmarks | ⬜ | `BookmarkStore` runs on Linux (synced store falls back to local-only); needs UI |
 | Timeline position sync | 🟡 | `PositionStore` persists locally (no iCloud on Linux — by design, the seam falls back) |
-| Avatars / images in feed | ✅ | `ImageLoader` (GTK-side memory + XDG-disk cache) feeding `Avatar` (custom image via `.inspect`) and `Picture(data:)` thumbnails |
-| Embeds (link cards, quotes, video stub) | ✅ | Core `PostItem.embedContent` digest (added for this port); `LinkButton` cards, quote cards push their thread, video links out to bsky.app |
+| Avatars / images in feed | ✅ | `ImageLoader` (GTK-side memory + XDG-disk cache); `remoteAvatar`/`remotePicture` install textures imperatively via `.inspect` — declarative `Picture(data:)` swaps never materialize inside ForEach rows (see CLAUDE.md gotchas) |
+| Embeds (link cards, quotes) | ✅ | Core `PostItem.embedContent` digest; bsky.app-style article cards (cover image, title, description, host) opening the browser; quote cards push their thread |
+| Inline video playback | ✅ | Core `EmbedContent.Video` (HLS playlist + thumb + size); poster + "Play video" pill swaps in a GStreamer player (`VideoPlayer.swift`: playbin3 → gtk4paintablesink → GtkPicture, with play/pause, seek slider, and clock). **Deviation:** click-to-play instead of the Apple app's always-live muted autoplay. GTK 4.22 removed GtkVideo's media backend, so playback binds libgstreamer via dlopen and needs `gstreamer1.0-gtk4` + the GStreamer plugin set (staged in the snap; preinstalled on Ubuntu desktop) |
 | Rich text facets (links, mentions, tags) | ⬜ | Pango markup from `PostItem.facets` |
 | Spotlight donation | ❌ | Apple-only; the `PostIndexing` seam installs the no-op |
 | Apple Intelligence translation | ❌ | Apple-only (`TranslationHelper` lives in `Apple/`) |

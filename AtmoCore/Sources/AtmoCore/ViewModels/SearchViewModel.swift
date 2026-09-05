@@ -8,6 +8,8 @@ public enum SearchCategory: String, CaseIterable, Identifiable {
     case posts    = "Posts"
     case people   = "People"
     case hashtags = "Hashtags"
+    /// Public feed generators, found by name.
+    case feeds    = "Feeds"
 
     public var id: String { rawValue }
 
@@ -16,6 +18,7 @@ public enum SearchCategory: String, CaseIterable, Identifiable {
         case .posts:    return "text.bubble"
         case .people:   return "person.2"
         case .hashtags: return "number"
+        case .feeds:    return "square.stack"
         }
     }
 }
@@ -52,6 +55,25 @@ public final class SearchViewModel {
     }
 
     public private(set) var sort: SearchSort = .top
+    /// Post results narrowed to a media kind; the results page switches
+    /// to the media grid for anything but `.all`.
+    public var mediaFilter: MediaFilter = .all
+
+    /// Post results under the media filter, original order.
+    public var mediaFilteredPosts: [PostItem] {
+        mediaFilter.apply(postResults)
+    }
+
+    /// Media filters throw away most of a page; keep paging (bounded)
+    /// until the grid has something to show or the results run out.
+    public func fillMediaResults(target: Int = 12) async {
+        guard mediaFilter != .all else { return }
+        var hops = 0
+        while mediaFilteredPosts.count < target, hasMorePosts, hops < 4 {
+            await loadMorePosts()
+            hops += 1
+        }
+    }
     /// Non-nil while the current results came from tapping a topic (the
     /// Explore surface) — drives the AI topic-summary card. Typing a
     /// query by hand clears it.
@@ -60,10 +82,19 @@ public final class SearchViewModel {
     public private(set) var hasMorePosts: Bool = false
     /// Whether more people-result pages exist beyond what's loaded.
     public private(set) var hasMorePeople: Bool = false
+    /// Whether more feed-result pages exist beyond what's loaded.
+    public private(set) var hasMoreFeeds: Bool = false
 
     public var postResults:    [PostItem]     = []
     public var peopleResults:  [ProfileModel] = []
     public var hashtagResults: [String]       = []   // derived from query + post text
+    public var feedResults:    [FeedSearchResult] = []
+
+    /// Feed results under the current Top/Latest ranking (the server
+    /// returns popularity order; the switch re-orders client-side).
+    public var sortedFeedResults: [FeedSearchResult] {
+        FeedSearchResult.sorted(feedResults, by: sort)
+    }
 
     /// Wider post pool assembled invisibly in the background: the topic's
     /// own backing feed (when Bluesky supplied one) plus contextual query
@@ -93,6 +124,8 @@ public final class SearchViewModel {
     private var postsCursor: String? = nil
     /// Pagination cursor for the people results.
     private var peopleCursor: String? = nil
+    /// Pagination cursor for the feed results.
+    private var feedsCursor: String? = nil
     private var isLoadingMore = false
 
     /// 5-minute auto-clear timer — started on disappear, cancelled on reappear.
@@ -118,6 +151,18 @@ public final class SearchViewModel {
     public func setSort(_ newSort: SearchSort) {
         guard newSort != sort else { return }
         sort = newSort
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.minQueryLength else { return }
+        searchTask?.cancel()
+        searchTask = Task {
+            isLoading = true
+            await performSearch(query: trimmed)
+        }
+    }
+
+    /// Re-runs the current query (toolbar refresh, ⌘R). No-op below the
+    /// minimum length.
+    public func refresh() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= Self.minQueryLength else { return }
         searchTask?.cancel()
@@ -198,9 +243,10 @@ public final class SearchViewModel {
         // Hashtag results are derived locally — no extra network request needed.
         async let postsTask   = fetchPosts(query: query, kit: kit)
         async let peopleTask  = fetchPeople(query: query, kit: kit)
+        async let feedsTask   = fetchFeeds(query: query, kit: kit)
         async let tagsTask    = deriveHashtags(from: query)
 
-        let (posts, people, tags) = await (postsTask, peopleTask, tagsTask)
+        let (posts, people, feeds, tags) = await (postsTask, peopleTask, feedsTask, tagsTask)
 
         guard !Task.isCancelled else { return }
 
@@ -210,6 +256,9 @@ public final class SearchViewModel {
         peopleResults  = people.items
         peopleCursor   = people.cursor
         hasMorePeople  = people.cursor != nil
+        feedResults    = feeds.items
+        feedsCursor    = feeds.cursor
+        hasMoreFeeds   = feeds.cursor != nil
         hashtagResults = tags
         // Hashtags appearing in the result posts are relevant too.
         mergeHashtags(from: posts.items)
@@ -309,7 +358,41 @@ public final class SearchViewModel {
             )
             return (output.posts.map { PostItem(postView: $0) }, output.cursor)
         } catch {
+            AtmoDebugLog.log("searchPosts failed: \(error)")
             return ([], nil)
+        }
+    }
+
+    /// Public feed generators matching the query by name — the same
+    /// popularity-ranked lookup the official client's Feeds search uses.
+    private func fetchFeeds(query: String, kit: ATProtoKit) async -> (items: [FeedSearchResult], cursor: String?) {
+        do {
+            let output = try await kit.getPopularFeedGenerators(matching: query, limit: 25)
+            return (output.feeds.map { FeedSearchResult(generator: $0) }, output.cursor)
+        } catch {
+            return ([], nil)
+        }
+    }
+
+    /// Next page of feed results (infinite scroll), de-duplicated.
+    public func loadMoreFeeds() async {
+        guard hasMoreFeeds, !isLoadingMore, !isLoading,
+              let cursor = feedsCursor,
+              let kit = service.atProtoKit else { return }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.minQueryLength else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let output = try await kit.getPopularFeedGenerators(matching: trimmed, limit: 25, cursor: cursor)
+            feedResults = FeedSearchResult.appending(
+                output.feeds.map { FeedSearchResult(generator: $0) },
+                to: feedResults
+            )
+            feedsCursor = output.cursor
+            hasMoreFeeds = output.cursor != nil
+        } catch {
+            hasMoreFeeds = false
         }
     }
 
@@ -374,6 +457,16 @@ public final class SearchViewModel {
     /// Pre-fills the query with `#<tag>` and immediately runs a search.
     /// Called by the environment `HashtagSearchAction` when a #hashtag is tapped
     /// anywhere in the feed or thread views.
+    /// "Search posts" from a profile's ··· menu: pre-fills the query with
+    /// the `from:` operator for that account and runs a post search.
+    public func activateAuthorSearch(handle: String) {
+        sort = .top
+        let q = "from:\(handle)"
+        query = q
+        selectedCategory = .posts
+        onQueryChanged(q)
+    }
+
     public func activateHashtag(_ tag: String) {
         sort = .top
         let q = "#\(tag)"
@@ -509,6 +602,9 @@ public final class SearchViewModel {
         postResults    = []
         peopleResults  = []
         hashtagResults = []
+        feedResults    = []
+        feedsCursor    = nil
+        hasMoreFeeds   = false
         isLoading      = false
         error          = nil
     }

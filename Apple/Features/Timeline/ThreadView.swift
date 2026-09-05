@@ -76,7 +76,10 @@ struct ThreadView: View {
     /// Tracks whether the root post is visible — used to show/hide the scroll-to-top FAB.
     @State private var isAtTop: Bool = true
 
-    // ── Image viewer sheet ──
+    // ── Image viewer ──
+    // Presents through the window-level glass viewer when hosted (the app
+    // root mounts one); the sheet state below is the unhosted fallback.
+    @Environment(ImageViewerPresenter.self) private var viewerPresenter: ImageViewerPresenter?
     @State private var viewerImages: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage] = []
     @State private var viewerStartIndex: Int = 0
     @State private var showImageViewer: Bool = false
@@ -224,9 +227,7 @@ struct ThreadView: View {
                                 mentionedHandle = handle
                             },
                             onImageTap: { images, index in
-                                viewerImages = images
-                                viewerStartIndex = index
-                                showImageViewer = true
+                                showImages(images, at: index, postURI: root.uri)
                             },
                             selfThreadPosition: chain.count >= 2 ? (1, chain.count) : nil
                         )
@@ -274,9 +275,7 @@ struct ThreadView: View {
                                     mentionedHandle = handle
                                 },
                                 onImageTap: { images, index in
-                                    viewerImages = images
-                                    viewerStartIndex = index
-                                    showImageViewer = true
+                                    showImages(images, at: index, postURI: reply.post.uri)
                                 },
                                 selfThreadPosition: chainPositions[reply.post.uri].map { ($0, chain.count) }
                             )
@@ -399,6 +398,20 @@ struct ThreadView: View {
         .task {
             threadViewModel = TimelineViewModel(service: service)
             await loadThread()
+        }
+    }
+
+    /// Routes an image tap to the window-level glass viewer, falling back
+    /// to the legacy sheet when no host is mounted above this view.
+    private func showImages(
+        _ images: [AppBskyLexicon.Embed.ImagesDefinition.ViewImage], at index: Int, postURI: String? = nil
+    ) {
+        if let viewerPresenter {
+            viewerPresenter.present(images, at: index, postURI: postURI)
+        } else {
+            viewerImages = images
+            viewerStartIndex = index
+            showImageViewer = true
         }
     }
 
@@ -599,7 +612,8 @@ private struct RootPostView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(livePost.indexedAt.atmoFormatted())
+                GhostBadge(post: livePost)
+                    Text(livePost.indexedAt.atmoFormatted())
                     .font(AtmoFonts.timestamp)
                     .foregroundStyle(.tertiary)
             }
@@ -630,11 +644,18 @@ private struct RootPostView: View {
                 PostEmbedView(embed: embed, onImageTap: onImageTap, sensitiveMedia: livePost.hasSensitiveMediaLabel)
             }
 
+            // Ghost posts close replies and quotes, and reposts can't be
+            // blocked — so none of those counts are shown; likes remain.
+            let isGhost = GhostPostPolicy.isGhost(livePost)
             HStack(spacing: AtmoTheme.Spacing.xl) {
-                statLabel(count: livePost.replyCount, label: "replies")
-                statLabel(count: livePost.repostCount, label: "reposts")
+                if !isGhost {
+                    statLabel(count: livePost.replyCount, label: "replies")
+                    statLabel(count: livePost.repostCount, label: "reposts")
+                }
                 statLabel(count: livePost.likeCount, label: "likes")
-                statLabel(count: livePost.quoteCount, label: "quotes")
+                if !isGhost {
+                    statLabel(count: livePost.quoteCount, label: "quotes")
+                }
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -822,7 +843,8 @@ private struct ReplyRowView: View {
                                 if let position = selfThreadPosition {
                                     SelfThreadPill(index: position.index, count: position.count, glass: true)
                                 }
-                                Text(livePost.indexedAt.atmoFormatted())
+                                GhostBadge(post: livePost)
+                    Text(livePost.indexedAt.atmoFormatted())
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }

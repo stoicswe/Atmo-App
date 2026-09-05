@@ -49,8 +49,8 @@ extension MainView {
         }
     }
 
-    @ViewBuilder func threadPage(_ route: ThreadRoute) -> Body {
-        let snapshot = threadSnapshot(uri: route.uri)
+    @ViewBuilder func threadPage(uri: String) -> Body {
+        let snapshot = threadSnapshot(uri: uri)
         VStack {
             if snapshot.root == nil {
                 if snapshot.loadFailed {
@@ -58,7 +58,11 @@ extension MainView {
                         "Couldn't load the thread",
                         icon: .custom(name: "dialog-error-symbolic"),
                         description: "Check your connection and try again."
-                    )
+                    ) {
+                        Button("Try Again") { reloadThread(uri: uri) }
+                            .pill()
+                            .halign(.center)
+                    }
                     .vexpand()
                 } else {
                     Spinner()
@@ -69,11 +73,12 @@ extension MainView {
                 ScrollView {
                     VStack(spacing: 0) {
                         if let root = snapshot.root {
-                            postRow(root, actions: .thread(uri: route.uri))
+                            postRow(root, actions: .thread(uri: uri), showsAncestors: false)
+                                .style("card", active: root.id == snapshot.focusedURI)
                             Separator()
                         }
                         ForEach(snapshot.replies, id: \.id) { reply in
-                            postRow(reply.row, actions: .thread(uri: route.uri))
+                            postRow(reply.row, actions: .thread(uri: uri), showsAncestors: false)
                                 // Indentation shows nesting; capped so deep
                                 // threads keep readable line lengths.
                                 .padding(min(reply.depth, 6) * 16, .leading)
@@ -81,19 +86,35 @@ extension MainView {
                             Separator()
                         }
                     }
+                    .frame(maxWidth: 720)
                 }
                 .vexpand()
-                threadReplyBar(route: route)
+                threadReplyBar(uri: uri)
             }
         }
     }
 
-    @ViewBuilder func threadReplyBar(route: ThreadRoute) -> Body {
+    func reloadThread(uri: String) {
+        runCore {
+            let session = AppSession.shared.threadSession(for: uri)
+            await session.thread.load()
+            session.interactions.seedPosts(session.thread.allPosts)
+        }
+    }
+
+    @ViewBuilder func threadReplyBar(uri: String) -> Body {
         HStack(spacing: 8) {
             Entry("Reply to this thread…", text: $threadReplyText)
-                .activate { submitThreadReply(route: route) }
+                .activate { submitThreadReply(uri: uri) }
                 .hexpand()
-            Button("Reply") { submitThreadReply(route: route) }
+            Button(icon: .custom(name: "document-edit-symbolic")) {
+                if let root = onMain({ AppSession.shared.threadSession(for: uri).thread.rootPost }) {
+                    openComposer(replyTo: root)
+                }
+            }
+            .tooltip("Reply with the full composer")
+            .flat()
+            Button("Reply") { submitThreadReply(uri: uri) }
                 .style("suggested-action")
                 .insensitive(!canSubmitThreadReply)
         }
@@ -108,12 +129,12 @@ extension MainView {
     /// Replies to the thread's root through the shared ComposerViewModel
     /// (facets, reply refs, and publishing all come from core), then
     /// reloads the thread so the new reply appears in place.
-    func submitThreadReply(route: ThreadRoute) {
+    func submitThreadReply(uri: String) {
         guard canSubmitThreadReply else { return }
         let text = threadReplyText
         threadReplyText = ""
         runCore {
-            let session = AppSession.shared.threadSession(for: route.uri)
+            let session = AppSession.shared.threadSession(for: uri)
             guard let root = session.thread.rootPost else { return }
             let composer = ComposerViewModel(service: AppSession.shared.service, replyTo: root)
             composer.slots[0].text = text

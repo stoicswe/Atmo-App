@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(ImagePlayground)
+import ImagePlayground
+#endif
 import AtmoCore
 import PhotosUI
 import Translation
@@ -32,6 +35,8 @@ struct ComposerView: View {
     var replyTo: PostItem? = nil
     /// When set, the composer will embed this post as a quote post.
     var quotedPost: PostItem? = nil
+    /// Text to start the first post with (Siri / Shortcuts "New Post").
+    var initialText: String? = nil
     /// Optional callback fired on the main actor immediately after a successful submission,
     /// before the sheet is dismissed. Used by callers that need to react to success
     /// (e.g. PostActionsView marking a post as quoted for optimistic UI).
@@ -67,6 +72,7 @@ struct ComposerView: View {
     private var composerTitle: String {
         if quotedPost != nil { return "Quote Post" }
         if replyTo != nil { return "Reply" }
+        if viewModel?.isGhost == true { return "New Ghost" }
         return (viewModel?.slots.count ?? 1) > 1 ? "New Thread" : "New Post"
     }
 
@@ -91,6 +97,14 @@ struct ComposerView: View {
                                 replyTranslationBanner(post: replyPost, vm: vm)
                             }
 
+                            // ── Ghost Post banner ──
+                            if vm.isGhost {
+                                GhostComposerBanner()
+                                    .padding(.horizontal, AtmoTheme.Spacing.lg)
+                                    .padding(.top, AtmoTheme.Spacing.sm)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+
                             // ── Thread slots ──
                             ForEach(Array(vm.slots.enumerated()), id: \.element.id) { index, slot in
                                 SlotComposerRow(
@@ -101,6 +115,7 @@ struct ComposerView: View {
                                     isLast: index == vm.slots.count - 1,
                                     canRemove: vm.slots.count > 1,
                                     showQuotedPost: index == 0 ? vm.quotedPost : nil,
+                                    isGhost: vm.isGhost,
                                     onRemove: { vm.removeSlot(id: slot.id) }
                                 )
                                 .focused($focusedSlotID, equals: slot.id)
@@ -124,12 +139,21 @@ struct ComposerView: View {
                     .safeAreaInset(edge: .bottom) {
                         ComposerToolbar(viewModel: vm, showTranslationDisclosureOption: didUseTranslation)
                     }
+#if os(macOS)
+                    // macOS sheets push toolbar items into a bottom action
+                    // bar; the composer draws its own header instead so the
+                    // title sits top-left and Cancel / Drafts top-right,
+                    // matching the iOS navigation bar.
+                    .safeAreaInset(edge: .top) {
+                        composerHeader(vm: vm)
+                    }
+#endif
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.isGhost)
                 }
             }
-            .navigationTitle(composerTitle)
 #if os(iOS)
+            .navigationTitle(composerTitle)
             .navigationBarTitleDisplayMode(.inline)
-#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { handleCancel() }
@@ -172,6 +196,7 @@ struct ComposerView: View {
                     }
                 }
             }
+#endif
             .confirmationDialog(
                 "What would you like to do?",
                 isPresented: $showDiscardAlert,
@@ -206,6 +231,10 @@ struct ComposerView: View {
                         replyTo: replyTo,
                         quotedPost: quotedPost
                     )
+                    if let initialText, !initialText.isEmpty,
+                       let vm = viewModel, vm.slots.first?.text.isEmpty == true {
+                        vm.slots[0].text = initialText
+                    }
                 }
                 // Auto-focus the first slot
                 if let firstID = viewModel?.slots.first?.id {
@@ -252,8 +281,71 @@ struct ComposerView: View {
                 isPresented: $showReplyTranslation,
                 text: replyTo?.text ?? ""
             )
+            // Accent wash inside every composer presentation. INSIDE the
+            // stack — iOS nav hosting covers outside-the-stack backgrounds.
+            .themedBackdrop()
         }
     }
+
+#if os(macOS)
+    // MARK: - macOS header
+    /// Title on the left; Cancel, Drafts, and the draft menu on the right
+    /// as Liquid Glass pills — the same actions the iOS toolbar carries.
+    @ViewBuilder
+    private func composerHeader(vm: ComposerViewModel) -> some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Text(composerTitle)
+                .font(.title3.weight(.semibold))
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.2), value: composerTitle)
+            Spacer()
+            Button("Cancel") { handleCancel() }
+                .font(.subheadline)
+                .buttonStyle(.glassPill)
+                .keyboardShortcut(.cancelAction)
+            Button {
+                showDraftsSheet = true
+            } label: {
+                Image(systemName: "doc.text")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.glassPill)
+            .accessibilityLabel("Drafts")
+            .help("Drafts")
+            Menu {
+                Button {
+                    dismissedExplicitly = true
+                    vm.saveDraft()
+                    onDraftSaved?()
+                    draftSavedAction()
+                    dismiss()
+                } label: {
+                    Label("Save Draft", systemImage: "square.and.arrow.down")
+                }
+                .disabled(!vm.hasMeaningfulContent)
+
+                Button(role: .destructive) {
+                    dismissedExplicitly = true
+                    vm.discardDraft()
+                    dismiss()
+                } label: {
+                    Label("Discard Draft", systemImage: "trash")
+                }
+                .disabled(!vm.hasMeaningfulContent)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.glassPill)
+            .accessibilityLabel("Draft options")
+        }
+        .padding(.horizontal, AtmoTheme.Spacing.lg)
+        .padding(.top, AtmoTheme.Spacing.lg)
+        .padding(.bottom, AtmoTheme.Spacing.sm)
+    }
+#endif
 
     // MARK: - Cancel handling
 
@@ -403,6 +495,9 @@ private struct SlotComposerRow: View {
     let canRemove: Bool
     /// Non-nil for the first slot when composing a quote post
     let showQuotedPost: PostItem?
+    /// Ghost Post mode: the field wears a dashed speech bubble and asks
+    /// for "a thought", Threads-style.
+    var isGhost: Bool = false
     let onRemove: () -> Void
 
     // Photo picking is per-slot (each Threads slot owns its media).
@@ -411,6 +506,23 @@ private struct SlotComposerRow: View {
     @State private var isLoadingVideo = false
     @State private var showGIFPicker = false
     @State private var showVoiceMemo = false
+#if os(iOS)
+    /// In-app camera (photo/video capture straight into the slot).
+    @State private var showCamera = false
+    /// PencilKit sketch, attached as a photo.
+    @State private var showDrawing = false
+#endif
+#if canImport(ImagePlayground)
+    /// Apple's Image Playground, when this device offers it and the
+    /// person turned the button on (Settings → Features; off by default).
+    @Environment(\.supportsImagePlayground) private var supportsImagePlayground
+    @AppStorage(ComposerFeatures.imagePlaygroundKey) private var imagePlaygroundEnabled = false
+    @State private var showImagePlayground = false
+    /// True from the tap until the Image Playground sheet reports back —
+    /// the system takes a moment to bring it up, and a silent button
+    /// reads as broken.
+    @State private var imagePlaygroundLaunching = false
+#endif
     /// Why the last picked video couldn't be attached (limit or transcode
     /// failure) — shown under the toolbar until the next attempt.
     @State private var videoError: String? = nil
@@ -460,7 +572,7 @@ private struct SlotComposerRow: View {
                     // Growing text field directly under the username
                     TextField(
                         isFirst
-                            ? (showQuotedPost != nil ? "Add a comment…" : "What's new?")
+                            ? (showQuotedPost != nil ? "Add a comment…" : (isGhost ? "Share a thought…" : "What's new?"))
                             : "Say more…",
                         text: $slot.text,
                         axis: .vertical
@@ -468,6 +580,16 @@ private struct SlotComposerRow: View {
                     .textFieldStyle(.plain)
                     .font(.body)
                     .frame(minHeight: 44, alignment: .topLeading)
+                    .padding(isGhost ? AtmoTheme.Spacing.md : 0)
+                    .background {
+                        if isGhost {
+                            // Dashed speech bubble — the ghost's outline.
+                            GhostBubbleShape()
+                                .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                                .foregroundStyle(Color.secondary.opacity(0.6))
+                        }
+                    }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isGhost)
 
                     // Attached images strip
                     if !slot.attachedImages.isEmpty {
@@ -497,6 +619,20 @@ private struct SlotComposerRow: View {
                             .padding(.vertical, AtmoTheme.Spacing.xs)
                     }
 
+#if canImport(ImagePlayground)
+                    if imagePlaygroundLaunching {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Opening Image Playground…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, AtmoTheme.Spacing.xs)
+                        .transition(.opacity)
+                    }
+#endif
+
                     // Media icon row — the Bluesky-supported subset of
                     // Threads' attachment icons.
                     mediaIconRow
@@ -520,6 +656,36 @@ private struct SlotComposerRow: View {
                 slot.attachGIF(gif)
             }
         }
+#if os(iOS)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraCaptureView { capture in
+                handleCameraCapture(capture)
+            }
+            .ignoresSafeArea()
+        }
+#endif
+#if os(iOS)
+        .sheet(isPresented: $showDrawing) {
+            DrawingSheet { data in
+                slot.addImage(data: data, fileName: "drawing-\(UUID().uuidString).png")
+            }
+        }
+#endif
+#if canImport(ImagePlayground)
+        .imagePlaygroundSheet(isPresented: $showImagePlayground, onCompletion: { url in
+            imagePlaygroundLaunching = false
+            if let data = try? Data(contentsOf: url) {
+                slot.addImage(data: data, fileName: "playground-\(UUID().uuidString).png")
+            }
+        }, onCancellation: {
+            imagePlaygroundLaunching = false
+        })
+        // Belt and braces: whatever way the sheet goes away, the
+        // indicator goes with it.
+        .onChange(of: showImagePlayground) { _, presented in
+            if !presented { imagePlaygroundLaunching = false }
+        }
+#endif
         .sheet(isPresented: $showVoiceMemo) {
             // The take attaches as an audio REFERENCE — the waveform video
             // renders at publish time (PostPublisher), not here.
@@ -557,6 +723,25 @@ private struct SlotComposerRow: View {
         let imageCount = slot.attachedImages.count
         let hasVideo = slot.attachedVideo != nil
         return HStack(spacing: AtmoTheme.Spacing.lg) {
+#if os(iOS)
+            // Camera — shoot a photo or video straight into the slot. The
+            // capture also lands in the user's photo library.
+            if CameraCaptureView.isAvailable {
+                Button {
+                    Haptics.tap()
+                    showCamera = true
+                } label: {
+                    Image(systemName: "camera")
+                        .font(.body)
+                        .foregroundStyle(imageCount >= 4 || hasVideo
+                                         ? Color.secondary.opacity(0.4) : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(imageCount >= 4 || hasVideo)
+                .accessibilityLabel("Take a photo or video")
+            }
+#endif
+
             PhotosPicker(
                 selection: $selectedItems,
                 maxSelectionCount: 4 - imageCount,
@@ -623,6 +808,49 @@ private struct SlotComposerRow: View {
             .disabled(hasVideo)
             .accessibilityLabel("Record voice memo")
 
+#if os(iOS)
+            // Drawing — a PencilKit sketch, attached as a photo.
+            Button {
+                Haptics.tap()
+                showDrawing = true
+            } label: {
+                Image(systemName: "pencil.and.outline")
+                    .font(.body)
+                    .foregroundStyle(imageCount >= 4 || hasVideo
+                                     ? Color.secondary.opacity(0.4) : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(imageCount >= 4 || hasVideo)
+            .accessibilityLabel("Add a drawing")
+#endif
+
+#if canImport(ImagePlayground)
+            // Image Playground — only where Apple Intelligence offers it
+            // and the feature switch is on.
+            if supportsImagePlayground, imagePlaygroundEnabled {
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) { imagePlaygroundLaunching = true }
+                    showImagePlayground = true
+                } label: {
+                    if imagePlaygroundLaunching {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "apple.image.playground")
+                            .font(.body)
+                            .foregroundStyle(imageCount >= 4 || hasVideo
+                                             ? Color.secondary.opacity(0.4) : Color.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(imageCount >= 4 || hasVideo || imagePlaygroundLaunching)
+                .accessibilityLabel(imagePlaygroundLaunching
+                                    ? "Opening Image Playground"
+                                    : "Create an image with Image Playground")
+            }
+#endif
+
             if isLoadingVideo {
                 ProgressView()
                     .controlSize(.small)
@@ -688,10 +916,23 @@ private struct SlotComposerRow: View {
             guard let raw = try await item.loadTransferable(type: Data.self) else {
                 throw VideoPreparer.PrepareError.unreadable
             }
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("atmo-video-ref-\(UUID().uuidString).mov")
+            // Composer media store (not tmp): drafts reference this file,
+            // so system temp cleanup must never eat it.
+            let url = ComposerMediaFiles.newVideoURL(fileExtension: "mov")
             try raw.write(to: url)
+            await attachVideoReference(at: url)
+        } catch {
+            videoError = "Couldn't read that video. Try a different clip."
+        }
+    }
 
+    /// Validates a composer-owned video file (length cap, readability),
+    /// reads its display dimensions, and attaches it as a reference.
+    /// Shared by the photo-library pick and the in-app camera. Sets
+    /// `videoError` (and removes the file) when the clip can't be posted.
+    @MainActor
+    private func attachVideoReference(at url: URL) async {
+        do {
             let asset = AVURLAsset(url: url)
             guard let duration = try? await asset.load(.duration).seconds, duration.isFinite else {
                 try? FileManager.default.removeItem(at: url)
@@ -709,6 +950,44 @@ private struct SlotComposerRow: View {
             videoError = "Couldn't read that video. Try a different clip."
         }
     }
+
+#if os(iOS)
+    // MARK: - Camera capture
+
+    /// A capture from the in-app camera: keep a copy in the user's photo
+    /// library (add-only, best-effort), then attach it to the slot exactly
+    /// like picked media — the preview tiles show it, and publishing runs
+    /// through PostPublisher's background pipeline on Post.
+    private func handleCameraCapture(_ capture: CameraCaptureView.Capture) {
+        videoError = nil
+        switch capture {
+        case .photo(let image):
+            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+            slot.addImage(data: data, fileName: "camera-\(UUID().uuidString).jpg")
+            // Same on-device description pass as picked photos.
+            if let attached = slot.attachedImages.last, attached.altText.isEmpty {
+                autoGenerateAltText(for: attached.id, data: attached.data)
+            }
+
+        case .video(let cameraTempURL):
+            // The camera's temp file dies with its UI — copy it NOW,
+            // synchronously, into the composer media store (draftable,
+            // safe from temp cleanup).
+            let kept = ComposerMediaFiles.newVideoURL(fileExtension: "mov")
+            do {
+                try FileManager.default.copyItem(at: cameraTempURL, to: kept)
+            } catch {
+                videoError = "Couldn't keep that recording. Try again."
+                return
+            }
+            UISaveVideoAtPathToSavedPhotosAlbum(kept.path, nil, nil, nil)
+            Task { @MainActor in
+                await attachVideoReference(at: kept)
+            }
+        }
+    }
+#endif
 
     // MARK: - GIF chip
 
@@ -916,6 +1195,7 @@ private struct ComposerDraftsSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .themedBackdrop()
         }
 #if os(macOS)
         .frame(minWidth: 400, minHeight: 460)
@@ -1001,6 +1281,7 @@ private struct AltTextEditorSheet: View {
                 }
             }
             .onAppear { text = initialText }
+            .themedBackdrop()
         }
 #if os(macOS)
         .frame(minWidth: 440, minHeight: 540)
@@ -1024,3 +1305,46 @@ extension Image {
     }
 }
 #endif
+
+
+// MARK: - Ghost composer pieces
+/// The note at the top of a ghost composition.
+private struct GhostComposerBanner: View {
+    var body: some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Image(systemName: "moon.haze.fill")
+                .foregroundStyle(AtmoColors.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Archives after 24 hours")
+                    .font(.subheadline.weight(.semibold))
+                Text("Replies and quotes are off. Readers on Atomic can message you instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(AtmoTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+}
+
+/// A rounded speech bubble with a small tail at the top-leading corner,
+/// pointing back at the avatar.
+private struct GhostBubbleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius: CGFloat = 20
+        let tail: CGFloat = 10
+        var p = Path()
+        let body = rect.insetBy(dx: 0, dy: 0)
+        p.addRoundedRect(in: body, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+        // Tail: a little notch off the top-left, like Threads' bubble.
+        p.move(to: CGPoint(x: body.minX + radius * 0.35, y: body.minY + radius * 0.35))
+        p.addLine(to: CGPoint(x: body.minX - tail * 0.2, y: body.minY - tail * 0.2))
+        p.addLine(to: CGPoint(x: body.minX + radius * 0.9, y: body.minY + 1))
+        return p
+    }
+}

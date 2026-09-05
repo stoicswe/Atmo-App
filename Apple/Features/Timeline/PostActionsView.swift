@@ -13,9 +13,12 @@ struct PostActionsView: View {
     /// not for reply rows.
     var showBookmark: Bool = false
 
+    @Environment(ATProtoService.self) private var service
     @State private var showRepostMenu: Bool = false
     @State private var showReplyComposer: Bool = false
     @State private var showQuoteComposer: Bool = false
+    /// "Send post in a message" — the in-app DM recipient picker.
+    @State private var showSendSheet: Bool = false
     /// Tracks whether a quote post was successfully submitted this session so
     /// the repost button can turn green immediately without waiting for a timeline refresh.
     @State private var didQuotePost: Bool = false
@@ -24,11 +27,48 @@ struct PostActionsView: View {
     /// Falls back to the original `post` if it's no longer in the list
     /// (e.g. while a refresh replaces the array).
     private var livePost: PostItem {
-        viewModel.posts.first(where: { $0.uri == post.uri }) ?? post
+        // livePost(uri:) also finds posts the timeline holds only as thread
+        // context above another post (the action row on ancestor rows).
+        viewModel.livePost(uri: post.uri) ?? post
+    }
+
+    /// Ghost posts: thread closed, counts hidden, Reply becomes a private
+    /// message to the author — offered only when messaging is possible.
+    private var isGhost: Bool { GhostPostPolicy.isGhost(livePost) }
+
+    /// The viewer can DM at all: chat available, their own DMs not turned
+    /// off, not their own post, and family controls allowing a new chat.
+    private var canReplyPrivately: Bool {
+        guard isGhost, service.atProtoChat != nil,
+              livePost.authorDID != service.currentUserDID
+        else { return false }
+        if let did = service.currentUserDID,
+           AccountProfileCache.shared.snapshot(for: did)?.dmsEnabled == false {
+            return false
+        }
+        return ParentalControlsStore.shared.canStartDM(with: livePost.authorHandle)
+    }
+
+    private func replyPrivately() {
+        Haptics.tap()
+        Task {
+            let vm = NewConversationViewModel(service: service)
+            if let convo = await vm.openConversation(with: livePost.authorDID) {
+                AppRouter.shared.pendingConversation = convo
+            }
+        }
     }
 
     var body: some View {
         HStack(spacing: AtmoTheme.Spacing.xl) {
+            if isGhost {
+                if canReplyPrivately {
+                    ActionButton(icon: "envelope", count: 0, color: .secondary) {
+                        replyPrivately()
+                    }
+                    .accessibilityLabel("Reply privately")
+                }
+            } else {
             // Reply
             ActionButton(
                 icon: "bubble.left",
@@ -38,14 +78,18 @@ struct PostActionsView: View {
                 Haptics.tap()
                 showReplyComposer = true
             }
+            }
 
+            // Ghost posts: Bluesky can't block reposts, so Atmo simply
+            // doesn't offer the button (or show the count) on them.
+            if !isGhost {
             // Repost — green when the user has reposted OR quoted this post.
             // Uses a popover on macOS (confirmationDialog is unreliable
             // in NavigationSplitView detail columns on macOS) and confirmationDialog on iOS.
             let isRepostActive = livePost.isReposted || livePost.isQuoted || didQuotePost
             ActionButton(
                 icon: "arrow.2.squarepath",
-                count: livePost.repostCount,
+                count: isGhost ? 0 : livePost.repostCount,
                 color: isRepostActive ? AtmoColors.repostGreen : .secondary,
                 filled: isRepostActive
             ) {
@@ -86,11 +130,12 @@ struct PostActionsView: View {
                 Button("Cancel", role: .cancel) {}
             }
 #endif
+            }
 
             // Like
             ActionButton(
                 icon: livePost.isLiked ? "heart.fill" : "heart",
-                count: livePost.likeCount,
+                count: isGhost ? 0 : livePost.likeCount,
                 color: livePost.isLiked ? AtmoColors.likeRed : .secondary,
                 filled: livePost.isLiked
             ) {
@@ -99,6 +144,14 @@ struct PostActionsView: View {
                 if captured.isLiked { Haptics.soft() } else { Haptics.heartbeat() }
                 Task { await viewModel.toggleLike(post: captured) }
             }
+
+            // Send — share the post into a conversation inside the app
+            // (it arrives as a tappable post card, like the official client).
+            ActionButton(icon: "paperplane", count: 0, color: .secondary) {
+                Haptics.tap()
+                showSendSheet = true
+            }
+            .accessibilityLabel("Send post in a message")
 
             Spacer()
 
@@ -140,6 +193,9 @@ struct PostActionsView: View {
         }
         .sheet(isPresented: $showReplyComposer) {
             ComposerView(replyTo: livePost)
+        }
+        .sheet(isPresented: $showSendSheet) {
+            SendPostSheet(post: livePost)
         }
         .sheet(isPresented: $showQuoteComposer) {
             // Capture post identity at sheet-open time so the callback uses

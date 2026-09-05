@@ -58,6 +58,23 @@ public final class BookmarkStore {
         persist()
     }
 
+    /// Adds a saved snapshot back (a post returning from the Vault).
+    /// No-op when it's already bookmarked.
+    public func add(_ bookmark: BookmarkedPost) {
+        guard !bookmarks.contains(where: { $0.uri == bookmark.uri }) else { return }
+        bookmarks.insert(bookmark, at: 0)
+        indexer.index([bookmark])
+        persist()
+    }
+
+    /// Removes one bookmark by URI, dropping it from the search index too.
+    public func remove(uri: String) {
+        guard let index = bookmarks.firstIndex(where: { $0.uri == uri }) else { return }
+        bookmarks.remove(at: index)
+        indexer.removeFromIndex(uris: [uri])
+        persist()
+    }
+
     public func remove(at offsets: IndexSet) {
         let removed = offsets.map { bookmarks[$0] }
         // Highest index first so earlier removals don't shift later ones.
@@ -108,6 +125,8 @@ public final class BookmarkStore {
     private func persist() {
         saveToUserDefaults(bookmarks)
         saveToSyncedStore(bookmarks)
+        // Enhanced copies follow the bookmark: kept while it exists.
+        EnhancedImageStore.shared.reconcileFromStores()
     }
 
     // MARK: - UserDefaults (local, primary)

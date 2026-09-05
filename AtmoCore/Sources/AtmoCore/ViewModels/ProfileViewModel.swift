@@ -256,6 +256,85 @@ public final class ProfileViewModel {
         profile = updated
     }
 
+    /// Reassigns the whole struct for the same Observation reason as
+    /// `setFollowState`.
+    private func mutateProfile(_ body: (inout ProfileModel) -> Void) {
+        guard var updated = profile else { return }
+        body(&updated)
+        profile = updated
+    }
+
+    /// Re-fetches just the profile record (not the feed) so viewer state
+    /// (block / mute / follow) reflects the server after a moderation action.
+    public func refreshProfile() async {
+        guard let kit = service.atProtoKit,
+              let identifier = profile?.did ?? actorDID else { return }
+        if let output = try? await kit.getProfile(for: identifier) {
+            profile = ProfileModel(profile: output)
+        }
+    }
+
+    // MARK: - Hide reposts in feeds
+
+    /// Device-local: reposts BY this account are dropped from feeds.
+    public var isHidingReposts: Bool {
+        guard let did = profile?.did ?? actorDID else { return false }
+        return HiddenRepostsStore.shared.isHidingReposts(from: did)
+    }
+
+    public func setHidingReposts(_ hidden: Bool) {
+        guard let did = profile?.did ?? actorDID else { return }
+        HiddenRepostsStore.shared.setHidingReposts(hidden, from: did)
+    }
+
+    // MARK: - Mute / Unmute
+
+    public func toggleMute() async {
+        guard let kit = service.atProtoKit, let profile else { return }
+        let wasMuted = profile.isMuted
+        mutateProfile { $0.isMuted = !wasMuted }
+        do {
+            if wasMuted {
+                try await kit.unmuteActor(profile.did)
+            } else {
+                try await kit.muteActor(profile.did)
+            }
+        } catch {
+            mutateProfile { $0.isMuted = wasMuted }
+            self.error = error
+        }
+    }
+
+    // MARK: - Block / Unblock
+
+    public func toggleBlock() async {
+        guard let bluesky = service.atProtoBluesky, let profile else { return }
+        if let blockURI = profile.blockURI {
+            mutateProfile { $0.blockURI = nil }
+            do {
+                try await bluesky.deleteRecord(.recordURI(atURI: blockURI))
+            } catch {
+                mutateProfile { $0.blockURI = blockURI }
+                self.error = error
+                return
+            }
+        } else {
+            do {
+                let result = try await bluesky.createBlockRecord(ofType: .actorBlock(actorDID: profile.did))
+                // Blocking severs the follow relationship server-side.
+                mutateProfile {
+                    $0.blockURI = result.recordURI
+                    $0.isFollowing = false
+                    $0.followURI = nil
+                }
+            } catch {
+                self.error = error
+                return
+            }
+        }
+        await refreshProfile()
+    }
+
     public func toggleFollow() async {
         guard let bluesky = service.atProtoBluesky,
               let profile = profile else { return }

@@ -9,7 +9,12 @@ struct AvatarView: View {
     var body: some View {
         Group {
             if let url = url {
-                AsyncCachedImage(url: url) { phase in
+                // Small avatars take the CDN's 128 px preset (1.4 KB vs 12 KB
+                // for the 1000 px one) and decode to the drawn size.
+                AsyncCachedImage(
+                    url: size <= 64 ? BlueskyCDN.avatarThumbnail(url) : url,
+                    maxPixelSize: size * 3
+                ) { phase in
                     switch phase {
                     case .success(let image):
                         image

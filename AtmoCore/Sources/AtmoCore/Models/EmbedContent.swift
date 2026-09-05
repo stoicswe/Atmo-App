@@ -24,11 +24,14 @@ public struct EmbedContent: Hashable, Sendable {
         public let uri: String
         public let title: String
         public let linkDescription: String
+        /// The site's social-card image, when the loader supplied one.
+        public let thumbnailURL: URL?
 
-        public init(uri: String, title: String, linkDescription: String) {
+        public init(uri: String, title: String, linkDescription: String, thumbnailURL: URL? = nil) {
             self.uri = uri
             self.title = title
             self.linkDescription = linkDescription
+            self.thumbnailURL = thumbnailURL
         }
 
         /// The site's host, for the compact "title — host" treatment.
@@ -51,15 +54,35 @@ public struct EmbedContent: Hashable, Sendable {
         }
     }
 
+    public struct Video: Hashable, Sendable {
+        /// The HLS playlist (`.m3u8`) the video streams from.
+        public let playlistURL: URL?
+        public let thumbnailURL: URL?
+        public let altText: String?
+        /// Native pixel size when the server supplied one — front ends
+        /// derive the player box's aspect ratio from it.
+        public let width: Int?
+        public let height: Int?
+
+        public init(playlistURL: URL?, thumbnailURL: URL?, altText: String?, width: Int?, height: Int?) {
+            self.playlistURL = playlistURL
+            self.thumbnailURL = thumbnailURL
+            self.altText = altText
+            self.width = width
+            self.height = height
+        }
+    }
+
     public var images: [ImageItem] = []
     public var externalLink: ExternalLink? = nil
     public var quote: Quote? = nil
-    /// True when the post embeds a video (rendered as a "watch on web"
-    /// affordance by front ends without a player).
-    public var hasVideo: Bool = false
+    public var video: Video? = nil
+
+    /// Kept for front ends that only need the fact, not the stream.
+    public var hasVideo: Bool { video != nil }
 
     public var isEmpty: Bool {
-        images.isEmpty && externalLink == nil && quote == nil && !hasVideo
+        images.isEmpty && externalLink == nil && quote == nil && video == nil
     }
 
     public init() {}
@@ -77,8 +100,8 @@ extension PostItem {
         case .embedImagesView(let view):
             content.images = view.images.map(EmbedContent.ImageItem.init(viewImage:))
 
-        case .embedVideoView:
-            content.hasVideo = true
+        case .embedVideoView(let view):
+            content.video = EmbedContent.Video(view: view)
 
         case .embedExternalView(let view):
             content.externalLink = EmbedContent.ExternalLink(viewExternal: view.external)
@@ -90,8 +113,8 @@ extension PostItem {
             switch view.media {
             case .embedImagesView(let images):
                 content.images = images.images.map(EmbedContent.ImageItem.init(viewImage:))
-            case .embedVideoView:
-                content.hasVideo = true
+            case .embedVideoView(let video):
+                content.video = EmbedContent.Video(view: video)
             case .embedExternalView(let external):
                 content.externalLink = EmbedContent.ExternalLink(viewExternal: external.external)
             default:
@@ -122,7 +145,20 @@ extension EmbedContent.ExternalLink {
         self.init(
             uri: viewExternal.uri,
             title: viewExternal.title,
-            linkDescription: viewExternal.description
+            linkDescription: viewExternal.description,
+            thumbnailURL: viewExternal.thumbnailImageURL
+        )
+    }
+}
+
+extension EmbedContent.Video {
+    init(view: AppBskyLexicon.Embed.VideoDefinition.View) {
+        self.init(
+            playlistURL: URL(string: view.playlistURI),
+            thumbnailURL: view.thumbnailImageURL.flatMap(URL.init(string:)),
+            altText: view.altText,
+            width: view.aspectRatio?.width,
+            height: view.aspectRatio?.height
         )
     }
 }

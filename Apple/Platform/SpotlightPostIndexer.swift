@@ -1,6 +1,7 @@
 #if canImport(CoreSpotlight)
 import Foundation
 import CoreSpotlight
+import AppIntents
 import AtmoCore
 
 /// CoreSpotlight implementation of AtmoCore's `PostIndexing`: donates
@@ -64,6 +65,14 @@ struct SpotlightPostIndexer: PostIndexing {
                 print("[SpotlightPostIndexer] Spotlight indexing error: \(error.localizedDescription)")
             }
         }
+
+        // The same bookmarks as App Entities, which is what Siri and the
+        // semantic side of Spotlight search through. Only ever called with
+        // ordinary bookmarks — the Vault has no path into this indexer.
+        let entities = bookmarks.map(BookmarkEntity.init(bookmark:))
+        Task {
+            try? await CSSearchableIndex.default().indexAppEntities(entities)
+        }
     }
 
     /// Remove specific bookmark URIs from the Spotlight index.
@@ -74,6 +83,9 @@ struct SpotlightPostIndexer: PostIndexing {
             if let error {
                 print("[SpotlightPostIndexer] Spotlight deindex error: \(error.localizedDescription)")
             }
+        }
+        Task {
+            try? await CSSearchableIndex.default().deleteAppEntities(identifiedBy: uris, ofType: BookmarkEntity.self)
         }
     }
 }

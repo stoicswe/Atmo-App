@@ -255,7 +255,7 @@ public final class TimelineViewModel {
         do {
             // Fetch one page from the start (no cursor = freshest posts)
             let output = try await fetchPage(kit, cursor: nil)
-            let fetched = output.feed.map { PostItem(feedPost: $0) }
+            let fetched = HiddenRepostsStore.shared.filter(output.feed.map { PostItem(feedPost: $0) })
 
             // Find which items are genuinely new. "Already in the list"
             // must cover everything the list REPRESENTS — the cells AND the
@@ -352,7 +352,7 @@ public final class TimelineViewModel {
         guard let kit = service.atProtoKit else { return }
         do {
             let output = try await fetchPage(kit, cursor: cursor)
-            let newItems = output.feed.map { PostItem(feedPost: $0) }
+            let newItems = HiddenRepostsStore.shared.filter(output.feed.map { PostItem(feedPost: $0) })
             let dedupedItems = Self.collapseThreadSlices(
                 newItems,
                 enforceChronology: feedSource.isFollowing
@@ -511,29 +511,78 @@ public final class TimelineViewModel {
 
     // MARK: - Like
 
+    /// The freshest copy of a post wherever the timeline holds it: as a
+    /// top-level row, or as thread context (`threadAncestors`) above one.
+    public func livePost(uri: String) -> PostItem? {
+        if let top = posts.first(where: { $0.uri == uri }) { return top }
+        for post in posts {
+            if let ancestor = post.threadAncestors.first(where: { $0.uri == uri }) {
+                return ancestor
+            }
+        }
+        return nil
+    }
+
+    /// Applies `body` to every copy of the post with `uri` — top-level rows
+    /// and thread-context ancestors alike — so a like on a post shown as
+    /// context in one cell lights up the same post wherever else it
+    /// appears. Returns false when the timeline holds no such post.
+    /// Pure; unit-tested.
+    @discardableResult
+    nonisolated static func mutatePost(
+        uri: String,
+        in posts: inout [PostItem],
+        _ body: (inout PostItem) -> Void
+    ) -> Bool {
+        var found = false
+        for i in posts.indices {
+            if posts[i].uri == uri {
+                body(&posts[i])
+                found = true
+            }
+            for j in posts[i].threadAncestors.indices where posts[i].threadAncestors[j].uri == uri {
+                body(&posts[i].threadAncestors[j])
+                found = true
+            }
+        }
+        return found
+    }
+
+    private func mutate(uri: String, _ body: (inout PostItem) -> Void) {
+        Self.mutatePost(uri: uri, in: &posts, body)
+    }
+
     public func toggleLike(post: PostItem) async {
         guard let bluesky = service.atProtoBluesky,
-              let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+              let current = livePost(uri: post.uri) else { return }
 
-        if posts[index].isLiked {
+        if current.isLiked {
             // Unlike
-            guard let likeURI = posts[index].likeURI else { return }
-            posts[index].isLiked = false
-            posts[index].likeCount = max(0, posts[index].likeCount - 1)
-            posts[index].likeURI = nil
+            guard let likeURI = current.likeURI else { return }
+            mutate(uri: post.uri) {
+                $0.isLiked = false
+                $0.likeCount = max(0, $0.likeCount - 1)
+                $0.likeURI = nil
+            }
             do {
                 try await bluesky.deleteRecord(.recordURI(atURI: likeURI))
+                // Drop it from the synced Liked history.
+                LikedPostsStore.shared.recordUnlike(uri: post.uri)
             } catch {
                 // Rollback optimistic update
-                posts[index].isLiked = true
-                posts[index].likeCount += 1
-                posts[index].likeURI = likeURI
+                mutate(uri: post.uri) {
+                    $0.isLiked = true
+                    $0.likeCount += 1
+                    $0.likeURI = likeURI
+                }
                 self.error = error
             }
         } else {
             // Like
-            posts[index].isLiked = true
-            posts[index].likeCount += 1
+            mutate(uri: post.uri) {
+                $0.isLiked = true
+                $0.likeCount += 1
+            }
             do {
                 let result = try await bluesky.createLikeRecord(
                     ComAtprotoLexicon.Repository.StrongReference(
@@ -541,12 +590,16 @@ public final class TimelineViewModel {
                         cidHash: post.cid
                     )
                 )
-                posts[index].likeURI = result.recordURI
+                mutate(uri: post.uri) { $0.likeURI = result.recordURI }
+                // Keep the synced Liked history (the ♥ library section).
+                LikedPostsStore.shared.recordLike(post)
             } catch {
                 // Rollback
-                posts[index].isLiked = false
-                posts[index].likeCount = max(0, posts[index].likeCount - 1)
-                posts[index].likeURI = nil
+                mutate(uri: post.uri) {
+                    $0.isLiked = false
+                    $0.likeCount = max(0, $0.likeCount - 1)
+                    $0.likeURI = nil
+                }
                 self.error = error
             }
         }
@@ -556,24 +609,30 @@ public final class TimelineViewModel {
 
     public func toggleRepost(post: PostItem) async {
         guard let bluesky = service.atProtoBluesky,
-              let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+              let current = livePost(uri: post.uri) else { return }
 
-        if posts[index].isReposted {
-            guard let repostURI = posts[index].repostURI else { return }
-            posts[index].isReposted = false
-            posts[index].repostCount = max(0, posts[index].repostCount - 1)
-            posts[index].repostURI = nil
+        if current.isReposted {
+            guard let repostURI = current.repostURI else { return }
+            mutate(uri: post.uri) {
+                $0.isReposted = false
+                $0.repostCount = max(0, $0.repostCount - 1)
+                $0.repostURI = nil
+            }
             do {
                 try await bluesky.deleteRecord(.recordURI(atURI: repostURI))
             } catch {
-                posts[index].isReposted = true
-                posts[index].repostCount += 1
-                posts[index].repostURI = repostURI
+                mutate(uri: post.uri) {
+                    $0.isReposted = true
+                    $0.repostCount += 1
+                    $0.repostURI = repostURI
+                }
                 self.error = error
             }
         } else {
-            posts[index].isReposted = true
-            posts[index].repostCount += 1
+            mutate(uri: post.uri) {
+                $0.isReposted = true
+                $0.repostCount += 1
+            }
             do {
                 let result = try await bluesky.createRepostRecord(
                     ComAtprotoLexicon.Repository.StrongReference(
@@ -581,11 +640,13 @@ public final class TimelineViewModel {
                         cidHash: post.cid
                     )
                 )
-                posts[index].repostURI = result.recordURI
+                mutate(uri: post.uri) { $0.repostURI = result.recordURI }
             } catch {
-                posts[index].isReposted = false
-                posts[index].repostCount = max(0, posts[index].repostCount - 1)
-                posts[index].repostURI = nil
+                mutate(uri: post.uri) {
+                    $0.isReposted = false
+                    $0.repostCount = max(0, $0.repostCount - 1)
+                    $0.repostURI = nil
+                }
                 self.error = error
             }
         }

@@ -39,8 +39,13 @@ struct NewConversationView: View {
                 }
             }
             .sheet(item: $askTarget) { candidate in
+                // AskToDMSheet lives in the platform layer (shared with the
+                // watch target), which has no theme modifiers — the wash is
+                // applied here at the presentation site instead.
                 AskToDMSheet(handle: candidate.handle, displayName: candidate.displayName)
+                    .themedBackdrop()
             }
+            .themedBackdrop()
         }
         .task {
             if viewModel == nil {

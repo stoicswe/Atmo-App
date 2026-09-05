@@ -66,33 +66,150 @@ public final class ATProtoService {
 
     // MARK: - Authentication
 
-    /// Authenticates with Bluesky using a handle and App Password.
-    /// If 2FA is required, sets `requiresTwoFactor = true` and awaits
-    /// `submitTwoFactorCode(_:)` to be called from the UI.
+    /// Credentials held between the first sign-in attempt and the emailed
+    /// two-factor code; cleared once a session is installed or cancelled.
+    private struct PendingLogin {
+        let handle: String
+        let password: String
+        let pdsURL: URL
+    }
+    @ObservationIgnored private var pendingLogin: PendingLogin? = nil
+
+    /// Compatibility entry point (watch, Linux): resolves the PDS itself.
     public func login(handle: String, appPassword: String) async {
+        await login(handle: handle, password: appPassword, pdsURL: nil)
+    }
+
+    /// Signs in with a handle (or email) and either the account password
+    /// or an App Password.
+    ///
+    /// The session is created against the account's own PDS — `pdsURL`
+    /// when the UI already resolved it, otherwise resolved here, falling
+    /// back to bsky.social. With the account password on a 2FA-enabled
+    /// account the server emails a code and answers
+    /// `AuthFactorTokenRequired`: `requiresTwoFactor` flips on, the
+    /// credentials are held, and `verifyTwoFactorCode(_:)` finishes the
+    /// sign-in. App Passwords never trigger 2FA.
+    public func login(handle: String, password: String, pdsURL: URL? = nil) async {
         isLoading = true
         authError = nil
         requiresTwoFactor = false
+        pendingLogin = nil
 
-        do {
-            let config = makeConfiguration()
-
-            // authenticate() may internally pause awaiting a 2FA code.
-            // We surface this to the UI by listening to the needsCode callback.
-            try await config.authenticate(with: handle, password: appPassword)
-
-            await buildStack(config: config, fallbackHandle: handle)
-        } catch {
-            authError = error
-            authPhase = .unauthenticated
+        let pds: URL
+        if let pdsURL {
+            pds = pdsURL
+        } else if let resolved = try? await PDSResolver.resolve(handle: handle) {
+            pds = resolved
+        } else {
+            pds = PDSResolver.defaultPDS
         }
 
+        await attemptSession(handle: handle, password: password, pdsURL: pds, token: nil)
         isLoading = false
     }
 
-    /// Submits a 2FA code when the authentication flow requires it.
+    /// Finishes a sign-in that stopped at two-factor: retries session
+    /// creation with the emailed code. A rejected code keeps the 2FA
+    /// step up with `authError` set, so the person can try again.
+    public func verifyTwoFactorCode(_ code: String) async {
+        guard let pending = pendingLogin else { return }
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isLoading = true
+        authError = nil
+        await attemptSession(
+            handle: pending.handle,
+            password: pending.password,
+            pdsURL: pending.pdsURL,
+            token: trimmed
+        )
+        isLoading = false
+    }
+
+    /// Fire-and-forget form of `verifyTwoFactorCode(_:)` for callers
+    /// without an async context (watch, Linux).
     public func submitTwoFactorCode(_ code: String) {
-        configuration?.receiveCodeFromUser(code)
+        Task { await verifyTwoFactorCode(code) }
+    }
+
+    /// Abandons a sign-in waiting on its two-factor code.
+    public func cancelTwoFactor() {
+        pendingLogin = nil
+        requiresTwoFactor = false
+        authError = nil
+        authPhase = .unauthenticated
+    }
+
+    /// One `createSession` round-trip, with or without a 2FA token, and
+    /// the session install on success.
+    private func attemptSession(handle: String, password: String, pdsURL: URL, token: String?) async {
+        do {
+            let kit = await ATProtoKit(
+                apiClientConfiguration: .init(urlSessionConfiguration: Self.makeURLSessionConfiguration()),
+                pdsURL: pdsURL.absoluteString,
+                canUseBlueskyRecords: false
+            )
+            let output = try await kit.createSession(
+                with: handle,
+                and: password,
+                authenticationFactorToken: token
+            )
+            try await installSession(output, pdsURL: pdsURL)
+            pendingLogin = nil
+            requiresTwoFactor = false
+        } catch {
+            authPhase = .unauthenticated
+            if Self.isTwoFactorRequired(error) || token != nil {
+                // First pass: the server just emailed the code — hold the
+                // credentials and ask for it. Retry pass: the code was
+                // rejected — stay on the 2FA step and show why.
+                pendingLogin = PendingLogin(handle: handle, password: password, pdsURL: pdsURL)
+                requiresTwoFactor = true
+                if token != nil { authError = error }
+            } else {
+                authError = error
+            }
+        }
+    }
+
+    /// Hands a session we created ourselves to ATProtoKit: the refresh
+    /// token is stored under the exact key and encoding the library uses
+    /// (`<session uuid>.refreshToken`, UTF-8 — the auth invariant in
+    /// CLAUDE.md), then `refreshSession()` exchanges it and registers the
+    /// user session the same way a cold-start restore does.
+    private func installSession(
+        _ output: ComAtprotoLexicon.Server.CreateSessionOutput,
+        pdsURL: URL
+    ) async throws {
+        let store = Atmo.platform.makeCredentialStore()
+        let uuid = Atmo.platform.secrets.stableSessionUUID()
+        try await store.saveValue(
+            Data(output.refreshToken.utf8),
+            forKey: "\(uuid.uuidString).refreshToken"
+        )
+        PDSStore.save(pdsURL)
+        let config = makeConfiguration()
+        try await config.refreshSession()
+        await buildStack(config: config, fallbackHandle: output.handle)
+    }
+
+    /// The server's "email a code first" answer, in either of the HTTP
+    /// statuses PDS implementations use for it.
+    nonisolated static func isTwoFactorRequired(_ error: Error) -> Bool {
+        guard let apiError = error as? ATAPIError else { return false }
+        switch apiError {
+        case .badRequest(let response):
+            return isTwoFactorRequired(code: response.error)
+        case .unauthorized(let response, _):
+            return isTwoFactorRequired(code: response.error)
+        default:
+            return false
+        }
+    }
+
+    nonisolated static func isTwoFactorRequired(code: String) -> Bool {
+        code == "AuthFactorTokenRequired"
     }
 
     /// Attempts to restore a previously authenticated session from the
@@ -141,10 +258,43 @@ public final class ATProtoService {
             // outcome is unknown: stay in `.restoring` so the UI keeps
             // its splash and a re-activation can run another attempt.
             if !Task.isCancelled && !(error is CancellationError) {
+                // Before surfacing the login form, try the stored App
+                // Password: ATProtoKit persists it (for its own expiry
+                // re-auth), but a refresh token invalidated by a rotation
+                // race — e.g. the app killed mid-refresh — bypasses that
+                // path and used to force a manual re-login.
+                isLoading = false
+                if await reauthenticateFromStoredCredential() { return }
                 authPhase = .unauthenticated
             }
         }
         isLoading = false
+    }
+
+    /// Re-login with the credential ATProtoKit saved at authentication.
+    /// Tries the current session UUID's namespace first, then — when the
+    /// store can enumerate — any other stored password (the stable UUID
+    /// can rotate away from the namespace the credential was written
+    /// under, orphaning it). A successful login re-saves everything under
+    /// the current namespace, so the store self-heals.
+    /// Returns true when a session was established.
+    private func reauthenticateFromStoredCredential() async -> Bool {
+        guard let handle = Atmo.platform.secrets.loadLastHandle() else { return false }
+        let store = Atmo.platform.makeCredentialStore()
+        var keys = ["\(Atmo.platform.secrets.stableSessionUUID()).password"]
+        if let enumerable = store as? EnumerableCredentialStore,
+           let stored = try? await enumerable.allKeys() {
+            keys += stored.filter { $0.hasSuffix(".password") && !keys.contains($0) }
+        }
+        for key in keys {
+            guard let data = try? await store.loadValue(forKey: key),
+                  let password = String(data: data, encoding: .utf8),
+                  !password.isEmpty
+            else { continue }
+            await login(handle: handle, appPassword: password)
+            if isAuthenticated { return true }
+        }
+        return false
     }
 
     /// Signs out and clears all persisted state.
@@ -156,7 +306,16 @@ public final class ATProtoService {
         }
         clearLocalState()
         Atmo.platform.secrets.clearAll()
+        PDSStore.clear()
+        AccountProfileCache.shared.clear()
         PositionStore.shared.clear()
+    }
+
+    /// The PDS the stored session talks to (bsky.social until an
+    /// account-specific host is remembered at sign-in). Read-only; for
+    /// display in settings.
+    public var pdsURL: URL {
+        PDSStore.load() ?? PDSResolver.defaultPDS
     }
 
     // MARK: - Private Helpers
@@ -170,24 +329,43 @@ public final class ATProtoService {
     /// methods build throwaway sessions whose deallocation crashes
     /// corelibs-foundation mid-teardown.
     private func makeConfiguration() -> ATProtocolConfiguration {
-        #if canImport(FoundationNetworking)
-        let sessionConfiguration = URLSessionConfiguration.default
-        sessionConfiguration.protocolClasses = [LinuxSharedSessionURLProtocol.self]
+        // The stored session's own PDS; bsky.social for installs that
+        // signed in before the host was remembered.
+        let pdsURL = (PDSStore.load() ?? PDSResolver.defaultPDS).absoluteString
         return ATProtocolConfiguration(
+            pdsURL: pdsURL,
             credentialStore: Atmo.platform.makeCredentialStore(),
             sessionIdentifier: Atmo.platform.secrets.stableSessionUUID(),
-            configuration: sessionConfiguration
+            configuration: Self.makeURLSessionConfiguration()
         )
-        #else
-        return ATProtocolConfiguration(
-            credentialStore: Atmo.platform.makeCredentialStore(),
-            sessionIdentifier: Atmo.platform.secrets.stableSessionUUID()
-        )
+    }
+
+    /// The `URLSessionConfiguration` every ATProtoKit instance we build
+    /// (retained or one-shot) must use. On Linux it carries the
+    /// shared-session `URLProtocol` so no throwaway kit ever opens a curl
+    /// socket of its own; elsewhere it is the plain default.
+    nonisolated static func makeURLSessionConfiguration() -> URLSessionConfiguration {
+        let sessionConfiguration = URLSessionConfiguration.default
+        #if canImport(FoundationNetworking)
+        sessionConfiguration.protocolClasses = [LinuxSharedSessionURLProtocol.self]
         #endif
+        return sessionConfiguration
     }
 
     private func buildStack(config: ATProtocolConfiguration, fallbackHandle: String) async {
+        #if canImport(FoundationNetworking)
+        // See LinuxRequestAuthenticator: corelibs drops ATProtoKit's
+        // per-request "needs session" marker, so decide it ourselves.
+        let kit = await ATProtoKit(
+            sessionConfiguration: config,
+            apiClientConfiguration: APIClientConfiguration(
+                urlSessionConfiguration: Self.makeURLSessionConfiguration(),
+                requestAuthenticator: LinuxRequestAuthenticator(session: config)
+            )
+        )
+        #else
         let kit = await ATProtoKit(sessionConfiguration: config)
+        #endif
         let bluesky = ATProtoBluesky(atProtoKitInstance: kit)
         let chat = ATProtoBlueskyChat(atProtoKitInstance: kit)
 
@@ -216,6 +394,10 @@ public final class ATProtoService {
         }
 
         Atmo.platform.secrets.saveLastHandle(self.currentHandle ?? fallbackHandle)
+
+        // Ghost posts past their time come down as soon as we're signed in,
+        // and again on every return to the foreground.
+        GhostPostStore.shared.attach(service: self)
     }
 
     private func clearLocalState() {
@@ -228,5 +410,6 @@ public final class ATProtoService {
         authPhase = .unauthenticated
         authError = nil
         requiresTwoFactor = false
+        pendingLogin = nil
     }
 }

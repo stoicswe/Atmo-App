@@ -14,12 +14,37 @@ import SensitiveContentAnalysis
 struct SensitiveMediaShield: ViewModifier {
     /// Whether this media is explicit (Bluesky label or on-device analysis).
     let isSensitive: Bool
+    /// Stable identity for the reveal — the media URL, or the post URI —
+    /// so a Show here carries into every other view of the same media
+    /// (feed → thread, quote, search). Nil keeps the reveal local.
+    var key: String? = nil
+
+    /// The whole post is already under MatureContentShield — that veil
+    /// covers this media too, so no second blur is stacked inside it, and
+    /// the post's single Show reveals everything.
+    @Environment(\.coveredByPostShield) private var coveredByPost
 
     @AppStorage(SensitiveMediaPolicy.storageKey)
     private var policyRaw: String = SensitiveMediaPolicy.defaultPolicy.rawValue
     @AppStorage(ContentControlsMode.storageKey)
     private var modeRaw: String = ContentControlsMode.blur.rawValue
-    @State private var revealed = false
+    /// Fallback for keyless uses; keyed reveals live in ContentRevealStore.
+    @State private var localRevealed = false
+
+    private var revealed: Bool {
+        if let key { return ContentRevealStore.shared.isRevealed(key) }
+        return localRevealed
+    }
+
+    private func setRevealed(_ value: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            if let key {
+                ContentRevealStore.shared.setRevealed(key, value)
+            } else {
+                localRevealed = value
+            }
+        }
+    }
 
     /// The stored preference — the master content-controls mode wins when
     /// uniform, Custom falls back to the media-specific setting — then
@@ -31,7 +56,7 @@ struct SensitiveMediaShield: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if !isSensitive || policy == .show {
+        if !isSensitive || policy == .show || coveredByPost {
             content
         } else if revealed {
             content
@@ -39,9 +64,7 @@ struct SensitiveMediaShield: ViewModifier {
                     // Re-cover control after an explicit reveal.
                     Button {
                         Haptics.tap()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            revealed = false
-                        }
+                        setRevealed(false)
                     } label: {
                         Image(systemName: "eye.slash.fill")
                             .font(.caption.weight(.semibold))
@@ -83,9 +106,7 @@ struct SensitiveMediaShield: ViewModifier {
                                 .foregroundStyle(.white)
                             Button {
                                 Haptics.tap()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    revealed = true
-                                }
+                                setRevealed(true)
                             } label: {
                                 Text("Show")
                                     .font(.caption.weight(.bold))
@@ -108,9 +129,26 @@ struct SensitiveMediaShield: ViewModifier {
 }
 
 extension View {
-    /// Applies the Show/Blur/Hide sensitive-media treatment.
-    func sensitiveMediaShield(_ isSensitive: Bool) -> some View {
-        modifier(SensitiveMediaShield(isSensitive: isSensitive))
+    /// Applies the Show/Blur/Hide sensitive-media treatment. Pass a stable
+    /// `key` (media URL or post URI) so a reveal follows the content into
+    /// other views instead of resetting per cell.
+    func sensitiveMediaShield(_ isSensitive: Bool, key: String? = nil) -> some View {
+        modifier(SensitiveMediaShield(isSensitive: isSensitive, key: key))
+    }
+}
+
+// MARK: - Post-level cover
+/// Set by MatureContentShield on a post it is treating (veiled, or
+/// explicitly revealed by the person). Media inside reads it to skip its
+/// own veil: one blur per post, one Show to reveal, never blur on blur.
+private struct CoveredByPostShieldKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var coveredByPostShield: Bool {
+        get { self[CoveredByPostShieldKey.self] }
+        set { self[CoveredByPostShieldKey.self] = newValue }
     }
 }
 
@@ -189,7 +227,15 @@ struct MatureContentShield: ViewModifier {
     let labels: [String]
     let uri: String
 
-    @State private var revealed = false
+    /// Session-wide by post URI: revealing the post in the feed keeps it
+    /// revealed when it's opened, quoted, or found again.
+    private var revealed: Bool { ContentRevealStore.shared.isRevealed(uri) }
+
+    private func setRevealed(_ value: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            ContentRevealStore.shared.setRevealed(uri, value)
+        }
+    }
 
     func body(content: Content) -> some View {
         let treatment = ParentalControlsStore.shared.matureTreatment(
@@ -198,13 +244,14 @@ struct MatureContentShield: ViewModifier {
         if treatment.policy == .show || treatment.category == nil {
             content
         } else if revealed {
+            // The person chose to see this post: its media shows too,
+            // rather than asking for a second reveal inside the first.
             content
+                .environment(\.coveredByPostShield, true)
                 .overlay(alignment: .topTrailing) {
                     Button {
                         Haptics.tap()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            revealed = false
-                        }
+                        setRevealed(false)
                     } label: {
                         Image(systemName: "eye.slash.fill")
                             .font(.caption.weight(.semibold))
@@ -233,7 +280,9 @@ struct MatureContentShield: ViewModifier {
             .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
             .padding(.vertical, AtmoTheme.Spacing.xs)
         } else {
+            // Media inside drops its own veil — this one covers the lot.
             content
+                .environment(\.coveredByPostShield, true)
                 .blur(radius: 22)
                 .clipped()
                 .overlay {
@@ -248,9 +297,7 @@ struct MatureContentShield: ViewModifier {
                                 .foregroundStyle(.white)
                             Button {
                                 Haptics.tap()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    revealed = true
-                                }
+                                setRevealed(true)
                             } label: {
                                 Text("Show")
                                     .font(.caption.weight(.bold))

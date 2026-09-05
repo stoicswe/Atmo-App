@@ -7,6 +7,25 @@ import AtmoCore
 // AppNavigation sets this on its root view; any descendant (FeedItemView, ThreadView,
 // etc.) reads it via @Environment and calls it when a #hashtag is tapped.
 
+// MARK: - Author Search Environment Action
+// "Search posts" from a profile's ··· menu: opens Search pre-filled with
+// `from:handle`. Same propagation pattern as HashtagSearchAction.
+struct AuthorSearchAction {
+    var activate: (String) -> Void = { _ in }
+    func callAsFunction(_ handle: String) { activate(handle) }
+}
+
+private struct AuthorSearchActionKey: EnvironmentKey {
+    static let defaultValue = AuthorSearchAction()
+}
+
+extension EnvironmentValues {
+    var authorSearch: AuthorSearchAction {
+        get { self[AuthorSearchActionKey.self] }
+        set { self[AuthorSearchActionKey.self] = newValue }
+    }
+}
+
 struct HashtagSearchAction {
     /// Opens the Search tab/view with `tag` (without the "#") pre-filled and searched.
     var activate: (String) -> Void = { _ in }

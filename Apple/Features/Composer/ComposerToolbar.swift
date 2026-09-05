@@ -17,6 +17,7 @@ struct ComposerToolbar: View {
 
     @State private var showPostOptions = false
     @State private var showInteractionSettings = false
+    @AppStorage(GhostPostPolicy.enabledKey) private var ghostFeatureEnabled = false
 
     // Derived from the active slot so SwiftUI re-renders when it changes.
     private var activeSlot: PostSlot { viewModel.activeSlot }
@@ -37,7 +38,7 @@ struct ComposerToolbar: View {
                 }
                 .font(.subheadline)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.glassPill)
             .popover(isPresented: $showPostOptions, arrowEdge: .bottom) {
                 postOptionsContent
             }
@@ -53,13 +54,27 @@ struct ComposerToolbar: View {
                     .foregroundStyle(viewModel.interactionSettings.isDefault
                                      ? Color.secondary : AtmoColors.accent)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.glassPill)
             .accessibilityLabel("Post interaction settings")
             .sheet(isPresented: $showInteractionSettings) {
                 PostInteractionSettingsSheet(viewModel: viewModel)
             }
 
             Spacer()
+
+            // ── Ghost Post switch (opt-in feature; new threads only) ──
+            // Threads-style: a wide toggle whose knob carries the ghost.
+            if ghostFeatureEnabled, viewModel.replyTo == nil {
+                GhostPostSwitch(isOn: Binding(
+                    get: { viewModel.isGhost },
+                    set: { on in
+                        Haptics.slideSelect()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            viewModel.isGhost = on
+                        }
+                    }
+                ))
+            }
 
             // ── Character budget (active slot) ──
             characterRing(remaining: remaining, progress: progress)
@@ -89,8 +104,7 @@ struct ComposerToolbar: View {
                 }
                 .frame(minWidth: 52)
             }
-            .buttonStyle(.glassProminent)
-            .tint(AtmoColors.accent)
+            .buttonStyle(.glassPillProminent)
             .disabled(!viewModel.canSubmitThread)
             .animation(.easeInOut(duration: 0.15), value: viewModel.canSubmitThread)
             .animation(.easeInOut(duration: 0.15), value: viewModel.slots.count)
@@ -250,6 +264,7 @@ struct PostInteractionSettingsSheet: View {
                     Button("Save") { dismiss() }
                 }
             }
+            .themedBackdrop()
         }
 #if os(iOS)
         .presentationDetents([.medium, .large])
@@ -288,5 +303,49 @@ struct PostInteractionSettingsSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+// MARK: - Ghost Post Switch
+/// The Threads-style ghost toggle: a wide track with a round knob that
+/// wears the ghost glyph. Off: gray track, knob at the leading end, glyph
+/// dim. On: accent track, knob slides trailing, glyph in accent.
+struct GhostPostSwitch: View {
+    @Binding var isOn: Bool
+
+    private let width: CGFloat = 66
+    private let height: CGFloat = 36
+    private let knob: CGFloat = 30
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                // Track: clear glass when off, accent-tinted glass when on.
+                Color.clear
+                    .glassEffect(
+                        isOn ? .regular.tint(AtmoColors.accent).interactive()
+                             : .regular.interactive(),
+                        in: Capsule()
+                    )
+                // Knob: a small glass disc carrying the ghost glyph.
+                Image(systemName: "moon.haze.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isOn ? AtmoColors.accent : Color.secondary)
+                    .frame(width: knob, height: knob)
+                    .glassEffect(.regular.tint(.white.opacity(isOn ? 0.9 : 0.55)), in: Circle())
+                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                    .padding(3)
+            }
+            .frame(width: width, height: height)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Ghost")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+        .help(isOn ? "Ghost on — replies and quotes off, gone in 24 hours" : "Make this a Ghost")
     }
 }

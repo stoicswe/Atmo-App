@@ -78,8 +78,15 @@ final class ImageLoader {
                     pumpDownloads()
                 }
                 do {
-                    let (data, response) = try await URLSession.shared.data(from: url)
+                    // Explicit timeout: a hung transfer would otherwise
+                    // hold its slot forever and starve the whole queue
+                    // (corelibs-foundation hands out 0-progress stalls
+                    // under load more readily than Darwin).
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 20
+                    let (data, response) = try await URLSession.shared.data(for: request)
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                        FileHandle.standardError.write(Data("[img] non-200 \((response as? HTTPURLResponse)?.statusCode ?? -1) \(url)\n".utf8))
                         failed.insert(url)
                         return
                     }
@@ -87,6 +94,7 @@ final class ImageLoader {
                     try? data.write(to: diskPath(for: url))
                     scheduleUpdate()
                 } catch {
+                    FileHandle.standardError.write(Data("[img] error \(error) \(url)\n".utf8))
                     failed.insert(url)
                 }
             }
@@ -151,22 +159,44 @@ func remoteAvatar(url: URL?, name: String, size: Int) -> AnyView {
         }
 }
 
-/// An embed thumbnail: the picture once downloaded, a placeholder meanwhile.
-@ViewBuilder
-func remotePicture(url: URL, maxHeight: Int) -> Body {
-    let data = onMain { () -> Data? in
-        ImageLoader.shared.request(url)
-        return ImageLoader.shared.cached(url)
-    }
-    if let data {
-        Picture(data: data)
-            .canShrink()
-            .contentFit(.scaleDown)
-            .frame(maxHeight: maxHeight)
-    } else {
-        Text("· · ·")
-            .style("dim-label")
-            .padding(16)
-            .style("card")
-    }
+/// An embed thumbnail: an empty `GtkPicture` whose texture is installed
+/// imperatively once the bytes arrive — the same `.inspect` pattern as
+/// `remoteAvatar`. (A declarative branch swap — placeholder view ⇄
+/// `Picture(data:)` — never materializes inside ForEach list rows in
+/// this toolkit version, so the widget stays put and only its paintable
+/// changes.)
+func remotePicture(url: URL, maxHeight: Int) -> AnyView {
+    onMain { ImageLoader.shared.request(url) }
+    // inspect must precede .frame: frame wraps in a Clamp, and the
+    // closure needs the Picture's own storage.
+    return Picture()
+        .canShrink()
+        .contentFit(.scaleDown)
+        .inspect { storage, _, updateProperties in
+            guard updateProperties else { return }
+            let key = "atmo.picture.url"
+            let urlString = url.absoluteString
+            guard storage.fields[key] as? String != urlString else { return }
+            guard let data = onMain({ ImageLoader.shared.cached(url) }) else {
+                // Row recycled to a post whose image isn't here yet —
+                // clear the old picture rather than show the wrong one.
+                if storage.fields[key] != nil {
+                    gtk_picture_set_paintable(storage.opaquePointer, gdk_paintable_new_empty(0, 0))
+                    storage.fields[key] = nil
+                }
+                return
+            }
+            let bytes = data.withUnsafeBytes { g_bytes_new($0.baseAddress, .init(data.count)) }
+            let texture = gdk_texture_new_from_bytes(bytes, nil)
+            g_bytes_unref(bytes)
+            guard let texture else { return }
+            gtk_picture_set_paintable(storage.opaquePointer, texture)
+            // A can-shrink GtkPicture reports a 0 minimum and collapses
+            // inside these list rows — request a concrete height derived
+            // from the texture so layout can't flatten it.
+            let height = min(Int32(maxHeight), gdk_texture_get_height(texture))
+            gtk_widget_set_size_request(storage.opaquePointer?.cast(), -1, height)
+            g_object_unref(UnsafeMutableRawPointer(texture))
+            storage.fields[key] = urlString
+        }
 }

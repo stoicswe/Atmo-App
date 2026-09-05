@@ -28,8 +28,21 @@ extension AtmoPlatform {
             foregroundNotification: foregroundNotification,
             backgroundNotification: backgroundNotification,
             timelineRefreshInterval: timelineRefreshInterval,
-            alertPresenter: UserNotificationsPresenter()
+            alertPresenter: UserNotificationsPresenter(),
+            syncedFiles: syncedFileStore,
+            vaultAuthenticator: LocalVaultAuthenticator()
         )
+    }
+
+    // iCloud Documents needs the icloud-services/container entitlements.
+    // The watch app ships without any iCloud capability (see project.yml),
+    // so it keeps the no-op instead of container calls that return nil.
+    private static var syncedFileStore: any SyncedFileStore {
+#if os(watchOS)
+        NoopSyncedFileStore()
+#else
+        UbiquitousFileStore()
+#endif
     }
 
     // iCloud KVS needs the ubiquity-kvstore entitlement. The watch app

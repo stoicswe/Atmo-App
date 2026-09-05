@@ -10,6 +10,8 @@ import AtmoCore
 struct NotificationsView: View {
     @Environment(ATProtoService.self) private var service
     @State private var viewModel: NotificationsViewModel?
+    /// Path for the standalone-stack fallback below; unused when embedded.
+    @State private var ownedNavPath = NavigationPath()
 
     /// Set to true when embedded in AppNavigation's shared NavigationStack (iPad/macOS).
     /// When false (iPhone), this view wraps itself in its own NavigationStack.
@@ -33,9 +35,20 @@ struct NotificationsView: View {
         if embeddedInSplitView {
             content
         } else {
-            NavigationStack {
+            NavigationStack(path: $ownedNavPath) {
                 content
                     .navigationTitle("Activity")
+                    // Row links (avatar → profile) need destinations on
+                    // THIS stack when the view owns one.
+                    .navigationDestination(for: PostNavTarget.self) { target in
+                        ThreadView(postURI: target.uri)
+                            .themedBackdrop()
+                    }
+                    .navigationDestination(for: String.self) { did in
+                        ProfileView(actorDID: did, splitNavPath: $ownedNavPath)
+                            .themedBackdrop()
+                    }
+                    .themedBackdrop()
             }
         }
     }
@@ -124,16 +137,15 @@ struct NotificationsView: View {
 }
 
 // MARK: - Activity Pill
-// iOS: Mail-style category chip — a compact icon circle that expands into
-// a tinted capsule with its label when selected (matches Settings' top
-// bar). macOS keeps the always-labeled capsule tabs.
+// Mail-style category chip on every platform (matches Settings and
+// Search): a compact icon circle that expands into a labeled accent
+// capsule when selected. Labels never wrap thanks to fixedSize.
 private struct ActivityPill: View {
     let category: ActivityCategory
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
-#if os(iOS)
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
@@ -155,23 +167,6 @@ private struct ActivityPill: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-#else
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: category.icon)
-                    .font(.caption.weight(.medium))
-                Text(category.rawValue)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? .white : .secondary)
-            .padding(.horizontal, AtmoTheme.Spacing.md)
-            .padding(.vertical, AtmoTheme.Spacing.xs)
-            .background {
-                Capsule()
-                    .fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.1))
-            }
-        }
-        .buttonStyle(.plain)
-#endif
+        .accessibilityLabel(category.rawValue)
     }
 }

@@ -19,7 +19,19 @@ struct NotificationRowView: View {
             VStack(alignment: .leading, spacing: AtmoTheme.Spacing.xs) {
                 // Author + action
                 HStack(spacing: AtmoTheme.Spacing.xs) {
-                    AvatarView(url: notification.authorAvatarURL, size: 22)
+                    // The avatar opens the profile of whoever caused the
+                    // notification. Pushes their DID — both app nav stacks
+                    // resolve String destinations to ProfileView.
+                    NavigationLink(value: notification.authorDID) {
+                        AvatarView(url: notification.authorAvatarURL, size: 22)
+                            // 22 pt is below a comfortable touch target —
+                            // widen the tappable circle without moving layout.
+                            .contentShape(Circle().inset(by: -11))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        "View profile of \(notification.authorDisplayName ?? notification.authorHandle)"
+                    )
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
                             if let name = notification.authorDisplayName {

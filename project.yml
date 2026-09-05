@@ -31,7 +31,13 @@ settings:
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    CURRENT_PROJECT_VERSION: 1
+    # Date-serial build number (YYYY.MMDD.HHMM): always ascending, no
+    # state to track across machines. Stamp a fresh one before each
+    # archive with Scripts/set-build-number.sh (it rewrites this line and
+    # regenerates the project). Applies to every target — app, watch app,
+    # and widget extension all inherit it, keeping their CFBundleVersions
+    # matched (App Store validation requires it).
+    CURRENT_PROJECT_VERSION: "2026.0904.2217"
     MARKETING_VERSION: "1.0.0"
 
 packages:
@@ -67,10 +73,28 @@ targets:
           # live in Apple/LiveActivity, compiled into both targets.
           - Widgets/**
       - path: Resources/Assets.xcassets
+      # Icon Composer document — actool builds the Liquid Glass app icon
+      # from it on iOS/macOS 26 (name pairs with
+      # ASSETCATALOG_COMPILER_APPICON_NAME); the appiconset PNGs remain
+      # the legacy/watch fallback.
+      - path: Resources/AppIcon.icon
+      # Wallet pass images (icon, logos, per-theme artwork) and signing
+      # material, copied into the bundle as a folder (WalletPass/…). The
+      # signing certificate and key are gitignored — see
+      # Resources/WalletPass/Signing/README.md. iOS 27 uses them; the
+      # macOS build carries the folder too but never shows the feature.
+      - path: Resources/WalletPass
+        type: folder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: stoicswe.com-atmin-app
         PRODUCT_NAME: Atmo
+        # macOS: the application-menu title is the bundle/binary name, so
+        # the Mac app ships as "Atomic.app" and the menu reads "Atomic".
+        # iOS keeps the Atmo binary with the "@omic" home-screen name.
+        # The bundle identifier is explicit above and unaffected.
+        "PRODUCT_NAME[sdk=macosx*]": Atomic
+        "INFOPLIST_KEY_CFBundleDisplayName[sdk=macosx*]": Atomic
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -103,7 +127,16 @@ targets:
         # Voice memos: the composer's mic button records audio clips that
         # are rendered into waveform videos.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "@omic uses the microphone to record voice memos you attach to posts."
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # In-app camera: the composer's camera button shoots photos and
+        # videos straight into a post…
+        INFOPLIST_KEY_NSCameraUsageDescription: "@omic uses the camera to shoot photos and videos you attach to posts."
+        # …and each capture is also kept in the user's photo library.
+        # Save-to-Photos from posts (image viewer / video player) uses the
+        # same permission (add-only access; nothing is read back).
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "@omic saves photos and videos you shoot in the composer, and media you save from posts, to your photo library."
+        # iPhone lists landscape too, but AppDelegate (MediaPresentation)
+        # only allows it while a photo or video is full screen.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": YES
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]": YES
@@ -143,6 +176,12 @@ targets:
       path: Resources/AtmoWidgets-Info.plist
       properties:
         CFBundleDisplayName: "@omic"
+        # Track the app's versioning — xcodegen's generated plist defaults
+        # to literal "1.0"/"1", and App Store validation flags an appex
+        # whose CFBundleShortVersionString differs from its host app
+        # (ITMS-90473, Build 35).
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

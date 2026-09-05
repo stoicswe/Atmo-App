@@ -23,14 +23,36 @@ import Foundation
 enum MainLoopBridge {
 
     private static var installed = false
+    /// True while a pump pass is on the stack. Image decoding (glycin,
+    /// behind gdk-pixbuf on Ubuntu 26.04) and dialogs iterate the GLib
+    /// main context *synchronously*; if that happens inside a MainActor job
+    /// the timeout fires again, re-enters `RunLoop.main.run`, re-renders,
+    /// decodes again… until the stack overflows. A nested tick is a no-op.
+    private static var pumping = false
 
     /// Install the pump. Call once, before the first `Task { @MainActor }`.
     static func install() {
         guard !installed else { return }
         installed = true
         Idle(delay: 10) {
+            guard !pumping else { return true }
+            pumping = true
             RunLoop.main.run(until: Date())
+            pumping = false
             return true // keep the timeout source alive
         }
+        // corelibs-foundation has no cfprefsd: UserDefaults only reach
+        // ~/.config/<process>.plist on synchronize(). Without this flush
+        // the session UUID, bookmarks, drafts, and settings were lost
+        // whenever the process ended without a clean quit.
+        Idle(delay: 5_000) {
+            _ = UserDefaults.standard.synchronize()
+            return true
+        }
+    }
+
+    /// Flush immediately (sign-out, window close).
+    static func flushDefaults() {
+        _ = UserDefaults.standard.synchronize()
     }
 }

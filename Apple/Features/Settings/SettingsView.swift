@@ -1,4 +1,5 @@
 import SwiftUI
+import ATProtoKit
 import AtmoCore
 import StoreKit
 import Combine
@@ -14,6 +15,7 @@ struct SettingsView: View {
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
         case appearance = "Appearance"
+        case features = "Features"
         case notifications = "Notifications"
         case family = "Family"
         case accessibility = "Accessibility"
@@ -25,6 +27,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .appearance:    return "paintbrush"
+            case .features:      return "switch.2"
             case .notifications: return "bell.badge"
             case .family:        return "figure.2.and.child.holdinghands"
             case .accessibility: return "figure.arms.open"
@@ -59,6 +62,7 @@ struct SettingsView: View {
 
             switch selectedTab {
             case .appearance:    AppearanceTab()
+            case .features:      FeaturesTab()
             case .notifications: NotificationsSettingsTab()
             case .family:        FamilyTab()
             case .accessibility: AccessibilityTab()
@@ -129,6 +133,7 @@ private struct FamilyTab: View {
                     .id(matureRefresh)
             }
             familySection
+            vaultSection
             disclaimerSection
         }
 #if os(macOS)
@@ -253,6 +258,37 @@ private struct FamilyTab: View {
         }
     }
 
+    // MARK: Vault
+    // How long the bookmarks Vault stays open after Face ID / Touch ID /
+    // passcode. Leaving the app locks it regardless.
+    private var vaultSection: some View {
+        let lock = VaultLock.shared
+        return Section {
+            Picker("Keep Vault unlocked for", selection: Binding(
+                get: { lock.duration },
+                set: { lock.setDuration($0) }
+            )) {
+                ForEach(VaultUnlockDuration.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            if lock.isUnlocked {
+                Button("Lock Vault Now") {
+                    Haptics.soft()
+                    lock.lock()
+                }
+            }
+        } header: {
+            Text("Vault")
+        } footer: {
+            Text(lock.isAvailable
+                 ? "The Vault is the private part of Bookmarks: it opens with Face ID, Touch ID, or your passcode, syncs privately through iCloud, and is never indexed for Spotlight or Siri. Ordinary bookmarks are still searchable. \"Every time\" asks again on each visit; other choices keep it open for that long. Leaving the app always locks it."
+                 : "The Vault needs Face ID, Touch ID, or a passcode set up on this device.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func familyStatusText(_ category: AgeCategory) -> String {
         switch category {
         case .unknown: return "Not managed"
@@ -265,12 +301,109 @@ private struct FamilyTab: View {
 
 // MARK: - Appearance
 
+// MARK: - Features
+// The opt-in features in one place: Ghost Posts, Liked history, Search
+// history, Topic summaries, and the composer's Image Playground button.
+private struct FeaturesTab: View {
+    @AppStorage(LikedPostsRetention.storageKey) private var likedRetentionRaw: String = LikedPostsRetention.defaultValue.rawValue
+    @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
+    @AppStorage(ComposerFeatures.imagePlaygroundKey) private var imagePlaygroundEnabled: Bool = false
+
+    var body: some View {
+        Form {
+            GhostPostsSettingsSection()
+
+            Section {
+                // NOTE: no .onChange here — an onChange attached to this
+                // always-mounted Form's Picker sent macOS into an infinite
+                // update-constraints loop at launch (NSGenericException,
+                // "more Update Constraints passes than views"). The store
+                // detects retention changes itself by remembering the last
+                // value it applied (applyRetention).
+                Picker("Keep liked posts", selection: $likedRetentionRaw) {
+                    ForEach(LikedPostsRetention.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+            } header: {
+                Text("Liked History")
+            } footer: {
+                // NOTE: no "♥" here — an emoji-class glyph in this wrapping
+                // Form footer sent macOS into an infinite update-constraints
+                // loop at launch (NSGenericException crash).
+                Text("How long the Liked section remembers posts you've liked. The history syncs privately through iCloud without appearing in iCloud Drive. Expired entries leave the history only — your likes on Bluesky are untouched. Extending the window re-syncs older likes from your account.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── Search history (opt-in; off wipes what was kept) ──
+            Section {
+                let history = SearchHistoryStore.shared
+                Toggle("Search history", isOn: Binding(
+                    get: { history.isEnabled },
+                    set: { history.setEnabled($0) }
+                ))
+                if history.isEnabled, !history.entries.isEmpty {
+                    Button("Clear search history", role: .destructive) {
+                        Haptics.soft()
+                        history.clear()
+                    }
+                }
+            } header: {
+                Text("Search History")
+            } footer: {
+                Text("On: your last few searches appear above the search bar as quick suggestions. Kept only on this device; turning it off forgets them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── Apple Intelligence (only on devices that support it) ──
+            if TopicSummarizer.isSupported {
+                Section {
+                    Toggle("Topic summaries", isOn: $topicSummariesEnabled)
+                    Link(destination: URL(string: "https://www.apple.com/apple-intelligence/")!) {
+                        Label("How Apple Intelligence works", systemImage: "arrow.up.right")
+                    }
+                } header: {
+                    Text("Topic Summaries")
+                } footer: {
+                    Text("Tapping a trending topic summarizes its top posts with Apple Intelligence — Apple's on-device foundation models. Everything runs locally on this device; the posts being summarized never leave it. Summaries are kept for three days and quietly re-checked for accuracy."
+                         + (TopicSummarizer.usesAdvancedModel
+                            ? " This device runs Apple's advanced on-device model."
+                            : ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // ── Image Playground (composer button; off by default) ──
+            Section {
+                Toggle("Image Playground", isOn: $imagePlaygroundEnabled)
+            } header: {
+                Text("Composer")
+            } footer: {
+                Text("On: the composer shows an Image Playground button for creating a picture with Apple Intelligence, on devices that offer it. Off by default.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Keys for composer feature switches (Settings → Features).
+enum ComposerFeatures {
+    static let imagePlaygroundKey = "atmo.composer.imagePlayground"
+}
+
 private struct AppearanceTab: View {
     @AppStorage(ThemeKeys.colorScheme) private var schemeRaw: String = AppearanceOption.system.rawValue
     @AppStorage(ThemeKeys.accentPresetID) private var accentID: String = AccentPresets.defaultID
     @AppStorage(ThemeKeys.tintedBackground) private var tintedBackground: Bool = false
     @AppStorage(FeedPreferences.infiniteScrollKey) private var infiniteScrollEnabled: Bool = true
-    @AppStorage(TopicSummaryStore.enabledKey) private var topicSummariesEnabled: Bool = false
 #if os(iOS)
     @AppStorage(PhoneBarConfig.labelsKey) private var phoneBarShowsLabels: Bool = false
 #endif
@@ -285,6 +418,7 @@ private struct AppearanceTab: View {
                 Text("On: the timeline keeps loading older posts as you near the end. Off: a Load More button appears instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
 
@@ -343,26 +477,9 @@ private struct AppearanceTab: View {
                 Text("Tints buttons, pills, links, and highlights throughout the app. The palette is shared with the {m.txt} editor — quiet, grounded, considered — plus @omic's own Sky. Tinted background also washes the whole app in a muted shade of the accent — pale in Light Mode, deep in Dark Mode — quiet enough that posts and media stay perfectly readable.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            // ── Apple Intelligence (only on devices that support it) ──
-            if TopicSummarizer.isSupported {
-                Section {
-                    Toggle("Topic summaries", isOn: $topicSummariesEnabled)
-                    Link(destination: URL(string: "https://www.apple.com/apple-intelligence/")!) {
-                        Label("How Apple Intelligence works", systemImage: "arrow.up.right")
-                    }
-                } header: {
-                    Text("Intelligence")
-                } footer: {
-                    Text("Tapping a trending topic summarizes its top posts with Apple Intelligence — Apple's on-device foundation models. Everything runs locally on this device; the posts being summarized never leave it. Summaries are kept for three days and quietly re-checked for accuracy."
-                         + (TopicSummarizer.usesAdvancedModel
-                            ? " This device runs Apple's advanced on-device model."
-                            : ""))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
         .formStyle(.grouped)
     }
@@ -382,7 +499,7 @@ private struct BottomMenuEditorView: View {
 
     private var sidebarItems: [SidebarItem] {
         let chosen = barItems
-        return PhoneBarConfig.eligible.filter { !chosen.contains($0) }
+        return PhoneBarConfig.available.filter { !chosen.contains($0) }
     }
 
     var body: some View {
@@ -652,28 +769,243 @@ private struct AccessibilityTab: View {
 
 // MARK: - Account
 
+// MARK: - Ghosts settings
+/// The opt-in switch with its warning. The ghosts themselves — live ones
+/// with their clocks, and the archive — live in the Ghosts library
+/// section, which appears in the sidebar while this is on.
+private struct GhostPostsSettingsSection: View {
+    @AppStorage(GhostPostPolicy.enabledKey) private var enabled = false
+    @State private var showWarning = false
+    @State private var showClearArchive = false
+
+    var body: some View {
+        let store = GhostPostStore.shared
+        Section {
+            Toggle("Ghosts", isOn: Binding(
+                get: { enabled },
+                set: { on in
+                    enabled = on
+                    if on { showWarning = true }
+                }
+            ))
+            if enabled, !store.archive.isEmpty {
+                LabeledContent("Archive", value: "\(store.archive.count) ended")
+                Button("Clear Archive", role: .destructive) { showClearArchive = true }
+            }
+        } header: {
+            Text("Ghosts")
+        } footer: {
+            Text("A Ghost closes replies and quotes and disappears 24 hours after you post it. Readers on Atomic see a ghost badge and can reply to you privately by message; other apps just see a normal post with replies off. Reposts can't be blocked on Bluesky — Atomic hides the repost button and count on Ghosts, but other apps can still repost one. Bluesky can't delete it for you: the takedown happens when this app runs — on any of your devices, including a Mac left open. Your Ghosts, live and ended, are listed under Ghosts in the Library.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .alert("Ghosts need the app to clean up", isPresented: $showWarning) {
+            Button("Got it") {}
+        } message: {
+            Text("Bluesky has no timer of its own. A Ghost is taken down only when Atomic runs after its 24 hours are up — open the app on your phone, or keep the macOS app open, and it will be removed on time. If no device runs the app, the post stays up until one does.\n\nReposts can't be blocked on Bluesky. Atomic hides the repost button and count on Ghosts, but someone using another app can still repost one while it's up.")
+        }
+        .confirmationDialog("Clear the Ghost archive?", isPresented: $showClearArchive, titleVisibility: .visible) {
+            Button("Clear Archive", role: .destructive) { store.clearArchive() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+// MARK: - Cache report
+/// Sizes of the re-creatable caches Settings can clear. Bookmarks, likes,
+/// drafts, and the Vault's own posts are never part of this.
+struct CacheReport: Equatable {
+    var enhancedImages: Int64 = 0
+    var originalVideos: Int64 = 0
+    var images: Int64 = 0
+
+    var total: Int64 { enhancedImages + originalVideos + images }
+
+    @MainActor
+    static func measure() async -> CacheReport {
+        var report = CacheReport()
+        report.enhancedImages = EnhancedImageStore.shared.totalBytes()
+        report.originalVideos = OriginalVideoCache.totalBytes()
+        report.images = Int64(URLCache.shared.currentDiskUsage)
+        return report
+    }
+
+    @MainActor
+    static func clearAll() async {
+        EnhancedImageStore.shared.clearAll()
+        OriginalVideoCache.clear()
+        URLCache.shared.removeAllCachedResponses()
+    }
+
+    static func format(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+// MARK: - Account card
+/// The signed-in account as a card: avatar, name, handle, bio, and when
+/// the account joined Bluesky. DID stays copyable underneath.
+private struct AccountCard: View {
+    let snapshot: AccountProfileCache.Snapshot?
+    let handle: String?
+    let did: String?
+
+    private var memberSince: Date? { snapshot?.memberSince }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AtmoTheme.Spacing.md) {
+            HStack(alignment: .center, spacing: AtmoTheme.Spacing.md) {
+                AvatarView(url: snapshot?.avatarURL, size: 64)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(snapshot?.displayName ?? handle.map { "@\($0)" } ?? "Signed in")
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(1)
+                        if let badge = snapshot?.verificationBadge {
+                            VerifiedBadge(badge: badge)
+                        }
+                    }
+                    Text(handle.map { "@\($0)" } ?? "—")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .textSelection(.enabled)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if let bio = snapshot?.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let memberSince {
+                    Text("Member since \(memberSince.formatted(.dateTime.month(.wide).year()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if snapshot != nil {
+                    Text("Member since —")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ProgressView().controlSize(.mini)
+                    Text("Loading profile…")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            if let did {
+                HStack(spacing: 6) {
+                    Text("DID")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                    Text(did)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(AtmoTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neumorphicGlassCard(cornerRadius: AtmoTheme.CornerRadius.large)
+    }
+}
+
 private struct AccountTab: View {
     @Environment(ATProtoService.self) private var service
     @State private var showSignOutConfirmation = false
+    @State private var showClearCachesConfirmation = false
+    @State private var cacheReport = CacheReport()
+    @State private var isClearingCaches = false
+    @State private var showWalletPass = false
+
+    private var storageSection: some View {
+        Section {
+            LabeledContent("Enhanced images", value: CacheReport.format(cacheReport.enhancedImages))
+            LabeledContent("Original videos", value: CacheReport.format(cacheReport.originalVideos))
+            LabeledContent("Downloaded pictures", value: CacheReport.format(cacheReport.images))
+            Button(role: .destructive) {
+                showClearCachesConfirmation = true
+            } label: {
+                HStack {
+                    Label("Clear Caches", systemImage: "trash")
+                    Spacer()
+                    if isClearingCaches {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(CacheReport.format(cacheReport.total))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .disabled(isClearingCaches || cacheReport.total == 0)
+        } header: {
+            Text("Storage")
+        } footer: {
+            Text("Everything here can be rebuilt on demand. Clearing never touches bookmarks, likes, drafts, or the Vault's posts — only the enhanced copies of images, cached original videos, and downloaded pictures.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+#if os(iOS)
+    /// A Wallet card whose QR code opens the account's Bluesky profile.
+    /// iOS 27 only — the pass is designed around Wallet's poster layout,
+    /// which older Wallets don't draw — and only where Wallet exists
+    /// (iPhone), so everywhere else the section isn't rendered at all.
+    @ViewBuilder
+    private var walletSection: some View {
+        if #available(iOS 27, *), WalletPassAvailability.canOffer,
+           service.currentHandle != nil, service.currentUserDID != nil {
+            Section {
+                Button {
+                    showWalletPass = true
+                } label: {
+                    Label("Add to Apple Wallet", systemImage: "wallet.pass")
+                }
+                .disabled(!WalletPassAvailability.canSign)
+            } header: {
+                Text("Wallet")
+            } footer: {
+                Text(WalletPassAvailability.canSign
+                     ? "Keep a card in Wallet with a QR code that opens your Bluesky profile. Pick from a few looks."
+                     : "Signing credentials are missing from this build — see Resources/WalletPass/Signing/README.md.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+#endif
+
+    /// Served from AccountProfileCache first; refreshed quietly when stale.
+    private var cached: AccountProfileCache.Snapshot? {
+        service.currentUserDID.flatMap { AccountProfileCache.shared.snapshot(for: $0) }
+    }
 
     var body: some View {
         Form {
+            // ── Profile card ──
             Section {
-                LabeledContent("Handle") {
-                    Text(service.currentHandle.map { "@\($0)" } ?? "—")
-                        .textSelection(.enabled)
-                }
-                LabeledContent("DID") {
-                    Text(service.currentUserDID ?? "—")
-                        .font(.caption)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            } header: {
-                Text("Signed in")
+                AccountCard(
+                    snapshot: cached,
+                    handle: service.currentHandle,
+                    did: service.currentUserDID
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             } footer: {
-                Text("@omic signs in with a Bluesky App Password. Your session tokens are stored in the Keychain.")
+                Text("@omic signs in with your Bluesky password or an App Password. Your session tokens are stored in the Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -689,8 +1021,52 @@ private struct AccountTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+#if os(iOS)
+            walletSection
+#endif
+            storageSection
         }
         .formStyle(.grouped)
+#if os(iOS)
+        .sheet(isPresented: $showWalletPass) {
+            if #available(iOS 27, *), let handle = service.currentHandle, let did = service.currentUserDID {
+                WalletPassSheet(handle: handle, did: did, memberSince: cached?.memberSince)
+            }
+        }
+#endif
+        .task { cacheReport = await CacheReport.measure() }
+        .task(id: service.currentUserDID) {
+            // Cached details show immediately; only a stale (or missing)
+            // snapshot triggers a fetch. The join date is looked up once.
+            guard let did = service.currentUserDID, let kit = service.atProtoKit else { return }
+            let cache = AccountProfileCache.shared
+            guard cache.isStale(for: did) else { return }
+            if let detailed = try? await kit.getProfile(for: did) {
+                let model = ProfileModel(profile: detailed)
+                let joined: Date?
+                if let known = cache.snapshot(for: did)?.memberSince {
+                    joined = known
+                } else {
+                    joined = await MemberSinceResolver.resolve(profile: model, kit: kit)
+                }
+                cache.store(profile: model, memberSince: joined)
+            }
+        }
+        .confirmationDialog("Clear caches?", isPresented: $showClearCachesConfirmation, titleVisibility: .visible) {
+            Button("Clear Caches", role: .destructive) {
+                Task {
+                    isClearingCaches = true
+                    await CacheReport.clearAll()
+                    cacheReport = await CacheReport.measure()
+                    isClearingCaches = false
+                    Haptics.confirm()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enhanced images, cached original videos, and downloaded pictures are removed. Bookmarks, likes, and the Vault are not affected — enhanced copies can be made again.")
+        }
         .confirmationDialog(
             "Sign out of \(service.currentHandle.map { "@\($0)" } ?? "this account")?",
             isPresented: $showSignOutConfirmation,

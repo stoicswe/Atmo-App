@@ -33,6 +33,27 @@ parity tracker.
   refresh, search debounce). Registered once per sign-in.
 - `ImageLoader.swift` — avatar/embed byte cache (memory + XDG disk) with
   `remoteAvatar` / `remotePicture` helpers; AtmoCore stays UI-free.
+- `VideoPlayer.swift` — inline HLS playback: playbin3 →
+  gtk4paintablesink → GtkPicture with a transport row (play/pause,
+  seek slider, clock). libgstreamer is dlopen'd (no dev headers
+  needed); rows show poster + play pill, tapping swaps the player in
+  (`playingVideos` state), closing it tears the pipeline down.
+
+## adwaita-swift gotchas (learned the hard way)
+
+- **`.overlay {}` never materializes its main child** — the badge shows,
+  the content vanishes. Don't use it; stack elements instead.
+- **Modifiers chained onto a `Body` (view array) silently drop the
+  content** in list rows. Builder helpers that get modifiers applied must
+  return one concrete view (`AnyView`), not `Body`.
+- **Swapping view *types* per render (placeholder ⇄ `Picture(data:)`)
+  doesn't rebuild inside `ForEach` rows.** Remote images therefore keep
+  one `GtkPicture` widget and install the texture imperatively via
+  `.inspect` (see `remotePicture` / `remoteAvatar`), including an
+  explicit `gtk_widget_set_size_request` height — a can-shrink picture
+  otherwise collapses to 0 in these rows.
+- `.inspect` must be chained onto the concrete widget *before* wrappers
+  like `.frame` (Clamp), or the closure gets the wrapper's storage.
 
 ## Build
 

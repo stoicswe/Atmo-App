@@ -1,0 +1,66 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "display-p3:1.00000,0.95755,0.90645,1.00000",
+      "display-p3:0.81923,0.91068,0.96783,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "at_prot 2.png",
+          "name": "at_prot 2",
+          "position": {
+            "scale": 0.64,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    },
+    {
+      "blur-material": 0.5,
+      "layers": [
+        {
+          "hidden": false,
+          "image-name": "rads.png",
+          "name": "rads",
+          "opacity": 0.25,
+          "position": {
+            "scale": 0.81,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting": "combined",
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 1.26
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

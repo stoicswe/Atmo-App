@@ -21,7 +21,7 @@ struct WatchLoginView: View {
                 }
 
                 if service.authError != nil {
-                    Text("Sign-in failed. Check your handle and App Password.")
+                    Text("Sign-in failed. Check your handle and password.")
                         .font(.footnote)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
@@ -36,7 +36,7 @@ struct WatchLoginView: View {
             TextField("Handle", text: $viewModel.handle)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            SecureField("App Password", text: $viewModel.appPassword)
+            SecureField("Password or App Password", text: $viewModel.appPassword)
 
             Button {
                 Task {

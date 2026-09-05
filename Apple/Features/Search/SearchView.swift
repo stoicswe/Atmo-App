@@ -17,6 +17,17 @@ struct SearchView: View {
     /// one is hidden there (the category chips stay).
     var hidesSearchField: Bool = false
     @State private var ownedNavPath = NavigationPath()
+    /// Search field focus, lifted out of SearchBar so the history pills
+    /// can follow the keyboard: up while it's up, gone when it's dismissed.
+    @FocusState private var searchFocused: Bool
+    /// Switches the timeline to a feed picked from the Feeds results.
+    @Environment(\.openFeed) private var openFeed
+    /// Arriving on the page shows the pills once before the field is ever
+    /// focused; the first keyboard dismissal (or a search) ends that.
+    @State private var showHistoryOnArrival = false
+    /// Measured height of the search bar row, so the floating pills can
+    /// hang exactly under it.
+    @State private var searchBarHeight: CGFloat = 0
 
     private var navPath: Binding<NavigationPath> {
         splitNavPath ?? $ownedNavPath
@@ -54,27 +65,140 @@ struct SearchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
-                    // ── Search bar ──
+                    // ── Search bar ── always present; on iPad / macOS the
+                    // refresh control (⌘R re-runs the query) shares its row.
                     if !hidesSearchField {
-                        SearchBar(query: $viewModel.query) { newValue in
-                            vm.onQueryChanged(newValue)
+                        HStack(spacing: AtmoTheme.Spacing.sm) {
+                            searchBar(vm: vm)
+                            if splitNavPath != nil {
+                                refreshButton(vm: vm)
+                            }
                         }
                         .padding(.horizontal, AtmoTheme.Spacing.md)
                         .padding(.top, AtmoTheme.Spacing.sm)
                         .padding(.bottom, AtmoTheme.Spacing.xs)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { searchBarHeight = $0 }
                     }
 
-                    // ── Category picker ──
+                    // ── Category picker ── a small breath above it, from
+                    // the search field or from the toolbar.
                     categoryPicker(vm: vm)
                         .padding(.horizontal, AtmoTheme.Spacing.md)
+                        .padding(.top, AtmoTheme.Spacing.sm)
                         .padding(.bottom, AtmoTheme.Spacing.sm)
+
+                    // ── Media filter ── only once a search has post results
+                    // and Posts is the open category: All / Images / Videos /
+                    // GIFs. Anything but All swaps the list for the grid.
+                    if vm.selectedCategory == .posts, !vm.postResults.isEmpty,
+                       !vm.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        mediaFilterRow(vm: vm)
+                            .padding(.horizontal, AtmoTheme.Spacing.md)
+                            .padding(.bottom, AtmoTheme.Spacing.sm)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
 
                     Divider().overlay(AtmoColors.glassDivider)
                 }
                 .background(.bar)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.postResults.isEmpty)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.selectedCategory)
+                // Recent searches float under the bar, over the chips and
+                // whatever content is below — the header itself never
+                // grows, so the chips stay put. They sweep out while the
+                // field is focused and empty and tuck back otherwise
+                // (opt-in, Settings → Search).
+                .overlay(alignment: .topLeading) {
+                    if !hidesSearchField {
+                        SearchHistoryPills(
+                            entries: SearchHistoryStore.shared.recent,
+                            visible: historyPillsVisible,
+                            onSelect: { entry in runHistorySearch(entry, vm: vm) }
+                        )
+                        .padding(.horizontal, AtmoTheme.Spacing.md)
+                        .padding(.top, searchBarHeight)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .zIndex(1)
+                    }
+                }
             }
-            .onAppear  { vm.onAppear()  }
-            .onDisappear { vm.onDisappear() }
+            .onAppear {
+                vm.onAppear()
+                showHistoryOnArrival = true
+            }
+            .onDisappear {
+                vm.onDisappear()
+                showHistoryOnArrival = false
+            }
+            .onChange(of: searchFocused) { was, now in
+                // Keyboard dismissed: the arrival showing is over too.
+                if was, !now { showHistoryOnArrival = false }
+            }
+            .onChange(of: vm.query) { _, query in
+                if !query.isEmpty { showHistoryOnArrival = false }
+            }
+            // Touching the results/explore content counts as moving on.
+            .simultaneousGesture(TapGesture().onEnded { showHistoryOnArrival = false })
+    }
+
+    /// Glass refresh disc at the end of the search row: re-runs the query
+    /// (⌘R), spinner while it runs, dormant until there's something typed.
+    private func refreshButton(vm: SearchViewModel) -> some View {
+        let canRefresh = vm.query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+        return Button {
+            Haptics.tap()
+            vm.refresh()
+        } label: {
+            Group {
+                if vm.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .foregroundStyle(canRefresh ? Color.primary : Color.secondary)
+            .frame(width: 36, height: 36)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .keyboardShortcut("r", modifiers: .command)
+        .disabled(!canRefresh || vm.isLoading)
+        .help("Refresh search")
+        .accessibilityLabel("Refresh search")
+    }
+
+    private func searchBar(vm: SearchViewModel) -> some View {
+        SearchBar(
+            query: $viewModel.query,
+            isFocused: $searchFocused,
+            onCommit: { newValue in vm.onQueryChanged(newValue) },
+            onSubmit: { SearchHistoryStore.shared.record(vm.query) }
+        )
+    }
+
+    /// Pills show while the field is focused (or right after arriving on
+    /// the page) and nothing has been typed yet — once a query is in, they
+    /// get out of the way of the chips and results. Only with history on
+    /// and something recorded.
+    private var historyPillsVisible: Bool {
+        let store = SearchHistoryStore.shared
+        return store.isEnabled
+            && !store.recent.isEmpty
+            && viewModel.query.isEmpty
+            && (searchFocused || showHistoryOnArrival)
+    }
+
+    private func runHistorySearch(_ entry: String, vm: SearchViewModel) {
+        Haptics.tap()
+        SearchHistoryStore.shared.record(entry)
+        viewModel.query = entry
+        vm.onQueryChanged(entry)
+        showHistoryOnArrival = false
+        searchFocused = false
     }
 
     // MARK: - Category Picker
@@ -104,8 +228,8 @@ struct SearchView: View {
             }
             Spacer(minLength: 0)
 
-            // ── Top / Latest ranking for post results ──
-            if vm.selectedCategory == .posts {
+            // ── Top / Latest ranking for post and feed results ──
+            if vm.selectedCategory == .posts || vm.selectedCategory == .feeds {
                 Menu {
                     ForEach(SearchViewModel.SearchSort.allCases) { option in
                         Button {
@@ -142,7 +266,8 @@ struct SearchView: View {
 
     /// "7", "25+", … — the loaded count, with "+" while more pages exist.
     private func countText(for category: SearchCategory, vm: SearchViewModel) -> String? {
-        guard !vm.postResults.isEmpty || !vm.peopleResults.isEmpty || !vm.hashtagResults.isEmpty
+        guard !vm.postResults.isEmpty || !vm.peopleResults.isEmpty
+                || !vm.hashtagResults.isEmpty || !vm.feedResults.isEmpty
         else { return nil }
         let count: Int
         let hasMore: Bool
@@ -157,6 +282,9 @@ struct SearchView: View {
             count = vm.hashtagResults.count
             // Tags derive from post pages — more posts can mean more tags.
             hasMore = vm.hasMorePosts
+        case .feeds:
+            count = vm.feedResults.count
+            hasMore = vm.hasMoreFeeds
         }
         guard count > 0 else { return nil }
         return "\(count)\(hasMore ? "+" : "")"
@@ -188,6 +316,8 @@ struct SearchView: View {
                     peopleResults(vm: vm)
                 case .hashtags:
                     hashtagResults(vm: vm)
+                case .feeds:
+                    feedsResults(vm: vm)
                 }
             }
 
@@ -215,9 +345,29 @@ struct SearchView: View {
 
     // MARK: - Posts Results
 
+    /// Mail-style chips, like the category row above: the selected filter
+    /// expands into a labeled accent capsule, the rest are icon circles.
+    private func mediaFilterRow(vm: SearchViewModel) -> some View {
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            ForEach(MediaFilter.allCases) { filter in
+                MediaFilterChip(filter: filter, isSelected: vm.mediaFilter == filter) {
+                    if vm.mediaFilter != filter { Haptics.slideSelect() }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        vm.mediaFilter = filter
+                    }
+                    Task { await vm.fillMediaResults() }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityLabel("Filter posts by media")
+    }
+
     @ViewBuilder
     private func postsResults(vm: SearchViewModel) -> some View {
-        if vm.postResults.isEmpty {
+        if vm.mediaFilter != .all {
+            mediaGridResults(vm: vm)
+        } else if vm.postResults.isEmpty {
             noResults(icon: "text.bubble", message: "No posts found for \"\(vm.query)\"")
         } else {
             ScrollView {
@@ -234,6 +384,7 @@ struct SearchView: View {
                         SearchPostRow(post: post)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                SearchHistoryStore.shared.record(vm.query)
                                 navPath.wrappedValue = NavigationPath([PostNavTarget(uri: post.uri)])
                             }
                             // Infinite scroll: any of the last few rows
@@ -256,6 +407,45 @@ struct SearchView: View {
         }
     }
 
+    // MARK: - Media Grid Results
+
+    @ViewBuilder
+    private func mediaGridResults(vm: SearchViewModel) -> some View {
+        let posts = vm.mediaFilteredPosts
+        if posts.isEmpty {
+            if vm.hasMorePosts, !vm.postResults.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task(id: vm.mediaFilter) { await vm.fillMediaResults() }
+            } else {
+                noResults(
+                    icon: vm.mediaFilter.icon,
+                    message: "No \(vm.mediaFilter.displayName.lowercased()) found for \"\(vm.query)\""
+                )
+            }
+        } else {
+            ScrollView {
+                SearchMediaGrid(
+                    posts: posts,
+                    onOpenPost: { post in
+                        SearchHistoryStore.shared.record(vm.query)
+                        navPath.wrappedValue = NavigationPath([PostNavTarget(uri: post.uri)])
+                    },
+                    onReachEnd: {
+                        Task { await vm.loadMorePosts(); await vm.fillMediaResults() }
+                    }
+                )
+                .padding(.horizontal, AtmoTheme.Spacing.md)
+                .padding(.vertical, AtmoTheme.Spacing.md)
+                if vm.hasMorePosts {
+                    ProgressView()
+                        .padding(AtmoTheme.Spacing.lg)
+                }
+            }
+            .task(id: vm.mediaFilter) { await vm.fillMediaResults() }
+        }
+    }
+
     // MARK: - People Results
 
     @ViewBuilder
@@ -269,6 +459,7 @@ struct SearchView: View {
                         SearchPersonRow(person: person)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                SearchHistoryStore.shared.record(vm.query)
                                 navPath.wrappedValue = NavigationPath([person.did])
                             }
                             // Infinite scroll, same as the posts list.
@@ -280,6 +471,43 @@ struct SearchView: View {
                         Divider().overlay(Color.secondary.opacity(0.1))
                     }
                     if vm.hasMorePeople {
+                        ProgressView()
+                            .padding(AtmoTheme.Spacing.lg)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Feed Results
+
+    @ViewBuilder
+    private func feedsResults(vm: SearchViewModel) -> some View {
+        if vm.feedResults.isEmpty {
+            noResults(icon: "square.stack", message: "No feeds found for \"\(vm.query)\"")
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Shown under the Top/Latest switch; loaded order is
+                    // the server's popularity ranking.
+                    let feeds = vm.sortedFeedResults
+                    ForEach(feeds) { feed in
+                        SearchFeedRow(feed: feed)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                Haptics.tap()
+                                SearchHistoryStore.shared.record(vm.query)
+                                openFeed(feed.asCustomFeed)
+                            }
+                            // Infinite scroll, same as the other lists.
+                            .onAppear {
+                                if feeds.suffix(3).contains(where: { $0.id == feed.id }) {
+                                    Task { await vm.loadMoreFeeds() }
+                                }
+                            }
+                        Divider().overlay(Color.secondary.opacity(0.1))
+                    }
+                    if vm.hasMoreFeeds {
                         ProgressView()
                             .padding(AtmoTheme.Spacing.lg)
                     }
@@ -350,9 +578,12 @@ struct SearchView: View {
 
 private struct SearchBar: View {
     @Binding var query: String
+    /// Owned by SearchView so the history pills can track the keyboard.
+    var isFocused: FocusState<Bool>.Binding
     /// Called after every debounce-eligible keystroke with the new value.
     var onCommit: ((String) -> Void)? = nil
-    @FocusState private var isFocused: Bool
+    /// Return key — the moment a search is deliberately run.
+    var onSubmit: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: AtmoTheme.Spacing.sm) {
@@ -362,8 +593,9 @@ private struct SearchBar: View {
 
             TextField("Search Bluesky…", text: $query)
                 .textFieldStyle(.plain)
-                .focused($isFocused)
+                .focused(isFocused)
                 .submitLabel(.search)
+                .onSubmit { onSubmit?() }
                 .autocorrectionDisabled()
 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -392,6 +624,143 @@ private struct SearchBar: View {
         .padding(.vertical, AtmoTheme.Spacing.sm)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: AtmoTheme.CornerRadius.medium, style: .continuous))
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: query.isEmpty)
+    }
+}
+
+// MARK: - Search History Pills
+// The last few searches as left-aligned glass pills under the search bar
+// — the Photos "describe a memory" structure, in the app's own glass.
+// Show: each pill starts tucked under the bar and sweeps into place, one
+// after another. Hide: they slide back under the bar and fade, in reverse
+// order. The container's height follows so the results below make room
+// and take it back. Reduce Motion crossfades instead.
+struct SearchHistoryPills: View {
+    let entries: [String]
+    let visible: Bool
+    /// Which edge the search bar sits on. `.top`: pills hang below it and
+    /// tuck up into it. `.bottom` (iPhone): pills rise above it and tuck
+    /// down into it, the most recent search nearest the bar.
+    var barEdge: Edge = .top
+    let onSelect: (String) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Natural height of the pill stack, measured so the collapse animates.
+    @State private var stackHeight: CGFloat = 0
+
+    private static let stagger = 0.06
+    private static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)
+
+    /// Pills in display order: nearest the bar first for a top bar; for
+    /// a bottom bar the newest sits last, right above the bar.
+    private var ordered: [String] {
+        barEdge == .bottom ? entries.reversed() : entries
+    }
+
+    /// Steps between a pill and the bar (0 = adjacent).
+    private func distance(_ index: Int) -> Int {
+        barEdge == .bottom ? max(0, ordered.count - 1 - index) : index
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AtmoTheme.Spacing.sm) {
+            ForEach(Array(ordered.enumerated()), id: \.element) { index, entry in
+                let steps = CGFloat(distance(index) + 1)
+                pill(entry)
+                    // Tucked into the bar when hidden: pills further from
+                    // it start further away, so the stack emerges from one
+                    // point at the bar's edge.
+                    .offset(y: visible || reduceMotion ? 0 : (barEdge == .bottom ? steps : -steps) * 28)
+                    .scaleEffect(visible || reduceMotion ? 1 : 0.92,
+                                 anchor: barEdge == .bottom ? .bottomLeading : .topLeading)
+                    .opacity(visible ? 1 : 0)
+                    .animation(animation(forDistance: distance(index)), value: visible)
+            }
+        }
+        .padding(.top, AtmoTheme.Spacing.xs)
+        .padding(.bottom, AtmoTheme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Always laid out at its natural height (measured below) so the
+        // outer frame can animate between that and zero.
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stackHeight = $0 }
+        .frame(height: visible ? stackHeight : 0, alignment: barEdge == .bottom ? .bottom : .top)
+        .clipped()
+        .allowsHitTesting(visible)
+        .animation(Self.spring.delay(visible ? 0 : Self.stagger * Double(entries.count)), value: visible)
+        .accessibilityHidden(!visible)
+    }
+
+    private func animation(forDistance distance: Int) -> Animation {
+        if reduceMotion { return .easeInOut(duration: 0.2) }
+        // Sweep out from the bar nearest-first; tuck back farthest-first.
+        let order = visible ? distance : max(0, entries.count - 1 - distance)
+        return Self.spring.delay(Double(order) * Self.stagger)
+    }
+
+    private func pill(_ entry: String) -> some View {
+        Button {
+            onSelect(entry)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(entry)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .contextMenu {
+            Button("Remove", systemImage: "xmark", role: .destructive) {
+                SearchHistoryStore.shared.remove(entry)
+            }
+            Button("Clear search history", systemImage: "trash", role: .destructive) {
+                SearchHistoryStore.shared.clear()
+            }
+        }
+        .accessibilityLabel("Recent search: \(entry)")
+    }
+}
+
+// MARK: - Media Filter Chip
+// The category chip's smaller sibling for the All / Images / Videos /
+// GIFs row: 34 pt icon circles, the selected one expanding into a labeled
+// accent capsule.
+private struct MediaFilterChip: View {
+    let filter: MediaFilter
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: filter.icon)
+                    .font(.system(size: 13, weight: .medium))
+                if isSelected {
+                    Text(filter.displayName)
+                        .font(.footnote.weight(.semibold))
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .padding(.horizontal, isSelected ? AtmoTheme.Spacing.md : 0)
+            .frame(height: 34)
+            .frame(minWidth: 34)
+            .background {
+                Capsule().fill(isSelected ? AtmoColors.accent : Color.secondary.opacity(0.12))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(filter.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -473,22 +842,116 @@ private struct SearchPostRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
+                    GhostBadge(post: post)
                     Text(post.indexedAt.atmoFormatted())
                         .font(AtmoFonts.timestamp)
                         .foregroundStyle(.tertiary)
                 }
 
                 // Post text
-                if !post.text.isEmpty {
-                    Text(post.text)
+                if !post.displayText.isEmpty {
+                    Text(post.displayText)
                         .font(.subheadline)
                         .lineLimit(3)
                         .foregroundStyle(.primary)
+                }
+
+                // Media and link embeds render right in the results —
+                // photos, videos, link cards, and quotes at a glance. The
+                // images load asynchronously (cached), so the result rows
+                // land instantly and the media streams in just after.
+                if let embed = post.embed {
+                    PostEmbedView(embed: embed, sensitiveMedia: post.hasSensitiveMediaLabel, postURI: post.uri)
                 }
             }
         }
         .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
         .padding(.vertical, AtmoTheme.Feed.verticalPadding)
+    }
+}
+
+// MARK: - Search Feed Row
+// A public feed found by name: avatar tile, name, who made it and how
+// liked it is, then the description. Tapping switches Home to the feed.
+private struct SearchFeedRow: View {
+    let feed: FeedSearchResult
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AtmoTheme.Spacing.md) {
+            AsyncCachedImage(url: feed.avatarURL) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(AtmoColors.accent.opacity(0.25))
+                        .overlay {
+                            Image(systemName: "square.stack")
+                                .font(.callout)
+                                .foregroundStyle(AtmoColors.accent)
+                        }
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(feed.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(feed.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let description = feed.description, !description.isEmpty {
+                    Text(description)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .padding(.top, 1)
+                }
+            }
+            Spacer(minLength: 0)
+            FeedSubscribeButton(feed: feed.asCustomFeed)
+                .padding(.top, 6)
+        }
+        .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+        .padding(.vertical, AtmoTheme.Spacing.md)
+        .accessibilityElement(children: .contain)
+        .accessibilityHint("Opens this feed")
+    }
+}
+
+// MARK: - Feed Subscribe Button
+// Inline on feed rows (search results, Explore): plus to subscribe, a
+// filled check once subscribed — tap again to unsubscribe.
+struct FeedSubscribeButton: View {
+    let feed: CustomFeedItem
+    @Environment(ATProtoService.self) private var service
+
+    var body: some View {
+        let store = SavedFeedsStore.shared
+        let subscribed = store.isSubscribed(uri: feed.uri)
+        Button {
+            Haptics.tap()
+            Task {
+                if subscribed {
+                    await store.unsubscribe(uri: feed.uri, service: service)
+                } else {
+                    await store.subscribe(feed, pinned: false, service: service)
+                }
+            }
+        } label: {
+            Image(systemName: subscribed ? "checkmark.circle.fill" : "plus.circle")
+                .font(.title3)
+                .foregroundStyle(subscribed ? AtmoColors.accent : .secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Circle())
+                .symbolEffect(.bounce, value: subscribed)
+        }
+        .buttonStyle(.plain)
+        .disabled(store.isUpdating)
+        .accessibilityLabel(subscribed ? "Subscribed, tap to unsubscribe" : "Subscribe")
     }
 }
 
@@ -732,11 +1195,12 @@ private struct ExploreSectionsView: View {
                     Text(feed.displayName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text("Open this feed")
+                    Text(SavedFeedsStore.shared.isSubscribed(uri: feed.uri) ? "Subscribed" : "Open this feed")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                FeedSubscribeButton(feed: feed)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

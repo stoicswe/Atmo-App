@@ -70,6 +70,15 @@ parts:
       - shared-mime-info
       - libgdk-pixbuf2.0-bin
       - libssl3t64
+      # Inline video: playbin3 renders through gtk4paintablesink
+      # (GTK 4.22 removed GtkVideo's own media backend); HLS (Bluesky's
+      # playlists) demuxes via plugins-bad.
+      - gstreamer1.0-gtk4
+      - gstreamer1.0-gl
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-libav
     override-pull: |
       craftctl default
       # Snap versions are capped at 32 characters, so keep the SHA short
@@ -103,6 +112,11 @@ parts:
       # About dialog (which take an icon *name*) can find it.
       install -Dm644 snap/gui/icon.svg \
           "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/com.stoicswe.atmo.svg"
+      # The app's own symbolic icons (heart, repost, hashtag, verified,
+      # thread) — names the stock Adwaita theme doesn't provide.
+      install -d "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/actions"
+      install -m644 LinuxApp/dev-icons/hicolor/scalable/actions/atmo-*.svg \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/actions/"
     override-prime: |
       craftctl default
       # Staged schemas ship uncompiled; GTK needs the compiled cache.

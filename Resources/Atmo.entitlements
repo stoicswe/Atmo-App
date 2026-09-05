@@ -11,6 +11,26 @@
 	     without this entitlement those writes silently stay local-only. -->
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+	<!-- iCloud Documents: the Liked history syncs as a file in the app's
+	     ubiquity container, stored OUTSIDE Documents/ so it never appears
+	     in iCloud Drive (UbiquitousFileStore). Container id is HARDCODED —
+	     $(CFBundleIdentifier) expands per target, the trap that bit the
+	     watch app (see project.yml). PORTAL NOTE: before a signed/Xcode
+	     Cloud build, register the container "iCloud.stoicswe.com-atmin-app"
+	     and enable iCloud (CloudDocuments) on the stoicswe.com-atmin-app
+	     App ID — automatic signing cannot create either during export. -->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.stoicswe.com-atmin-app</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.stoicswe.com-atmin-app</string>
+	</array>
 	<!-- Sensitive Content Analysis (the iMessage nudity-detection
 	     framework). Analysis only runs when the user enables Sensitive
 	     Content Warning in system Settings; without this entitlement the

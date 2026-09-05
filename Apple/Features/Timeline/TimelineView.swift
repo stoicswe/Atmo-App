@@ -15,6 +15,13 @@ struct TimelineView: View {
     /// NavigationStack in AppNavigation and this view renders as flat content.
     /// When nil (iPhone), this view owns its own NavigationStack.
     var splitNavPath: Binding<NavigationPath>? = nil
+    /// Split view keeps every tab alive; toolbar items would bleed onto
+    /// the other tabs' bars, so the owner passes whether this is the tab
+    /// on screen.
+    var showsToolbar: Bool = true
+    /// Back from a custom feed: the owner returns to Following and to
+    /// wherever the feed was opened from (Search / Explore).
+    var onLeaveFeed: (() -> Void)? = nil
 
     @State private var ownedNavPath = NavigationPath()
 
@@ -68,6 +75,12 @@ struct TimelineView: View {
         if splitNavPath != nil {
             feedBody
                 .task { await loadIfNeeded() }
+                // Warm the URL cache for the newest rows' thumbnails and
+                // avatars whenever the list changes, so cells arrive with
+                // their bytes already on disk.
+                .task(id: viewModel.posts.count) {
+                    ImagePrefetcher.prefetch(posts: viewModel.posts)
+                }
                 .onChange(of: service.atProtoKit != nil) { _, isReady in
                     guard isReady, viewModel.posts.isEmpty, !viewModel.isLoading else { return }
                     Task { await viewModel.loadInitial() }
@@ -77,7 +90,9 @@ struct TimelineView: View {
                 // pull gesture is disabled there.
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        if viewModel.isRefreshing {
+                        if !showsToolbar {
+                            EmptyView()
+                        } else if viewModel.isRefreshing {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
@@ -101,10 +116,15 @@ struct TimelineView: View {
                     .navigationTitle("Home")
                     .navigationDestination(for: PostNavTarget.self) { target in
                         ThreadView(postURI: target.uri)
+                            .themedBackdrop()
                     }
                     .navigationDestination(for: String.self) { did in
                         ProfileView(actorDID: did)
+                            .themedBackdrop()
                     }
+                    // INSIDE the stack — iOS nav hosting covers outside
+                    // backgrounds (why the tint failed on iOS).
+                    .themedBackdrop()
             }
             .task { await loadIfNeeded() }
             .onChange(of: service.atProtoKit != nil) { _, isReady in
@@ -276,6 +296,15 @@ struct TimelineView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isAtTop)
             }
         }
+        // A custom feed wears its own header: Back, the name, and the
+        // subscribe / pin controls.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if case .custom(let uri, let name) = vm.feedSource {
+                FeedSubscriptionBar(uri: uri, name: name, onBack: onLeaveFeed)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.feedSource)
         // ── iCloud read-position restore ──
         // Once, after the first page arrives: jump (without animation) to the
         // position saved by whichever Apple device the user read the feed on
@@ -852,5 +881,115 @@ private extension View {
                 endPoint: UnitPoint(x: phase + 0.5, y: 0)
             )
         )
+    }
+}
+
+
+// MARK: - Feed Subscription Bar
+/// Header over a custom feed: Back (to Following, and to Search when the
+/// feed came from there), the feed's name, a pin toggle once subscribed,
+/// and Subscribe / Subscribed. Unsubscribing asks first.
+private struct FeedSubscriptionBar: View {
+    let uri: String
+    let name: String
+    let onBack: (() -> Void)?
+
+    @Environment(ATProtoService.self) private var service
+    @State private var confirmUnsubscribe = false
+
+    var body: some View {
+        let store = SavedFeedsStore.shared
+        let subscribed = store.isSubscribed(uri: uri)
+        let pinned = store.isPinned(uri: uri)
+        HStack(spacing: AtmoTheme.Spacing.sm) {
+            Button {
+                Haptics.tap()
+                onBack?()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "chevron.left")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Back")
+                        .font(.subheadline)
+                }
+                .foregroundStyle(AtmoColors.accent)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Capsule())
+            .accessibilityLabel("Back")
+
+            Text(name)
+                .font(.headline)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            if subscribed {
+                Button {
+                    Haptics.tap()
+                    Task { await store.setPinned(!pinned, uri: uri, service: service) }
+                } label: {
+                    Image(systemName: pinned ? "pin.fill" : "pin")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(pinned ? AtmoColors.accent : .secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .disabled(store.isUpdating)
+                .accessibilityLabel(pinned ? "Unpin feed" : "Pin feed")
+            }
+
+            Button {
+                Haptics.tap()
+                if subscribed {
+                    confirmUnsubscribe = true
+                } else {
+                    Task {
+                        await store.subscribe(
+                            CustomFeedItem(uri: uri, displayName: name, avatarURL: nil, isPinned: false),
+                            pinned: false, service: service
+                        )
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    if store.isUpdating {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: subscribed ? "checkmark" : "plus")
+                            .font(.caption.weight(.bold))
+                    }
+                    Text(subscribed ? "Subscribed" : "Subscribe")
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize()
+                }
+                .foregroundStyle(subscribed ? AtmoColors.accent : .white)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background {
+                    Capsule().fill(subscribed ? AtmoColors.accent.opacity(0.15) : AtmoColors.accent)
+                }
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.isUpdating)
+            .accessibilityLabel(subscribed ? "Subscribed. Unsubscribe" : "Subscribe to feed")
+        }
+        .padding(.horizontal, AtmoTheme.Feed.horizontalPadding)
+        .padding(.vertical, AtmoTheme.Spacing.sm)
+        .background(.bar)
+        .confirmationDialog("Unsubscribe from \(name)?", isPresented: $confirmUnsubscribe, titleVisibility: .visible) {
+            Button("Unsubscribe", role: .destructive) {
+                Task { await store.unsubscribe(uri: uri, service: service) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The feed leaves your saved feeds. You can subscribe again any time.")
+        }
     }
 }

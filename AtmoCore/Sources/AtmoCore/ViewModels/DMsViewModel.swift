@@ -89,17 +89,64 @@ public final class ConversationDetailViewModel {
         return next.sentAt.timeIntervalSince(current.sentAt) > 60
     }
 
-    public func sendMessage(text: String) async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    /// Sends text, a shared post, or both. A post travels as a record
+    /// embed (`app.bsky.embed.record`), which is how the official client
+    /// shares a post into chat and how it renders back as a tappable card.
+    public func sendMessage(text: String, embeddedPost: PostItem? = nil) async {
+        guard let messageInput = Self.messageInput(text: text, embeddedPost: embeddedPost),
               let chat = service.atProtoChat else { return }
         isSending = true
         do {
-            let messageInput = ChatBskyLexicon.Conversation.MessageInputDefinition(text: text)
             let result = try await chat.sendMessage(to: conversationID, message: messageInput)
             messages.append(MessageItem(messageView: result))
         } catch {
             self.error = error
         }
         isSending = false
+    }
+
+    /// Shares a post known only by reference (a bookmark, a liked post).
+    public func sendPost(uri: String, cid: String) async {
+        guard let messageInput = Self.messageInput(text: "", postURI: uri, postCID: cid),
+              let chat = service.atProtoChat else { return }
+        isSending = true
+        do {
+            let result = try await chat.sendMessage(to: conversationID, message: messageInput)
+            messages.append(MessageItem(messageView: result))
+        } catch {
+            self.error = error
+        }
+        isSending = false
+    }
+
+    /// The wire message for `text` plus an optional shared post; nil when
+    /// there is nothing to send (blank text and no post). Pure; unit-tested.
+    nonisolated static func messageInput(
+        text: String,
+        embeddedPost: PostItem?
+    ) -> ChatBskyLexicon.Conversation.MessageInputDefinition? {
+        messageInput(text: text, postURI: embeddedPost?.uri, postCID: embeddedPost?.cid)
+    }
+
+    /// Same, for a post identified by its strong reference.
+    nonisolated static func messageInput(
+        text: String,
+        postURI: String?,
+        postCID: String?
+    ) -> ChatBskyLexicon.Conversation.MessageInputDefinition? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reference: ComAtprotoLexicon.Repository.StrongReference?
+        if let postURI, !postURI.isEmpty {
+            reference = ComAtprotoLexicon.Repository.StrongReference(recordURI: postURI, cidHash: postCID ?? "")
+        } else {
+            reference = nil
+        }
+        guard !trimmed.isEmpty || reference != nil else { return nil }
+        let embed = reference.map {
+            ChatBskyLexicon.Conversation.MessageInputDefinition.EmbedUnion.record(
+                AppBskyLexicon.Embed.RecordDefinition(record: $0)
+            )
+        }
+        return ChatBskyLexicon.Conversation.MessageInputDefinition(text: trimmed, embed: embed)
     }
 }

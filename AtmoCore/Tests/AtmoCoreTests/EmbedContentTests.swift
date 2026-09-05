@@ -50,14 +50,31 @@ struct EmbedContentTests {
         #expect(content?.externalLink?.uri == "https://example.com/story")
     }
 
-    @Test func videoSetsFlag() {
+    @Test func videoSurfacesStreamThumbAndSize() {
         let video = AppBskyLexicon.Embed.VideoDefinition.View(
             cid: "cid", playlistURI: "https://cdn.example/v.m3u8",
-            thumbnailImageURL: nil, altText: nil, aspectRatio: nil
+            thumbnailImageURL: "https://cdn.example/v.jpg", altText: "a demo",
+            aspectRatio: .init(width: 1920, height: 1080)
         )
         let content = post(embed: .embedVideoView(video)).embedContent
         #expect(content?.hasVideo == true)
+        #expect(content?.video?.playlistURL == URL(string: "https://cdn.example/v.m3u8"))
+        #expect(content?.video?.thumbnailURL == URL(string: "https://cdn.example/v.jpg"))
+        #expect(content?.video?.altText == "a demo")
+        #expect(content?.video?.width == 1920)
+        #expect(content?.video?.height == 1080)
         #expect(content?.isEmpty == false)
+    }
+
+    @Test func externalLinkCarriesThumbnail() {
+        let external = AppBskyLexicon.Embed.ExternalDefinition.View(external: .init(
+            uri: "https://example.com/story",
+            title: "A story",
+            description: "Worth reading",
+            thumbnailImageURL: thumb
+        ))
+        let content = post(embed: .embedExternalView(external)).embedContent
+        #expect(content?.externalLink?.thumbnailURL == thumb)
     }
 
     /// ViewNotFound has no memberwise initializer (the `$type` constant
