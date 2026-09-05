@@ -1,6 +1,9 @@
 import Foundation
 import ATProtoKit
 import Observation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Central service object that owns and manages all ATProtoKit instances.
 /// The SwiftUI app injects it as an `@Environment` object; the Linux app
@@ -143,7 +146,7 @@ public final class ATProtoService {
     private func attemptSession(handle: String, password: String, pdsURL: URL, token: String?) async {
         do {
             let kit = await ATProtoKit(
-                apiClientConfiguration: .init(urlSessionConfiguration: .default),
+                apiClientConfiguration: .init(urlSessionConfiguration: Self.makeURLSessionConfiguration()),
                 pdsURL: pdsURL.absoluteString,
                 canUseBlueskyRecords: false
             )
@@ -255,10 +258,43 @@ public final class ATProtoService {
             // outcome is unknown: stay in `.restoring` so the UI keeps
             // its splash and a re-activation can run another attempt.
             if !Task.isCancelled && !(error is CancellationError) {
+                // Before surfacing the login form, try the stored App
+                // Password: ATProtoKit persists it (for its own expiry
+                // re-auth), but a refresh token invalidated by a rotation
+                // race — e.g. the app killed mid-refresh — bypasses that
+                // path and used to force a manual re-login.
+                isLoading = false
+                if await reauthenticateFromStoredCredential() { return }
                 authPhase = .unauthenticated
             }
         }
         isLoading = false
+    }
+
+    /// Re-login with the credential ATProtoKit saved at authentication.
+    /// Tries the current session UUID's namespace first, then — when the
+    /// store can enumerate — any other stored password (the stable UUID
+    /// can rotate away from the namespace the credential was written
+    /// under, orphaning it). A successful login re-saves everything under
+    /// the current namespace, so the store self-heals.
+    /// Returns true when a session was established.
+    private func reauthenticateFromStoredCredential() async -> Bool {
+        guard let handle = Atmo.platform.secrets.loadLastHandle() else { return false }
+        let store = Atmo.platform.makeCredentialStore()
+        var keys = ["\(Atmo.platform.secrets.stableSessionUUID()).password"]
+        if let enumerable = store as? EnumerableCredentialStore,
+           let stored = try? await enumerable.allKeys() {
+            keys += stored.filter { $0.hasSuffix(".password") && !keys.contains($0) }
+        }
+        for key in keys {
+            guard let data = try? await store.loadValue(forKey: key),
+                  let password = String(data: data, encoding: .utf8),
+                  !password.isEmpty
+            else { continue }
+            await login(handle: handle, appPassword: password)
+            if isAuthenticated { return true }
+        }
+        return false
     }
 
     /// Signs out and clears all persisted state.
@@ -275,23 +311,61 @@ public final class ATProtoService {
         PositionStore.shared.clear()
     }
 
+    /// The PDS the stored session talks to (bsky.social until an
+    /// account-specific host is remembered at sign-in). Read-only; for
+    /// display in settings.
+    public var pdsURL: URL {
+        PDSStore.load() ?? PDSResolver.defaultPDS
+    }
+
     // MARK: - Private Helpers
 
     /// Builds an `ATProtocolConfiguration` bound to the installed platform's
     /// credential store and the install's stable session UUID, so tokens
     /// stored on a previous launch are found again.
+    ///
+    /// On Linux, requests are routed through one immortal `URLSession`
+    /// (see `LinuxSharedSessionURLProtocol`) — ATProtoKit's session
+    /// methods build throwaway sessions whose deallocation crashes
+    /// corelibs-foundation mid-teardown.
     private func makeConfiguration() -> ATProtocolConfiguration {
-        ATProtocolConfiguration(
-            // The stored session's own PDS; bsky.social for installs that
-            // signed in before the host was remembered.
-            pdsURL: (PDSStore.load() ?? PDSResolver.defaultPDS).absoluteString,
+        // The stored session's own PDS; bsky.social for installs that
+        // signed in before the host was remembered.
+        let pdsURL = (PDSStore.load() ?? PDSResolver.defaultPDS).absoluteString
+        return ATProtocolConfiguration(
+            pdsURL: pdsURL,
             credentialStore: Atmo.platform.makeCredentialStore(),
-            sessionIdentifier: Atmo.platform.secrets.stableSessionUUID()
+            sessionIdentifier: Atmo.platform.secrets.stableSessionUUID(),
+            configuration: Self.makeURLSessionConfiguration()
         )
     }
 
+    /// The `URLSessionConfiguration` every ATProtoKit instance we build
+    /// (retained or one-shot) must use. On Linux it carries the
+    /// shared-session `URLProtocol` so no throwaway kit ever opens a curl
+    /// socket of its own; elsewhere it is the plain default.
+    nonisolated static func makeURLSessionConfiguration() -> URLSessionConfiguration {
+        let sessionConfiguration = URLSessionConfiguration.default
+        #if canImport(FoundationNetworking)
+        sessionConfiguration.protocolClasses = [LinuxSharedSessionURLProtocol.self]
+        #endif
+        return sessionConfiguration
+    }
+
     private func buildStack(config: ATProtocolConfiguration, fallbackHandle: String) async {
+        #if canImport(FoundationNetworking)
+        // See LinuxRequestAuthenticator: corelibs drops ATProtoKit's
+        // per-request "needs session" marker, so decide it ourselves.
+        let kit = await ATProtoKit(
+            sessionConfiguration: config,
+            apiClientConfiguration: APIClientConfiguration(
+                urlSessionConfiguration: Self.makeURLSessionConfiguration(),
+                requestAuthenticator: LinuxRequestAuthenticator(session: config)
+            )
+        )
+        #else
         let kit = await ATProtoKit(sessionConfiguration: config)
+        #endif
         let bluesky = ATProtoBluesky(atProtoKitInstance: kit)
         let chat = ATProtoBlueskyChat(atProtoKitInstance: kit)
 

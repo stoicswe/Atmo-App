@@ -65,7 +65,7 @@ public final class TimelineViewModel {
     /// `nonisolated(unsafe)` allows `deinit` (which is nonisolated in Swift 6) to
     /// cancel the task without an actor-isolation error. All reads/writes happen on
     /// the MainActor via the `@MainActor`-isolated methods that set these properties.
-    @ObservationIgnored nonisolated(unsafe) private var refreshTimerTask: Task<Void, Never>? = nil
+    @ObservationIgnored nonisolated(unsafe) private(set) var refreshTimerTask: Task<Void, Never>? = nil
     /// Retained task that listens for foreground-resume notifications.
     @ObservationIgnored nonisolated(unsafe) private var sceneObservationTask: Task<Void, Never>? = nil
     /// Retained task that listens for app-backgrounded notifications.
@@ -101,7 +101,7 @@ public final class TimelineViewModel {
     /// Energy: the sleep carries a 10% tolerance so the OS can coalesce the
     /// wake-up with other timers instead of spinning the CPU up on its own.
     private func startPeriodicRefresh() {
-        guard refreshTimerTask == nil else { return }
+        guard refreshTimerTask == nil, !isSeeded else { return }
         let interval = Atmo.platform.timelineRefreshInterval
         refreshTimerTask = Task { [weak self] in
             // Wait one interval before the first tick so we don't double-fetch
@@ -247,7 +247,7 @@ public final class TimelineViewModel {
         // Hard guard: bail out if any loading is already in flight.
         // isCheckingForNew prevents concurrent calls from the same trigger
         // (e.g. rapid onAppear firings from LazyVStack recycling the anchor cell).
-        guard !isLoading, !isRefreshing, !isCheckingForNew,
+        guard !isLoading, !isRefreshing, !isCheckingForNew, !isSeeded,
               let kit = service.atProtoKit else { return (0, nil) }
         isCheckingForNew = true
         defer { isCheckingForNew = false }
@@ -483,9 +483,20 @@ public final class TimelineViewModel {
     /// Replaces the posts array with an arbitrary list of PostItems.
     /// Used by ThreadView to seed the ViewModel with the root post and all
     /// reply posts so that toggleLike / toggleRepost can find them by ID.
+    ///
+    /// Seeding turns the instance into a static interaction store: the
+    /// periodic home-feed poll (and the checks that would prepend home
+    /// posts into the seeded list) stop permanently — a thread page's
+    /// content refreshes by reloading the thread, never from the timeline.
     public func seedPosts(_ items: [PostItem]) {
+        isSeeded = true
+        pausePeriodicRefresh()
         posts = items
     }
+
+    /// True once seedPosts made this a thread-page interaction store.
+    /// Internal so tests can assert automatic fetching is off.
+    private(set) var isSeeded = false
 
     // MARK: - Quote
 

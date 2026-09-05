@@ -11,7 +11,10 @@ struct AtmoLinux: App {
             MainView(app: app, window: window)
         }
         .title("@omic")
-        .defaultSize(width: 480, height: 780)
+        // Sidebar + content, like the macOS window; narrow widths collapse
+        // the split view (see MainView.signedInShell).
+        .defaultSize(width: 1100, height: 760)
+        .minSize(width: 360, height: 480)
         .quitShortcut()
     }
 }

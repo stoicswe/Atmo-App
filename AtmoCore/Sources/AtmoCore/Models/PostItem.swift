@@ -264,7 +264,9 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         indexedAt: Date = Date(),
         isRepost: Bool = false,
         contentLabels: [String] = [],
-        authorVerification: VerificationBadge? = nil
+        authorVerification: VerificationBadge? = nil,
+        embed: AppBskyLexicon.Feed.PostViewDefinition.EmbedUnion? = nil,
+        facets: [AppBskyLexicon.RichText.Facet] = []
     ) {
         self.authorVerification = authorVerification
         self.uri = testURI
@@ -275,7 +277,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.authorDisplayName = nil
         self.authorAvatarURL = nil
         self.text = text
-        self.facets = []
+        self.facets = facets
         self.createdAt = indexedAt
         self.indexedAt = indexedAt
         self.contentLabels = contentLabels
@@ -287,7 +289,7 @@ public struct PostItem: Identifiable, Hashable, Sendable {
         self.likeURI = nil
         self.isReposted = false
         self.repostURI = nil
-        self.embed = nil
+        self.embed = embed
         self.replyParentURI = replyParentURI
         self.replyRootURI = replyRootURI
         self.reason = isRepost
