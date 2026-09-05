@@ -34,10 +34,17 @@ struct WalletPassSheet: View {
                     themePicker
 
                     if let credit = theme.credit {
-                        Text(credit)
-                            .font(.caption)
+                        if let url = theme.creditURL {
+                            Link(destination: url) {
+                                Label(credit, systemImage: "camera")
+                                    .font(.caption)
+                            }
                             .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                        } else {
+                            Label(credit, systemImage: "camera")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     if let errorMessage {

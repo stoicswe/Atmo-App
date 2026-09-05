@@ -183,6 +183,13 @@ struct WalletPassDocumentTests {
         #expect(WalletPassTheme.builtIn(id: "sky") == .sky)
         #expect(WalletPassTheme.RGB(1, 2, 3).cssString == "rgb(1, 2, 3)")
     }
+
+    @Test func everyBuiltInThemeCreditsThePhotographer() {
+        for theme in WalletPassTheme.builtIn {
+            #expect(theme.credit == WalletPassTheme.photographerCredit, "\(theme.id)")
+            #expect(theme.creditURL == WalletPassTheme.photographerURL, "\(theme.id)")
+        }
+    }
 }
 
 // MARK: - Signing and assembly
