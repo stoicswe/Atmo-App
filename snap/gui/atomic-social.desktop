@@ -2,7 +2,7 @@
 Type=Application
 Name=Atmo
 Comment=A Bluesky client
-Exec=atmo %U
+Exec=atomic-social %U
 Icon=${SNAP}/meta/gui/icon.svg
 Terminal=false
 Categories=Network;InstantMessaging;

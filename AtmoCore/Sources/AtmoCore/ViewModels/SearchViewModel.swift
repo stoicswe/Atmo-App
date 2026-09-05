@@ -358,6 +358,7 @@ public final class SearchViewModel {
             )
             return (output.posts.map { PostItem(postView: $0) }, output.cursor)
         } catch {
+            AtmoDebugLog.log("searchPosts failed: \(error)")
             return ([], nil)
         }
     }

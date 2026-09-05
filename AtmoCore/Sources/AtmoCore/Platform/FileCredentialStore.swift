@@ -9,7 +9,19 @@ import ATProtoKit
 /// mirroring what most Linux applications do when libsecret is not
 /// available. The Linux app can later swap in a libsecret-backed store
 /// without touching this API — see LinuxApp/PORTING.md.
-public actor FileCredentialStore: ATCredentialStore {
+/// A credential store that can list the keys it holds. Session recovery
+/// uses it to find a stored App Password even when the install's stable
+/// session UUID rotated away from the namespace the credential was saved
+/// under (see `ATProtoService.reauthenticateFromStoredCredential`).
+public protocol EnumerableCredentialStore {
+    func allKeys() async throws -> [String]
+}
+
+public actor FileCredentialStore: ATCredentialStore, EnumerableCredentialStore {
+
+    public func allKeys() async throws -> [String] {
+        Array(readAll().keys)
+    }
 
     private let fileURL: URL
 
